@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Storage from './asyncStorage';
 import {Conversation} from '../domain/agent';
 
 const KEY = '@campusos/ai_conversations';
@@ -15,8 +15,8 @@ export interface PersistedConversations {
 export async function loadConversations(): Promise<PersistedConversations> {
   try {
     const [raw, activeId] = await Promise.all([
-      AsyncStorage.getItem(KEY),
-      AsyncStorage.getItem(ACTIVE_KEY),
+      Storage.getItem(KEY),
+      Storage.getItem(ACTIVE_KEY),
     ]);
     const conversations = raw ? (JSON.parse(raw) as Conversation[]) : [];
     if (!Array.isArray(conversations)) {
@@ -50,11 +50,11 @@ export async function saveConversations(
     const trimmed = conversations
       .filter(c => c.messages.length > 0)
       .slice(0, MAX_CONVERSATIONS);
-    await AsyncStorage.setItem(KEY, JSON.stringify(trimmed));
+    await Storage.setItem(KEY, JSON.stringify(trimmed));
     if (activeConversationId) {
-      await AsyncStorage.setItem(ACTIVE_KEY, activeConversationId);
+      await Storage.setItem(ACTIVE_KEY, activeConversationId);
     } else {
-      await AsyncStorage.removeItem(ACTIVE_KEY);
+      await Storage.removeItem(ACTIVE_KEY);
     }
   } catch {
     // 持久化失败不致命：下次再存

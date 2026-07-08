@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Storage from './asyncStorage';
 import {AuditRecord} from '../domain/actions';
 
 const KEY = '@campusos/action_audit_records';
@@ -95,7 +95,7 @@ function normalizeRecord(record: AuditRecord): AuditRecord {
 
 export async function loadActionAuditRecords(): Promise<AuditRecord[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await Storage.getItem(KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? (parsed as AuditRecord[]) : [];
   } catch {
@@ -113,7 +113,7 @@ export async function appendActionAuditRecord(
     createdAt: record.createdAt ?? new Date().toISOString(),
   });
   const records = await loadActionAuditRecords();
-  await AsyncStorage.setItem(
+  await Storage.setItem(
     KEY,
     JSON.stringify([next, ...records].slice(0, MAX_RECORDS)),
   );
@@ -121,5 +121,5 @@ export async function appendActionAuditRecord(
 }
 
 export async function clearActionAuditRecords(): Promise<void> {
-  await AsyncStorage.removeItem(KEY);
+  await Storage.removeItem(KEY);
 }

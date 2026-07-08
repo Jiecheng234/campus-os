@@ -1,11 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Storage from './asyncStorage';
 import {PersonalEvent} from '../domain/schedule';
 
 const KEY = '@campusos/personal_events';
 
 export async function loadPersonalEvents(): Promise<PersonalEvent[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await Storage.getItem(KEY);
     if (!raw) {
       return [];
     }
@@ -18,7 +18,7 @@ export async function loadPersonalEvents(): Promise<PersonalEvent[]> {
 
 export async function savePersonalEvents(events: PersonalEvent[]): Promise<void> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(events));
+    await Storage.setItem(KEY, JSON.stringify(events));
   } catch {
     // 持久化失败不致命
   }

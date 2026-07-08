@@ -1,11 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Storage from './asyncStorage';
 import {ScheduleEvent} from '../domain/learning';
 
 const KEY = '@campusos/learning_schedule_cache';
 
 export async function loadLearningScheduleCache(): Promise<ScheduleEvent[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await Storage.getItem(KEY);
     if (!raw) {
       return [];
     }
@@ -21,10 +21,10 @@ export async function saveLearningScheduleCache(
 ): Promise<void> {
   try {
     if (events.length === 0) {
-      await AsyncStorage.removeItem(KEY);
+      await Storage.removeItem(KEY);
       return;
     }
-    await AsyncStorage.setItem(KEY, JSON.stringify(events));
+    await Storage.setItem(KEY, JSON.stringify(events));
   } catch {
     // 缓存失败不影响主流程
   }

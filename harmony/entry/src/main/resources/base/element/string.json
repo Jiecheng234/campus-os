@@ -1,0 +1,28 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "CampusOS entry module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "CampusOS main ability"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "CampusOS"
+    },
+    {
+      "name": "permission_internet_reason",
+      "value": "CampusOS requires network access to load campus services and AI features."
+    },
+    {
+      "name": "permission_network_reason",
+      "value": "CampusOS needs to check network status to determine online/offline mode."
+    },
+    {
+      "name": "permission_notification_reason",
+      "value": "CampusOS sends local notifications for workflow checks and reminders."
+    }
+  ]
+}

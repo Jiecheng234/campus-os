@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Storage from './asyncStorage';
 import {AIProviderConfig} from '../domain/agent';
 
 const KEYS = {
@@ -10,29 +10,29 @@ const KEYS = {
 } as const;
 
 export async function getSessionStudentId(): Promise<string | null> {
-  return AsyncStorage.getItem(KEYS.sessionStudentId);
+  return Storage.getItem(KEYS.sessionStudentId);
 }
 
 export async function setSessionStudentId(studentId: string): Promise<void> {
-  await AsyncStorage.setItem(KEYS.sessionStudentId, studentId);
+  await Storage.setItem(KEYS.sessionStudentId, studentId);
 }
 
 export async function clearSessionStudentId(): Promise<void> {
-  await AsyncStorage.removeItem(KEYS.sessionStudentId);
+  await Storage.removeItem(KEYS.sessionStudentId);
 }
 
 export async function getLocale(): Promise<'zh' | 'en'> {
-  const value = await AsyncStorage.getItem(KEYS.locale);
+  const value = await Storage.getItem(KEYS.locale);
   return value === 'en' ? 'en' : 'zh';
 }
 
 export async function setLocale(locale: 'zh' | 'en'): Promise<void> {
-  await AsyncStorage.setItem(KEYS.locale, locale);
+  await Storage.setItem(KEYS.locale, locale);
 }
 
 export async function getAIProviderConfig(): Promise<Omit<AIProviderConfig, 'apiKey'> | null> {
   try {
-    const raw = await AsyncStorage.getItem(KEYS.aiProvider);
+    const raw = await Storage.getItem(KEYS.aiProvider);
     return raw ? (JSON.parse(raw) as Omit<AIProviderConfig, 'apiKey'>) : null;
   } catch {
     return null;
@@ -42,23 +42,23 @@ export async function getAIProviderConfig(): Promise<Omit<AIProviderConfig, 'api
 export async function setAIProviderConfig(
   config: Omit<AIProviderConfig, 'apiKey'>,
 ): Promise<void> {
-  await AsyncStorage.setItem(KEYS.aiProvider, JSON.stringify(config));
+  await Storage.setItem(KEYS.aiProvider, JSON.stringify(config));
 }
 
 export async function isDemoMode(): Promise<boolean> {
-  const value = await AsyncStorage.getItem(KEYS.demoMode);
+  const value = await Storage.getItem(KEYS.demoMode);
   return value === 'true';
 }
 
 export async function setDemoMode(enabled: boolean): Promise<void> {
-  await AsyncStorage.setItem(KEYS.demoMode, enabled ? 'true' : 'false');
+  await Storage.setItem(KEYS.demoMode, enabled ? 'true' : 'false');
 }
 
 export async function getTrustDevice(): Promise<boolean> {
-  const value = await AsyncStorage.getItem(KEYS.trustDevice);
+  const value = await Storage.getItem(KEYS.trustDevice);
   return value !== 'false';
 }
 
 export async function setTrustDevice(enabled: boolean): Promise<void> {
-  await AsyncStorage.setItem(KEYS.trustDevice, enabled ? 'true' : 'false');
+  await Storage.setItem(KEYS.trustDevice, enabled ? 'true' : 'false');
 }

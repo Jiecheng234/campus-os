@@ -1,4 +1,8 @@
-import 'react-native-get-random-values';
+try {
+  import 'react-native-get-random-values';
+} catch {
+  // HarmonyOS fallback: crypto.getRandomValues is built into ArkTS runtime
+}
 
 declare global {
   var Buffer: any;
@@ -22,7 +26,7 @@ if (typeof globalAny.Buffer === 'undefined') {
     const {Buffer: Buf} = require('buffer');
     globalAny.Buffer = Buf;
   } catch {
-    // Buffer polyfill 不可用时降级：GBK 编码功能将不可用但 App 不崩溃
+    // Buffer polyfill unavailable: GBK encoding disabled but app does not crash
   }
 }
 

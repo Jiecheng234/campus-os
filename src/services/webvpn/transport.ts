@@ -1,4 +1,4 @@
-import CookieManager from '@react-native-cookies/cookies';
+import { CookieManager } from '../../storage/cookieManager';
 import {USER_AGENT, WEBVPN_ROOT_URL} from './constants';
 import {parseUrlToWebVPN} from './parseUrl';
 

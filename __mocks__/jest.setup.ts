@@ -24,3 +24,14 @@ jest.mock('react-native-keychain', () => ({
   getGenericPassword: jest.fn(async () => null),
   resetGenericPassword: jest.fn(async () => true),
 }));
+
+// Mock CookieManager for tests
+jest.mock('@react-native-cookies/cookies', () => ({
+  default: {
+    get: jest.fn(async () => ({})),
+    set: jest.fn(async () => {}),
+    setFromResponse: jest.fn(async () => {}),
+    clearAll: jest.fn(async () => {}),
+    flush: jest.fn(async () => {}),
+  },
+}));
