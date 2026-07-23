@@ -1,16 +1,20 @@
 /**
- * Index — 底部 6 标签页导航容器
+ * Index — 底部 6 标签页导航容器 + 登录门控
  */
 import { Theme } from './Theme';
 import { HomePage } from './HomePage';
 import { SchedulePage } from './SchedulePage';
 import { SettingsPage } from './SettingsPage';
 import { PlaceholderPage } from './PlaceholderPage';
+import { LoginPage } from './LoginPage';
+import { LearningPage } from './LearningPage';
+import { CampusPage } from './CampusPage';
 
 @Entry
 @Component
 struct Index {
   @State currentIndex: number = 0;
+  @State isLoggedIn: boolean = false;
   private tabTitles: string[] = ['首页', '学习', '课表', '校园', 'AI', '设置'];
   private tabIcons: string[] = ['🏠', '📚', '📅', '🏫', '🤖', '⚙️'];
 
@@ -33,7 +37,8 @@ struct Index {
     })
   }
 
-  build() {
+  @Builder
+  MainTabs() {
     Tabs({
       barPosition: BarPosition.End,
       index: this.currentIndex
@@ -44,7 +49,7 @@ struct Index {
       .tabBar(this.TabBarBuilder(this.tabTitles[0], this.tabIcons[0], 0))
 
       TabContent() {
-        PlaceholderPage({ icon: '📚', title: '学习' })
+        LearningPage()
       }
       .tabBar(this.TabBarBuilder(this.tabTitles[1], this.tabIcons[1], 1))
 
@@ -54,7 +59,7 @@ struct Index {
       .tabBar(this.TabBarBuilder(this.tabTitles[2], this.tabIcons[2], 2))
 
       TabContent() {
-        PlaceholderPage({ icon: '🏫', title: '校园' })
+        CampusPage()
       }
       .tabBar(this.TabBarBuilder(this.tabTitles[3], this.tabIcons[3], 3))
 
@@ -76,5 +81,15 @@ struct Index {
     .onChange((index: number) => {
       this.currentIndex = index;
     })
+  }
+
+  build() {
+    if (this.isLoggedIn) {
+      this.MainTabs()
+    } else {
+      LoginPage({ onLoginSuccess: () => {
+        this.isLoggedIn = true;
+      } })
+    }
   }
 }

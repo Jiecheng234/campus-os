@@ -7,18 +7,31 @@
         "material": {
           "certpath": "C:\\Users\\wangj\\.ohos\\config\\default_harmony_RbB3eTRCCXoKNonq-A3qlU2TYVOVB7V6gAFZz7Nq72s=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001B7685B32C670C56213E78146225C9F2DC089F6556F17D19E02DF6A63EA6A185DBD90BD197F7D2F8",
+          "keyPassword": "0000001BEEA47360DDF89B83DEE7214DF9687D3C0529BDC73B48B098D918B1DD2E457811A0924EE3C346EE",
           "profile": "C:\\Users\\wangj\\.ohos\\config\\default_harmony_RbB3eTRCCXoKNonq-A3qlU2TYVOVB7V6gAFZz7Nq72s=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\wangj\\.ohos\\config\\default_harmony_RbB3eTRCCXoKNonq-A3qlU2TYVOVB7V6gAFZz7Nq72s=.p12",
-          "storePassword": "0000001BDB1987E9B11080019EF7C9C213AA43C03503AE2CE3103B434BEF7FC3ED518B6AD08D3B4A6F057D"
+          "storePassword": "0000001B8D9D91AA2B5735B7AED1571E689FA45A80B11CAC15D384C8E1E5E226DB32F37CAEF6BFC53E4271"
+        }
+      },
+      {
+        "name": "debug",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\wangj\\.ohos\\config\\debug_harmony_RbB3eTRCCXoKNonq-A3qlU2TYVOVB7V6gAFZz7Nq72s=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BA2D41C74A25BABEABEF2CECA41ECA0041B859CD9D383E1FA75A825834546080BCF6D41D70D4D76",
+          "profile": "C:\\Users\\wangj\\.ohos\\config\\debug_harmony_RbB3eTRCCXoKNonq-A3qlU2TYVOVB7V6gAFZz7Nq72s=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\wangj\\.ohos\\config\\debug_harmony_RbB3eTRCCXoKNonq-A3qlU2TYVOVB7V6gAFZz7Nq72s=.p12",
+          "storePassword": "0000001B819C63F4C879B149231048D5DDADF931B15BB3B62ACDC9D5F4521AB7942AF94DBCD6BB273B7C48"
         }
       }
     ],
     "products": [
       {
         "name": "default",
-        "signingConfig": "default",
+        "signingConfig": "debug",
         "targetSdkVersion": "6.1.1(24)",
         "compatibleSdkVersion": "6.1.1(24)",
         "runtimeOS": "HarmonyOS",

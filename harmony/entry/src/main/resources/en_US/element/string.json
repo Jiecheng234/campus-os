@@ -30,19 +30,19 @@
     },
     {
       "name": "tab_home",
-      "value": "首页"
+      "value": "Home"
     },
     {
       "name": "tab_learning",
-      "value": "学习"
+      "value": "Learn"
     },
     {
       "name": "tab_schedule",
-      "value": "日程"
+      "value": "Schedule"
     },
     {
       "name": "tab_campus",
-      "value": "校园"
+      "value": "Campus"
     },
     {
       "name": "tab_ai",
@@ -50,243 +50,243 @@
     },
     {
       "name": "tab_settings",
-      "value": "设置"
+      "value": "Settings"
     },
     {
       "name": "login_title",
-      "value": "清华校园 AI 操作系统"
+      "value": "Tsinghua Campus AI OS"
     },
     {
       "name": "login_student_id",
-      "value": "学生证号"
+      "value": "Student ID"
     },
     {
       "name": "login_password",
-      "value": "密码"
+      "value": "Password"
     },
     {
       "name": "login_button",
-      "value": "登录"
+      "value": "Login"
     },
     {
       "name": "login_demo_mode",
-      "value": "演示模式"
+      "value": "Demo Mode"
     },
     {
       "name": "login_2fa_title",
-      "value": "双因子认证"
+      "value": "Two-Factor Auth"
     },
     {
       "name": "login_2fa_code",
-      "value": "验证码"
+      "value": "Verification Code"
     },
     {
       "name": "login_2fa_verify",
-      "value": "验证"
+      "value": "Verify"
     },
     {
       "name": "login_error_credentials",
-      "value": "学号或密码错误"
+      "value": "Invalid student ID or password"
     },
     {
       "name": "home_greeting_morning",
-      "value": "早上好"
+      "value": "Good Morning"
     },
     {
       "name": "home_greeting_afternoon",
-      "value": "下午好"
+      "value": "Good Afternoon"
     },
     {
       "name": "home_greeting_evening",
-      "value": "晚上好"
+      "value": "Good Evening"
     },
     {
       "name": "home_today_courses",
-      "value": "今日课程"
+      "value": "Today's Courses"
     },
     {
       "name": "home_tasks",
-      "value": "待处理任务"
+      "value": "Pending Tasks"
     },
     {
       "name": "home_unread",
-      "value": "未读通知"
+      "value": "Unread"
     },
     {
       "name": "home_no_courses",
-      "value": "今天暂无课程安排"
+      "value": "No classes today"
     },
     {
       "name": "home_no_ddl",
-      "value": "暂无待办 DDL"
+      "value": "No pending deadlines"
     },
     {
       "name": "home_quick_classroom",
-      "value": "查空教室"
+      "value": "Classrooms"
     },
     {
       "name": "home_quick_library",
-      "value": "图书馆座位"
+      "value": "Library"
     },
     {
       "name": "home_quick_ddl",
-      "value": "添加 DDL"
+      "value": "Add DDL"
     },
     {
       "name": "home_coming_soon",
-      "value": "即将接入"
+      "value": "Coming Soon"
     },
     {
       "name": "learning_title",
-      "value": "学习"
+      "value": "Learning"
     },
     {
       "name": "learning_tab_courses",
-      "value": "课程"
+      "value": "Courses"
     },
     {
       "name": "learning_tab_homework",
-      "value": "作业"
+      "value": "Homework"
     },
     {
       "name": "learning_tab_notifications",
-      "value": "通知"
+      "value": "Notices"
     },
     {
       "name": "learning_tab_files",
-      "value": "文件"
+      "value": "Files"
     },
     {
       "name": "learning_add_ddl",
-      "value": "添加 DDL"
+      "value": "Add DDL"
     },
     {
       "name": "learning_ddl_title",
-      "value": "标题"
+      "value": "Title"
     },
     {
       "name": "learning_ddl_date",
-      "value": "日期"
+      "value": "Date"
     },
     {
       "name": "learning_ddl_time",
-      "value": "时间"
+      "value": "Time"
     },
     {
       "name": "learning_ddl_course",
-      "value": "课程"
+      "value": "Course"
     },
     {
       "name": "learning_ddl_note",
-      "value": "备注"
+      "value": "Note"
     },
     {
       "name": "learning_cancel",
-      "value": "取消"
+      "value": "Cancel"
     },
     {
       "name": "learning_save",
-      "value": "保存"
+      "value": "Save"
     },
     {
       "name": "learning_empty_homework",
-      "value": "暂无作业"
+      "value": "No homework"
     },
     {
       "name": "learning_empty_files",
-      "value": "暂无文件"
+      "value": "No files"
     },
     {
       "name": "schedule_title",
-      "value": "课表"
+      "value": "Schedule"
     },
     {
       "name": "schedule_week",
-      "value": "第 {week} 周"
+      "value": "Week {week}"
     },
     {
       "name": "schedule_no_courses",
-      "value": "暂无课程"
+      "value": "No courses"
     },
     {
       "name": "campus_title",
-      "value": "校园服务"
+      "value": "Campus Services"
     },
     {
       "name": "campus_classroom",
-      "value": "空教室查询"
+      "value": "Classrooms"
     },
     {
       "name": "campus_grades",
-      "value": "成绩查询"
+      "value": "Grades"
     },
     {
       "name": "campus_petest",
-      "value": "体测成绩"
+      "value": "PE Test"
     },
     {
       "name": "campus_dormitory",
-      "value": "宿舍服务"
+      "value": "Dormitory"
     },
     {
       "name": "campus_finance",
-      "value": "校园财务"
+      "value": "Finance"
     },
     {
       "name": "campus_network",
-      "value": "校园网络"
+      "value": "Network"
     },
     {
       "name": "campus_reservation",
-      "value": "场馆预约"
+      "value": "Reservations"
     },
     {
       "name": "campus_mail",
-      "value": "校园邮件"
+      "value": "Mail"
     },
     {
       "name": "campus_classroom_subtitle",
-      "value": "查询空闲教室"
+      "value": "Find available rooms"
     },
     {
       "name": "campus_grades_subtitle",
-      "value": "查看成绩绩点"
+      "value": "View grades & GPA"
     },
     {
       "name": "campus_coming_soon",
-      "value": "即将接入"
+      "value": "Coming Soon"
     },
     {
       "name": "classroom_back",
-      "value": "← 返回"
+      "value": "\u2190 Back"
     },
     {
       "name": "classroom_title",
-      "value": "空教室查询"
+      "value": "Classroom Finder"
     },
     {
       "name": "classroom_available",
-      "value": "空闲"
+      "value": "Available"
     },
     {
       "name": "classroom_occupied",
-      "value": "占用"
+      "value": "Occupied"
     },
     {
       "name": "classroom_exam",
-      "value": "考试"
+      "value": "Exam"
     },
     {
       "name": "classroom_borrowed",
-      "value": "借用"
+      "value": "Borrowed"
     },
     {
       "name": "grades_back",
-      "value": "← 返回"
+      "value": "\u2190 Back"
     },
     {
       "name": "grades_title",
-      "value": "成绩查询"
+      "value": "Grades"
     },
     {
       "name": "grades_gpa",
@@ -294,31 +294,31 @@
     },
     {
       "name": "grades_semester",
-      "value": "2025—2026 春季学期"
+      "value": "2025\u20132026 Spring Semester"
     },
     {
       "name": "grades_credits",
-      "value": "{credits} 学分"
+      "value": "{credits} Credits"
     },
     {
       "name": "settings_title",
-      "value": "设置"
+      "value": "Settings"
     },
     {
       "name": "settings_language",
-      "value": "语言"
+      "value": "Language"
     },
     {
       "name": "settings_ai_memory",
-      "value": "AI 记忆"
+      "value": "AI Memory"
     },
     {
       "name": "settings_action_records",
-      "value": "操作记录"
+      "value": "Action Records"
     },
     {
       "name": "settings_monitors",
-      "value": "智能监控"
+      "value": "Monitors"
     },
     {
       "name": "settings_version",
@@ -326,15 +326,15 @@
     },
     {
       "name": "settings_demo_mode",
-      "value": "演示模式"
+      "value": "Demo Mode"
     },
     {
       "name": "settings_trust_device",
-      "value": "信任设备"
+      "value": "Trust Device"
     },
     {
       "name": "settings_ai_provider",
-      "value": "AI 模型"
+      "value": "AI Model"
     },
     {
       "name": "settings_api_key",
@@ -342,59 +342,59 @@
     },
     {
       "name": "ai_title",
-      "value": "AI 助手"
+      "value": "AI Assistant"
     },
     {
       "name": "ai_placeholder",
-      "value": "问我关于校园的任何问题..."
+      "value": "Ask me anything about campus..."
     },
     {
       "name": "ai_new_conversation",
-      "value": "新建对话"
+      "value": "New Chat"
     },
     {
       "name": "ai_send",
-      "value": "发送"
+      "value": "Send"
     },
     {
       "name": "ai_thinking",
-      "value": "思考中..."
+      "value": "Thinking..."
     },
     {
       "name": "common_confirm",
-      "value": "确认"
+      "value": "Confirm"
     },
     {
       "name": "common_cancel",
-      "value": "取消"
+      "value": "Cancel"
     },
     {
       "name": "common_back",
-      "value": "← 返回"
+      "value": "\u2190 Back"
     },
     {
       "name": "common_retry",
-      "value": "重试"
+      "value": "Retry"
     },
     {
       "name": "common_loading",
-      "value": "加载中..."
+      "value": "Loading..."
     },
     {
       "name": "common_offline",
-      "value": "网络不可用"
+      "value": "No network"
     },
     {
       "name": "common_error",
-      "value": "出错了"
+      "value": "Error"
     },
     {
       "name": "common_delete",
-      "value": "删除"
+      "value": "Delete"
     },
     {
       "name": "common_logout",
-      "value": "退出登录"
+      "value": "Logout"
     }
   ]
 }

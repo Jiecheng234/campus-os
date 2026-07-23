@@ -1,0 +1,23 @@
+const STORAGE_KEY_PREFIX: string = '@campusos/';
+
+const COOKIE_STORAGE_KEY: string = STORAGE_KEY_PREFIX + 'webvpn_cookies';
+const LEARNING_CACHE_KEY: string = STORAGE_KEY_PREFIX + 'learning_schedule_cache';
+const CONVERSATIONS_KEY: string = STORAGE_KEY_PREFIX + 'ai_conversations';
+const PERSONAL_EVENTS_KEY: string = STORAGE_KEY_PREFIX + 'personal_events';
+const MANUAL_DEADLINES_KEY: string = STORAGE_KEY_PREFIX + 'manual_deadlines';
+const AI_MEMORY_KEY: string = STORAGE_KEY_PREFIX + 'ai_memory';
+const WORKFLOW_KEY: string = STORAGE_KEY_PREFIX + 'workflows';
+const ACTION_AUDIT_KEY: string = STORAGE_KEY_PREFIX + 'action_audit';
+const SETTINGS_KEY: string = STORAGE_KEY_PREFIX + 'settings';
+
+export const StorageKeys = {
+  WEBVPN_COOKIES: COOKIE_STORAGE_KEY,
+  LEARNING_CACHE: LEARNING_CACHE_KEY,
+  AI_CONVERSATIONS: CONVERSATIONS_KEY,
+  PERSONAL_EVENTS: PERSONAL_EVENTS_KEY,
+  MANUAL_DEADLINES: MANUAL_DEADLINES_KEY,
+  AI_MEMORY: AI_MEMORY_KEY,
+  WORKFLOWS: WORKFLOW_KEY,
+  ACTION_AUDIT: ACTION_AUDIT_KEY,
+  SETTINGS: SETTINGS_KEY,
+};
