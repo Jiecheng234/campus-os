@@ -106,18 +106,7 @@ export class TsinghuaAuthService {
 
     const sm2Key: string = extractSm2PublicKey(oauthPage);
     this.csrfToken = extractCsrfToken(oauthPage);
-    const formAction: string = extractFormAction(oauthPage);
-    let postUrl: string = WEBVPN_OAUTH_LOGIN_URL;
-    if (formAction.length > 0) {
-      if (formAction.startsWith('http')) {
-        postUrl = formAction;
-      } else if (formAction.startsWith('/')) {
-        postUrl = WEBVPN_BASE_URL + formAction;
-      } else {
-        postUrl = WEBVPN_OAUTH_LOGIN_URL + '/' + formAction;
-      }
-    }
-    this.addTrace('form_action:' + formAction + ' post_url:' + postUrl);
+    this.addTrace('sm2_key_extracted');
 
     if (sm2Key.length === 0) {
       const result: LoginResult = new LoginResult();
@@ -144,10 +133,10 @@ export class TsinghuaAuthService {
       formData['_csrf'] = this.csrfToken;
     }
 
-    this.addTrace('posting_login to:' + postUrl);
+    this.addTrace('posting_login');
     let loginResp: HttpResponse;
     try {
-      loginResp = await this.transport.postLoginForm(formData, postUrl);
+      loginResp = await this.transport.postLoginForm(formData);
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
