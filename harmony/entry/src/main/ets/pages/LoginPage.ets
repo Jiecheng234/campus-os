@@ -42,12 +42,12 @@ export struct LoginPage {
         this.auth.selectedMethod = 'wechat';
       } else {
         this.auth.status = AuthStatus.ERROR;
-        this.auth.error = result.message.length > 0 ? result.message : '登录失败，请重试';
+        this.auth.error = '认证服务器返回错误：' + result.message + '\n\n请使用「演示模式」进入（无需账号）';
       }
     }).catch((err: Error) => {
       this.isSubmitting = false;
       this.auth.status = AuthStatus.ERROR;
-      this.auth.error = err.message.length > 0 ? err.message : '网络错误，请确认已连接校园网';
+      this.auth.error = '网络不可达\n\n真实登录需要清华校园网或 WebVPN。\n请使用「演示模式」进入（无需账号）';
     });
   }
 
@@ -260,17 +260,17 @@ export struct LoginPage {
                 this.handleLogin();
               })
 
-            Button('演示模式')
+            Button('演示模式（无需账号）')
               .type(ButtonType.Normal)
               .width('100%')
               .height(52)
               .fontSize(15)
               .fontWeight(FontWeight.Medium)
-              .fontColor(Theme.text)
-              .backgroundColor(Theme.surface)
-              .border({ width: 1, color: Theme.border })
+              .fontColor(Theme.primary)
+              .backgroundColor(Theme.surfaceAlt)
+              .border({ width: 1.5, color: Theme.primary })
               .borderRadius(20)
-              .margin({ top: 12 })
+              .margin({ top: 16 })
               .onClick(() => {
                 this.handleDemo();
               })
@@ -283,6 +283,9 @@ export struct LoginPage {
           Text(this.auth.error)
             .fontSize(13)
             .fontColor(Theme.error)
+            .maxLines(6)
+            .textAlign(TextAlign.Center)
+            .width('90%')
             .margin({ top: 16 })
         }
 

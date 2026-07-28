@@ -121,8 +121,7 @@ export class TsinghuaAuthService {
     if (oauthPage.indexOf('sm2publicKey') < 0) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
-      const preview: string = oauthPage.substring(0, 200);
-      result.message = '无法获取登录页面, last_url=' + lastUrl.substring(0, 80) + ' body=' + preview;
+      result.message = '认证链异常（需清华校园网）；详细信息：' + oauthPage.substring(0, 80);
       result.trace = this.trace;
       return result;
     }
