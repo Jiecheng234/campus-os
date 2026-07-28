@@ -45,28 +45,6 @@ function uint8ArrayToHex(data: Uint8Array): string {
   return result;
 }
 
-function genSM2CommonSpec(): cryptoFramework.ECCCommonParamsSpec {
-  const fieldFp: cryptoFramework.ECFieldFp = {
-    fieldType: 'Fp',
-    p: BigInt('0xFFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFF')
-  };
-  const G: cryptoFramework.Point = {
-    x: BigInt('0x32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7'),
-    y: BigInt('0xBC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0')
-  };
-  const spec: cryptoFramework.ECCCommonParamsSpec = {
-    algName: 'ECC',
-    specType: cryptoFramework.AsyKeySpecType.COMMON_PARAMS_SPEC,
-    field: fieldFp,
-    a: BigInt('0xFFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFC'),
-    b: BigInt('0x28E9FA9E9D9F5E344D5A9E4BCF6509A7F39789F515AB8F92DDBCBD414D940E93'),
-    g: G,
-    n: BigInt('0xFFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFF7203DF6B21C6052B53BBF40939D54123'),
-    h: 1
-  };
-  return spec;
-}
-
 async function genPubKeyFromRaw(keyHex: string): Promise<cryptoFramework.PubKey | undefined> {
   let hex: string = keyHex.trim();
   if (hex.startsWith(SM2_PREFIX)) {
@@ -82,9 +60,9 @@ async function genPubKeyFromRaw(keyHex: string): Promise<cryptoFramework.PubKey 
     y: hexToBigInt(yHex)
   };
   const pubKeySpec: cryptoFramework.ECCPubKeySpec = {
-    params: genSM2CommonSpec(),
+    params: cryptoFramework.ECCKeyUtil.genECCCommonParamsSpec('NID_sm2'),
     pk: pk,
-    algName: 'ECC',
+    algName: 'SM2',
     specType: cryptoFramework.AsyKeySpecType.PUBLIC_KEY_SPEC
   };
   const generator: cryptoFramework.AsyKeyGeneratorBySpec = cryptoFramework.createAsyKeyGeneratorBySpec(pubKeySpec);
