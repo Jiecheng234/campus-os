@@ -34,6 +34,7 @@ export struct LoginPage {
       this.isSubmitting = false;
       if (result.type === LoginResultType.SUCCESS) {
         this.auth.status = AuthStatus.AUTHENTICATED;
+        promptAction.showToast({ message: result.message, duration: 3000 });
         this.onLoginSuccess();
       } else if (result.type === LoginResultType.TWO_FACTOR) {
         this.auth.status = AuthStatus.TWO_FACTOR;

@@ -186,8 +186,10 @@ export class TsinghuaAuthService {
     try {
       await this.activateLearnSession(credentials);
       this.addTrace('learn_activated');
+      successResult.message = '登录成功 (learn已激活)';
     } catch (e) {
       this.addTrace('learn_fail:' + (e instanceof Error ? e.message : ''));
+      successResult.message = '登录成功 (learn未激活: ' + (e instanceof Error ? e.message : '') + ')';
     }
 
     return successResult;
@@ -199,7 +201,7 @@ export class TsinghuaAuthService {
 
     const pk: string = extractSm2PublicKey(formHtml);
     if (pk.length === 0) {
-      throw new Error('no sm2 key in learn form');
+      throw new Error('no_sm2;len=' + formHtml.length);
     }
 
     const epw: string = await encryptPassword(credentials.password, pk);
@@ -228,7 +230,7 @@ export class TsinghuaAuthService {
 
     const callbackUrl: string = extractFirstAnchorHref(response);
     if (callbackUrl.length === 0) {
-      throw new Error('no callback in learn response');
+      throw new Error('no_cb;len=' + response.length);
     }
 
     const parts: string[] = callbackUrl.split('=');
