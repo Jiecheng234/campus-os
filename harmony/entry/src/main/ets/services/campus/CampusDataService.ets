@@ -1,8 +1,15 @@
 import { HttpClient, HttpResponse } from '../HttpClient';
 import { CookieJar } from '../CookieJar';
-import { TsinghuaAuthService } from '../auth/TsinghuaAuthService';
+import { encryptPassword, extractSm2PublicKey, extractFirstAnchorHref } from '../../utils/SM2Crypto';
+import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
 
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
+const ID_HOST: string = 'https://id.tsinghua.edu.cn';
+const ID_LOGIN_URL: string = ID_HOST + '/do/off/ui/auth/login/check';
+const ID_BASE_URL: string = ID_HOST + '/do/off/ui/auth/login/form/';
+const LEARN_LOGIN_YYFWID: string = 'bb5df85216504820be7bba2b0ae1535b/0';
+const LOGIN_SUCCESS_MARK: string = '登录成功';
+
 const SCHEDULE_BASE: string = 'https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290';
 
 class CourseRaw {
@@ -33,9 +40,65 @@ export class CampusDataService {
       return true;
     }
     try {
-      await this.http.get(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry');
-      this.learnReady = true;
-      return true;
+      const creds: SecureCredentials | undefined = await SecureStorage.getCredentials();
+      if (creds === undefined) {
+        return false;
+      }
+
+      const formUrl: string = ID_BASE_URL + LEARN_LOGIN_YYFWID;
+      const formHtml: string = await this.http.get(formUrl).then((r: HttpResponse) => r.body);
+
+      const pk: string = extractSm2PublicKey(formHtml);
+      if (pk.length === 0) {
+        return false;
+      }
+
+      const epw: string = await encryptPassword(creds.password, pk);
+      if (epw.length === 0) {
+        return false;
+      }
+
+      const formData: Record<string, string> = {
+        'i_user': creds.studentId,
+        'i_pass': epw,
+        'fingerPrint': '',
+        'fingerGenPrint': '',
+        'fingerGenPrint3': '',
+        'i_captcha': '',
+      };
+
+      let response: string = '';
+      for (let i: number = 0; i < 2; i++) {
+        response = await this.http.postForm(ID_LOGIN_URL, formData).then((r: HttpResponse) => r.body);
+        if (response.indexOf(LOGIN_SUCCESS_MARK) >= 0) {
+          break;
+        }
+      }
+
+      const callbackUrl: string = extractFirstAnchorHref(response);
+      if (callbackUrl.length === 0) {
+        return false;
+      }
+
+      const parts: string[] = callbackUrl.split('=');
+      const ticket: string = parts[parts.length - 1];
+      if (ticket.length === 0) {
+        return false;
+      }
+
+      await this.http.get(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry?ticket=' + ticket);
+      const homeHtml: string = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/').then((r: HttpResponse) => r.body);
+
+      const csrfPattern: string = '&_csrf=(\\S+?)["\']';
+      const csrfRe: RegExp = new RegExp(csrfPattern, 'g');
+      const csrfMatch = csrfRe.exec(homeHtml);
+      if (csrfMatch !== null && csrfMatch.length >= 2) {
+        this.csrfToken = csrfMatch[1];
+        this.learnReady = true;
+        return true;
+      }
+
+      return false;
     } catch (e) {
       return false;
     }
@@ -45,18 +108,7 @@ export class CampusDataService {
     if (this.csrfToken.length > 0) {
       return this.csrfToken;
     }
-    try {
-      const resp: HttpResponse = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/');
-      const body: string = resp.body;
-      const pattern: string = '_csrf"\\s+value\\s*=\\s*"([^"]+)"';
-      const re: RegExp = new RegExp(pattern, 'i');
-      const match = re.exec(body);
-      if (match !== null && match.length >= 2) {
-        this.csrfToken = match[1];
-      }
-    } catch (e) {
-      // ignore
-    }
+    await this.activateLearn();
     return this.csrfToken;
   }
 
