@@ -7,6 +7,8 @@ import { FinancePage } from './campus/FinancePage';
 import { NetworkPage } from './campus/NetworkPage';
 import { MailPage } from './campus/MailPage';
 import { ReservationPage } from './campus/ReservationPage';
+import { NewsPage } from './campus/NewsPage';
+import { ProgramPage } from './campus/ProgramPage';
 
 class CampusEntry {
   key: string = '';
@@ -79,6 +81,12 @@ export struct CampusPage {
     const e8: CampusEntry = new CampusEntry();
     e8.icon = '✉️'; e8.title = '校园邮件'; e8.subtitle = '清华邮箱'; e8.action = 'mail';
     this.entries.push(e8);
+    const e9: CampusEntry = new CampusEntry();
+    e9.icon = '📰'; e9.title = '校园新闻'; e9.subtitle = '清华快讯'; e9.action = 'news';
+    this.entries.push(e9);
+    const e10: CampusEntry = new CampusEntry();
+    e10.icon = '🎓'; e10.title = '培养方案'; e10.subtitle = '学分完成度'; e10.action = 'program';
+    this.entries.push(e10);
   }
 
   handleEntryClick(entry: CampusEntry): void {
@@ -102,6 +110,10 @@ export struct CampusPage {
       ReservationPage({ onBack: () => { this.subScreen = ''; } })
     } else if (this.subScreen === 'mail') {
       MailPage({ onBack: () => { this.subScreen = ''; } })
+    } else if (this.subScreen === 'news') {
+      NewsPage({ onBack: () => { this.subScreen = ''; } })
+    } else if (this.subScreen === 'program') {
+      ProgramPage({ onBack: () => { this.subScreen = ''; } })
     } else {
       Scroll() {
         Column() {
