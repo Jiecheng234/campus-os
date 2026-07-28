@@ -85,18 +85,18 @@ export class TsinghuaAuthService {
     this.cachedCredentials = credentials;
 
     let oauthPage: string = '';
+    let lastUrl: string = '';
     try {
-      const loginFormUrl: string = wrapWebVPNUrl(ID_LOGIN_URL);
-      this.addTrace('lbredirect:' + loginFormUrl);
-
       this.addTrace('warmup');
-      await this.http.get(loginFormUrl);
+      await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
 
+      lastUrl = WEBVPN_OAUTH_LOGIN_URL;
       this.addTrace('fetch_form');
-      let formResp: HttpResponse = await this.http.get(loginFormUrl);
+      let formResp: HttpResponse = await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
       oauthPage = formResp.body;
+      this.addTrace('body_len:' + oauthPage.length + ' code:' + formResp.statusCode);
 
-      for (let hop: number = 0; hop < 8; hop++) {
+      for (let hop: number = 0; hop < 10; hop++) {
         if (oauthPage.indexOf('sm2publicKey') >= 0) {
           break;
         }
@@ -104,11 +104,12 @@ export class TsinghuaAuthService {
         if (nextUrl.length === 0) {
           break;
         }
-        this.addTrace('soft_redirect_' + hop);
+        lastUrl = nextUrl;
+        this.addTrace('follow_hop' + hop);
         formResp = await this.http.get(nextUrl);
         oauthPage = formResp.body;
       }
-      this.addTrace('form_len:' + oauthPage.length);
+      this.addTrace('done hops, final_len:' + oauthPage.length);
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
@@ -120,7 +121,8 @@ export class TsinghuaAuthService {
     if (oauthPage.indexOf('sm2publicKey') < 0) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
-      result.message = '无法获取登录页面: ' + oauthPage.substring(0, 100);
+      const preview: string = oauthPage.substring(0, 200);
+      result.message = '无法获取登录页面, last_url=' + lastUrl.substring(0, 80) + ' body=' + preview;
       result.trace = this.trace;
       return result;
     }
