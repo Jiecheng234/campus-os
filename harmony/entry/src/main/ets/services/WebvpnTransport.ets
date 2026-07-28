@@ -25,12 +25,13 @@ export class WebvpnTransport {
     return resp.body;
   }
 
-  async postLoginForm(formData: Record<string, string>): Promise<HttpResponse> {
+  async postLoginForm(formData: Record<string, string>, customUrl?: string): Promise<HttpResponse> {
+    const url: string = customUrl !== undefined ? customUrl : WEBVPN_OAUTH_LOGIN_URL;
     const headers: Record<string, string> = {
       'Referer': WEBVPN_OAUTH_LOGIN_URL,
       'Origin': WEBVPN_BASE_URL,
     };
-    return this.http.postForm(WEBVPN_OAUTH_LOGIN_URL, formData, headers);
+    return this.http.postForm(url, formData, headers);
   }
 
   async post2FAForm(formData: Record<string, string>): Promise<HttpResponse> {

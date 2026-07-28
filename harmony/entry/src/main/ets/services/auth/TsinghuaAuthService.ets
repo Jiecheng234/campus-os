@@ -4,7 +4,7 @@ import { WebvpnTransport } from '../WebvpnTransport';
 import { WEBVPN_OAUTH_LOGIN_URL, WEBVPN_BASE_URL } from '../WebvpnConstants';
 import {
   encryptPassword, extractSm2PublicKey, extractCsrfToken,
-  extractFirstAnchorHref, extractMsgNote
+  extractFirstAnchorHref, extractMsgNote, extractFormAction
 } from '../../utils/SM2Crypto';
 import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
@@ -90,7 +90,7 @@ export class TsinghuaAuthService {
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
-      result.message = '无法连接校园网，请确认已连接清华网络或使用演示模式';
+      result.message = '无法连接校园网: ' + (e instanceof Error ? e.message : '网络不可达');
       result.trace = this.trace;
       return result;
     }
@@ -106,7 +106,9 @@ export class TsinghuaAuthService {
 
     const sm2Key: string = extractSm2PublicKey(oauthPage);
     this.csrfToken = extractCsrfToken(oauthPage);
-    this.addTrace('sm2_key_extracted');
+    const formAction: string = extractFormAction(oauthPage);
+    const postUrl: string = formAction.length > 0 ? formAction : WEBVPN_OAUTH_LOGIN_URL;
+    this.addTrace('sm2_key_extracted form_action:' + postUrl);
 
     if (sm2Key.length === 0) {
       const result: LoginResult = new LoginResult();
@@ -133,14 +135,14 @@ export class TsinghuaAuthService {
       formData['_csrf'] = this.csrfToken;
     }
 
-    this.addTrace('posting_login');
+    this.addTrace('posting_login to:' + postUrl);
     let loginResp: HttpResponse;
     try {
-      loginResp = await this.transport.postLoginForm(formData);
+      loginResp = await this.transport.postLoginForm(formData, postUrl);
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
-      result.message = '登录请求失败，请检查校园网连接';
+      result.message = '登录请求失败: ' + (e instanceof Error ? e.message : '未知错误');
       result.trace = this.trace;
       return result;
     }

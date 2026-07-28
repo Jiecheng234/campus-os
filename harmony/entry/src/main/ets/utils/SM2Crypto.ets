@@ -106,3 +106,8 @@ export function extractCsrfToken(html: string): string {
   const pattern: string = 'name\\s*=\\s*["\']_csrf["\']\\s+value\\s*=\\s*["\']([^"\']+)["\']';
   return regexCapture(html, pattern);
 }
+
+export function extractFormAction(html: string): string {
+  const pattern: string = '<form[^>]+action\\s*=\\s*["\']([^"\']+)["\']';
+  return regexCapture(html, pattern);
+}
