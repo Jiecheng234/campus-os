@@ -33,6 +33,25 @@ function getSetCookieFromHeaders(headers: Record<string, string | string[] | und
   return results;
 }
 
+function resolveUrl(baseUrl: string, relative: string): string {
+  if (relative.startsWith('http://') || relative.startsWith('https://')) {
+    return relative;
+  }
+  if (relative.startsWith('/')) {
+    let base: string = baseUrl;
+    const protoEnd: number = base.indexOf('://');
+    if (protoEnd > 0) {
+      const afterProto: string = base.substring(protoEnd + 3);
+      const slash: number = afterProto.indexOf('/');
+      if (slash > 0) {
+        base = base.substring(0, protoEnd + 3 + slash);
+      }
+    }
+    return base + relative;
+  }
+  return baseUrl + '/' + relative;
+}
+
 export class HttpClient {
   private cookieManager: CookieManager;
   private timeoutMs: number = 60000;
@@ -94,7 +113,7 @@ export class HttpClient {
       }
 
       currentMethod = 'GET';
-      currentUrl = location;
+      currentUrl = resolveUrl(currentUrl, location);
       currentBody = '';
     }
 
@@ -120,7 +139,9 @@ export class HttpClient {
       }
     };
 
-    const req: rcp.Request = new rcp.Request(url, method, reqHeaders, body, undefined, undefined, config);
+    const isGet: boolean = method === 'GET';
+    const content: string = isGet ? '' : body;
+    const req: rcp.Request = new rcp.Request(url, method, reqHeaders, content, undefined, undefined, config);
 
     try {
       const resp: rcp.Response = await this.session.fetch(req);
