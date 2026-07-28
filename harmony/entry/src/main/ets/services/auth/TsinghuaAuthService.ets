@@ -1,7 +1,5 @@
-import { CookieJar } from '../CookieJar';
 import { HttpClient, HttpResponse } from '../HttpClient';
-import { WebvpnTransport } from '../WebvpnTransport';
-import { WEBVPN_OAUTH_LOGIN_URL, WEBVPN_BASE_URL, wrapWebVPNUrl, ID_HOST_URL, ID_LOGIN_URL } from '../WebvpnConstants';
+import { WEBVPN_OAUTH_LOGIN_URL, WEBVPN_BASE_URL, wrapWebVPNUrl, ID_HOST_URL, ID_LOGIN_URL, getSubsystemUrl, SUBSYSTEM_LEARN } from '../WebvpnConstants';
 import {
   encryptPassword, extractSm2PublicKey, extractCsrfToken,
   extractFirstAnchorHref, extractMsgNote
@@ -38,14 +36,10 @@ export class TsinghuaAuthService {
   private trace: string[] = [];
   private cachedCredentials: CampusCredentials | undefined = undefined;
   private twoFactorHandler: TwoFactorHandler | undefined = undefined;
-  private cookieJar: CookieJar;
   private http: HttpClient;
-  private transport: WebvpnTransport;
 
   constructor() {
-    this.cookieJar = new CookieJar();
-    this.http = new HttpClient(this.cookieJar);
-    this.transport = new WebvpnTransport(this.http, this.cookieJar);
+    this.http = new HttpClient();
   }
 
   setTwoFactorHandler(handler: TwoFactorHandler): void {
@@ -80,7 +74,7 @@ export class TsinghuaAuthService {
   async login(credentials: CampusCredentials): Promise<LoginResult> {
     this.trace = [];
     this.addTrace('login_start');
-    this.cookieJar.clear();
+    this.http.clearSession();
 
     this.cachedCredentials = credentials;
 
@@ -184,7 +178,7 @@ export class TsinghuaAuthService {
 
     await SecureStorage.saveCredentials(credentials.studentId, credentials.password);
     this.addTrace('roaming_subsystems');
-    await this.transport.roamToAllSubsystems();
+      await this.http.get(getSubsystemUrl(SUBSYSTEM_LEARN));
 
     return successResult;
   }
@@ -195,7 +189,7 @@ export class TsinghuaAuthService {
       'authType': method,
     };
     try {
-      const resp: HttpResponse = await this.transport.post2FAForm(formData);
+      const resp: HttpResponse = await this.http.postForm(WEBVPN_OAUTH_LOGIN_URL, formData);
       this.addTrace('2fa_sent:' + String(resp.statusCode));
       return true;
     } catch (e) {
@@ -209,7 +203,7 @@ export class TsinghuaAuthService {
     const formData: Record<string, string> = {
       'authCode': code,
     };
-    const resp: HttpResponse = await this.transport.post2FAForm(formData);
+    const resp: HttpResponse = await this.http.postForm(WEBVPN_OAUTH_LOGIN_URL, formData);
     const body: string = resp.body;
 
     const errorMsg: string = extractMsgNote(body);
@@ -227,7 +221,7 @@ export class TsinghuaAuthService {
       await this.http.get(redirectUrl);
     }
 
-    await this.transport.roamToAllSubsystems();
+      await this.http.get(getSubsystemUrl(SUBSYSTEM_LEARN));
 
     if (this.cachedCredentials !== undefined) {
       await SecureStorage.saveCredentials(
@@ -244,14 +238,10 @@ export class TsinghuaAuthService {
   }
 
   async logout(): Promise<void> {
-    this.cookieJar.clear();
+    this.http.clearSession();
     this.csrfToken = '';
     this.trace = [];
     await SecureStorage.clearCredentials();
-  }
-
-  getCookieString(url: string): string {
-    return this.cookieJar.getCookieString(url);
   }
 
   getHttpClient(): HttpClient {
