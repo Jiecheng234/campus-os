@@ -5,7 +5,7 @@ import { Theme } from './Theme';
 import { HomePage } from './HomePage';
 import { SchedulePage } from './SchedulePage';
 import { SettingsPage } from './SettingsPage';
-import { PlaceholderPage } from './PlaceholderPage';
+import { AIChatPage } from './ai/AIChatPage';
 import { LoginPage } from './LoginPage';
 import { LearningPage } from './LearningPage';
 import { CampusPage } from './CampusPage';
@@ -64,7 +64,7 @@ struct Index {
       .tabBar(this.TabBarBuilder(this.tabTitles[3], this.tabIcons[3], 3))
 
       TabContent() {
-        PlaceholderPage({ icon: '🤖', title: 'AI 助手' })
+        AIChatPage()
       }
       .tabBar(this.TabBarBuilder(this.tabTitles[4], this.tabIcons[4], 4))
 
