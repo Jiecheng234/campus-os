@@ -1,4 +1,5 @@
 import { HttpClient, HttpResponse } from '../HttpClient';
+import { CookieManager } from '../CookieManager';
 import { WEBVPN_OAUTH_LOGIN_URL, WEBVPN_BASE_URL, wrapWebVPNUrl, ID_HOST_URL, ID_LOGIN_URL, getSubsystemUrl, SUBSYSTEM_LEARN } from '../WebvpnConstants';
 import {
   encryptPassword, extractSm2PublicKey, extractCsrfToken,
@@ -39,7 +40,7 @@ export class TsinghuaAuthService {
   private http: HttpClient;
 
   constructor() {
-    this.http = new HttpClient();
+    this.http = new HttpClient(new CookieManager());
   }
 
   setTwoFactorHandler(handler: TwoFactorHandler): void {
