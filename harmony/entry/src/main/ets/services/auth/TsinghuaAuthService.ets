@@ -86,11 +86,14 @@ export class TsinghuaAuthService {
 
     let oauthPage: string = '';
     try {
+      const loginFormUrl: string = wrapWebVPNUrl(ID_LOGIN_URL);
+      this.addTrace('lbredirect:' + loginFormUrl);
+
       this.addTrace('warmup');
-      await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
+      await this.http.get(loginFormUrl);
 
       this.addTrace('fetch_form');
-      let formResp: HttpResponse = await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
+      let formResp: HttpResponse = await this.http.get(loginFormUrl);
       oauthPage = formResp.body;
 
       for (let hop: number = 0; hop < 8; hop++) {
@@ -101,7 +104,7 @@ export class TsinghuaAuthService {
         if (nextUrl.length === 0) {
           break;
         }
-        this.addTrace('soft_redirect_' + hop + ':' + nextUrl.substring(0, 60));
+        this.addTrace('soft_redirect_' + hop);
         formResp = await this.http.get(nextUrl);
         oauthPage = formResp.body;
       }
