@@ -107,7 +107,7 @@ export class TsinghuaAuthService {
       return result;
     }
 
-    const encryptedPw: string = encryptPassword(credentials.password, sm2Key);
+    const encryptedPw: string = await encryptPassword(credentials.password, sm2Key);
     if (encryptedPw.length === 0) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;

@@ -1,13 +1,7 @@
-import { buffer } from '@kit.ArkTS';
+import { buffer, util } from '@kit.ArkTS';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 
 const SM2_PREFIX: string = '04';
-
-const SM2_DER_HEADER: Uint8Array = new Uint8Array([
-  0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D,
-  0x02, 0x01, 0x06, 0x08, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x82,
-  0x2D, 0x03, 0x42, 0x00
-]);
 
 function regexCapture(html: string, pattern: string): string {
   const re: RegExp = new RegExp(pattern, 'i');
@@ -31,14 +25,15 @@ export function extractSm2PublicKey(html: string): string {
   return regexCapture(html, pattern);
 }
 
-function hexToUint8Array(hex: string): Uint8Array {
-  const clean: string = hex.replace(/\s/g, '');
-  const len: number = Math.floor(clean.length / 2);
-  const bytes: Uint8Array = new Uint8Array(len);
-  for (let i: number = 0; i < len; i++) {
-    bytes[i] = parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+function hexToBigInt(hex: string): bigint {
+  if (hex.length === 0) {
+    return BigInt(0);
   }
-  return bytes;
+  return BigInt('0x' + hex);
+}
+
+function stringToUint8Array(str: string): Uint8Array {
+  return new Uint8Array(buffer.from(str, 'utf-8').buffer);
 }
 
 function uint8ArrayToHex(data: Uint8Array): string {
@@ -50,60 +45,69 @@ function uint8ArrayToHex(data: Uint8Array): string {
   return result;
 }
 
-function buildSm2DerPublicKey(rawHexKey: string): Uint8Array {
-  let keyHex: string = rawHexKey.trim();
-  if (keyHex.startsWith(SM2_PREFIX)) {
-    keyHex = keyHex.substring(2);
-  }
-  if (keyHex.length !== 128) {
-    return new Uint8Array(0);
-  }
-  const keyBytes: Uint8Array = hexToUint8Array(keyHex);
-  const bitStringHeader: Uint8Array = new Uint8Array([0x03, 0x42, 0x00, 0x04]);
-  const totalLen: number = SM2_DER_HEADER.length + bitStringHeader.length + keyBytes.length;
-  const derBytes: Uint8Array = new Uint8Array(totalLen);
-  let offset: number = 0;
-  for (let i: number = 0; i < SM2_DER_HEADER.length; i++) {
-    derBytes[offset] = SM2_DER_HEADER[i];
-    offset = offset + 1;
-  }
-  for (let i: number = 0; i < bitStringHeader.length; i++) {
-    derBytes[offset] = bitStringHeader[i];
-    offset = offset + 1;
-  }
-  for (let i: number = 0; i < keyBytes.length; i++) {
-    derBytes[offset] = keyBytes[i];
-    offset = offset + 1;
-  }
-  return derBytes;
+function genSM2CommonSpec(): cryptoFramework.ECCCommonParamsSpec {
+  const fieldFp: cryptoFramework.ECFieldFp = {
+    fieldType: 'Fp',
+    p: BigInt('0xFFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFF')
+  };
+  const G: cryptoFramework.Point = {
+    x: BigInt('0x32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7'),
+    y: BigInt('0xBC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0')
+  };
+  const spec: cryptoFramework.ECCCommonParamsSpec = {
+    algName: 'ECC',
+    specType: cryptoFramework.AsyKeySpecType.COMMON_PARAMS_SPEC,
+    field: fieldFp,
+    a: BigInt('0xFFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFFFFFFFFFFFFFC'),
+    b: BigInt('0x28E9FA9E9D9F5E344D5A9E4BCF6509A7F39789F515AB8F92DDBCBD414D940E93'),
+    g: G,
+    n: BigInt('0xFFFFFFFEFFFFFFFFFFFFFFFFFFFFFFFF7203DF6B21C6052B53BBF40939D54123'),
+    h: 1
+  };
+  return spec;
 }
 
-export function encryptPassword(password: string, publicKey: string): string {
-  const derKey: Uint8Array = buildSm2DerPublicKey(publicKey);
-  if (derKey.length === 0) {
+async function genPubKeyFromRaw(keyHex: string): Promise<cryptoFramework.PubKey | undefined> {
+  let hex: string = keyHex.trim();
+  if (hex.startsWith(SM2_PREFIX)) {
+    hex = hex.substring(2);
+  }
+  if (hex.length !== 128) {
+    return undefined;
+  }
+  const xHex: string = hex.substring(0, 64);
+  const yHex: string = hex.substring(64, 128);
+  const pk: cryptoFramework.Point = {
+    x: hexToBigInt(xHex),
+    y: hexToBigInt(yHex)
+  };
+  const pubKeySpec: cryptoFramework.ECCPubKeySpec = {
+    params: genSM2CommonSpec(),
+    pk: pk,
+    algName: 'ECC',
+    specType: cryptoFramework.AsyKeySpecType.PUBLIC_KEY_SPEC
+  };
+  const generator: cryptoFramework.AsyKeyGeneratorBySpec = cryptoFramework.createAsyKeyGeneratorBySpec(pubKeySpec);
+  const pubKey: cryptoFramework.PubKey = await generator.generatePubKey();
+  return pubKey;
+}
+
+export async function encryptPassword(password: string, publicKey: string): Promise<string> {
+  const pubKey: cryptoFramework.PubKey | undefined = await genPubKeyFromRaw(publicKey);
+  if (pubKey === undefined) {
     return '';
   }
-
-  const pubKeyBlob: cryptoFramework.DataBlob = { data: derKey };
-  const priPlaceholder: Uint8Array = new Uint8Array(50);
-  const priKeyBlob: cryptoFramework.DataBlob = { data: priPlaceholder };
-
-  const generator: cryptoFramework.AsyKeyGenerator = cryptoFramework.createAsyKeyGenerator('SM2_256');
-  let keyPair: cryptoFramework.KeyPair;
+  const plainBytes: Uint8Array = stringToUint8Array(password);
+  const plainBlob: cryptoFramework.DataBlob = { data: plainBytes };
+  let cipher: cryptoFramework.Cipher;
   try {
-    keyPair = generator.convertKeySync(pubKeyBlob, priKeyBlob);
+    cipher = cryptoFramework.createCipher('SM2_256|SM3');
+    await cipher.init(cryptoFramework.CryptoMode.ENCRYPT_MODE, pubKey, null);
+    const encryptData: cryptoFramework.DataBlob = await cipher.doFinal(plainBlob);
+    return SM2_PREFIX + uint8ArrayToHex(encryptData.data);
   } catch (e) {
     return '';
   }
-
-  const plainBytes: Uint8Array = new Uint8Array(buffer.from(password, 'utf-8').buffer);
-  const plainBlob: cryptoFramework.DataBlob = { data: plainBytes };
-
-  const cipher: cryptoFramework.Cipher = cryptoFramework.createCipher('SM2_256|SM3');
-  cipher.initSync(cryptoFramework.CryptoMode.ENCRYPT_MODE, keyPair.pubKey, null);
-  const encryptData: cryptoFramework.DataBlob = cipher.doFinalSync(plainBlob);
-
-  return SM2_PREFIX + uint8ArrayToHex(encryptData.data);
 }
 
 export function extractFirstAnchorHref(html: string): string {
