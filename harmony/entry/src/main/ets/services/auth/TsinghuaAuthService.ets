@@ -90,11 +90,15 @@ export class TsinghuaAuthService {
 
     let oauthPage: string = '';
     try {
-      let currentUrl: string = WEBVPN_OAUTH_LOGIN_URL;
-      for (let hop: number = 0; hop < 10; hop++) {
+      const baseUrl: string = 'https://id.tsinghua.edu.cn/o/authorize?client_id=WEBVPN&response_type=code';
+      const startUrl: string = wrapWebVPNUrl(baseUrl);
+      this.addTrace('start_url:' + startUrl);
+
+      let currentUrl: string = startUrl;
+      for (let hop: number = 0; hop < 15; hop++) {
         const oauthResp: HttpResponse = await this.http.get(currentUrl);
         oauthPage = oauthResp.body;
-        this.addTrace('hop' + hop + ':' + currentUrl.substring(0, 50));
+        this.addTrace('hop' + hop + ' code:' + oauthResp.statusCode + ' len:' + oauthPage.length);
 
         if (oauthPage.indexOf('sm2publicKey') >= 0) {
           break;
