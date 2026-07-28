@@ -1,4 +1,4 @@
-import { http } from '@kit.NetworkKit';
+import { rcp } from '@kit.RemoteCommunicationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CookieJar } from './CookieJar';
 
@@ -13,18 +13,9 @@ export class HttpError extends Error {
   body: string = '';
 }
 
-interface PendingRequest {
-  resolve: (value: HttpResponse) => void;
-  reject: (reason: HttpError) => void;
-  url: string;
-  requestOptions: http.HttpRequestOptions;
-  depth: number;
-}
-
 export class HttpClient {
   private cookieJar: CookieJar;
-  private timeoutMs: number = 30000;
-  private maxRedirects: number = 30;
+  private timeoutMs: number = 60000;
 
   constructor(cookieJar: CookieJar) {
     this.cookieJar = cookieJar;
@@ -35,11 +26,11 @@ export class HttpClient {
   }
 
   async get(url: string, extraHeaders?: Record<string, string>): Promise<HttpResponse> {
-    return this.request('GET', url, '', extraHeaders);
+    return this.rcpRequest('GET', url, '', extraHeaders);
   }
 
   async post(url: string, body: string, extraHeaders?: Record<string, string>): Promise<HttpResponse> {
-    return this.request('POST', url, body, extraHeaders);
+    return this.rcpRequest('POST', url, body, extraHeaders);
   }
 
   async postForm(url: string, formData: Record<string, string>, extraHeaders?: Record<string, string>): Promise<HttpResponse> {
@@ -59,7 +50,7 @@ export class HttpClient {
         headers[k] = extraKeys[k];
       }
     }
-    return this.request('POST', url, body, headers);
+    return this.rcpRequest('POST', url, body, headers);
   }
 
   getCookieString(url: string): string {
@@ -70,111 +61,44 @@ export class HttpClient {
     this.cookieJar.clear();
   }
 
-  private async request(method: string, url: string, body: string, extraHeaders?: Record<string, string>): Promise<HttpResponse> {
-    const isPost: boolean = method === 'POST';
+  private async rcpRequest(method: string, url: string, body: string, extraHeaders?: Record<string, string>): Promise<HttpResponse> {
     const existingCookies: string = this.cookieJar.getCookieString(url);
 
-    const headerObj: Record<string, Object> = {};
+    const reqHeaders: rcp.RequestHeaders = {};
     if (existingCookies.length > 0) {
-      headerObj['Cookie'] = existingCookies;
+      reqHeaders['Cookie'] = existingCookies;
     }
     if (extraHeaders !== undefined) {
       const keys: string[] = Object.keys(extraHeaders);
       for (let i: number = 0; i < keys.length; i++) {
-        headerObj[keys[i]] = extraHeaders[keys[i]];
+        reqHeaders[keys[i]] = extraHeaders[keys[i]];
       }
     }
 
-    const requestOptions: http.HttpRequestOptions = {
-      method: isPost ? http.RequestMethod.POST : http.RequestMethod.GET,
-      header: headerObj,
-      extraData: isPost ? body : body,
-      expectDataType: http.HttpDataType.STRING,
-      connectTimeout: this.timeoutMs,
-      readTimeout: this.timeoutMs,
+    const config: rcp.Configuration = {
+      transfer: {
+        autoRedirect: false,
+        timeout: { connectMs: this.timeoutMs, transferMs: this.timeoutMs }
+      }
     };
 
-    return this.interceptedRequest(url, requestOptions, 0);
-  }
+    const req: rcp.Request = new rcp.Request(url, method, reqHeaders, body, undefined, undefined, config);
+    const session: rcp.Session = rcp.createSession();
 
-  private interceptedRequest(url: string, requestOptions: http.HttpRequestOptions, depth: number): Promise<HttpResponse> {
-    return new Promise<HttpResponse>((resolve: (value: HttpResponse) => void, reject: (reason: HttpError) => void) => {
-      if (depth >= this.maxRedirects) {
-        const err: HttpError = new HttpError();
-        err.message = 'Too many redirects';
-        reject(err);
-        return;
+    try {
+      const resp: rcp.Response = await session.fetch(req);
+      const httpResp: HttpResponse = new HttpResponse();
+      httpResp.statusCode = resp.statusCode;
+      httpResp.body = resp.toString() ?? '';
+      session.close();
+      return httpResp;
+    } catch (e) {
+      session.close();
+      const err: HttpError = new HttpError();
+      if (e instanceof Error) {
+        err.message = e.message;
       }
-
-      const innerReq: http.HttpRequest = http.createHttp();
-      let redirectUrl: string = '';
-      let responseHeaders: Record<string, string> = {};
-
-      innerReq.on('headersReceive', (header: Object) => {
-        if (header === undefined || header === null) {
-          return;
-        }
-        const headerRecord: Record<string, Object> = header as Record<string, Object>;
-        const location: string = String(headerRecord['Location'] || '');
-        if (location.length > 0) {
-          redirectUrl = location;
-          innerReq.destroy();
-        }
-        responseHeaders['Location'] = location;
-      });
-
-      innerReq.request(url, requestOptions).then((resp: http.HttpResponse) => {
-        innerReq.destroy();
-
-        if (redirectUrl.length > 0) {
-          const followOptions: http.HttpRequestOptions = {
-            method: http.RequestMethod.GET,
-            header: requestOptions.header,
-            extraData: '',
-            expectDataType: http.HttpDataType.STRING,
-            connectTimeout: requestOptions.connectTimeout,
-            readTimeout: requestOptions.readTimeout,
-          };
-          this.interceptedRequest(redirectUrl, followOptions, depth + 1).then((result: HttpResponse) => {
-            resolve(result);
-          }).catch((err: HttpError) => {
-            reject(err);
-          });
-          return;
-        }
-
-        const response: HttpResponse = new HttpResponse();
-        response.statusCode = resp.responseCode;
-        if (typeof resp.result === 'string') {
-          response.body = resp.result;
-        }
-        response.headers = responseHeaders;
-        resolve(response);
-      }).catch((error: BusinessError) => {
-        innerReq.destroy();
-
-        if (redirectUrl.length > 0) {
-          const followOptions: http.HttpRequestOptions = {
-            method: http.RequestMethod.GET,
-            header: requestOptions.header,
-            extraData: '',
-            expectDataType: http.HttpDataType.STRING,
-            connectTimeout: requestOptions.connectTimeout,
-            readTimeout: requestOptions.readTimeout,
-          };
-          this.interceptedRequest(redirectUrl, followOptions, depth + 1).then((result: HttpResponse) => {
-            resolve(result);
-          }).catch((err: HttpError) => {
-            reject(err);
-          });
-          return;
-        }
-
-        const httpError: HttpError = new HttpError();
-        httpError.message = error.message;
-        httpError.statusCode = error.code;
-        reject(httpError);
-      });
-    });
+      throw err;
+    }
   }
 }
