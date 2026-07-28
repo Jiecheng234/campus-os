@@ -107,8 +107,17 @@ export class TsinghuaAuthService {
     const sm2Key: string = extractSm2PublicKey(oauthPage);
     this.csrfToken = extractCsrfToken(oauthPage);
     const formAction: string = extractFormAction(oauthPage);
-    const postUrl: string = formAction.length > 0 ? formAction : WEBVPN_OAUTH_LOGIN_URL;
-    this.addTrace('sm2_key_extracted form_action:' + postUrl);
+    let postUrl: string = WEBVPN_OAUTH_LOGIN_URL;
+    if (formAction.length > 0) {
+      if (formAction.startsWith('http')) {
+        postUrl = formAction;
+      } else if (formAction.startsWith('/')) {
+        postUrl = WEBVPN_BASE_URL + formAction;
+      } else {
+        postUrl = WEBVPN_OAUTH_LOGIN_URL + '/' + formAction;
+      }
+    }
+    this.addTrace('form_action:' + formAction + ' post_url:' + postUrl);
 
     if (sm2Key.length === 0) {
       const result: LoginResult = new LoginResult();
