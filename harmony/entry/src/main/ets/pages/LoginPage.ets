@@ -47,7 +47,7 @@ export struct LoginPage {
     }).catch((err: Error) => {
       this.isSubmitting = false;
       this.auth.status = AuthStatus.ERROR;
-      this.auth.error = '网络错误，请检查连接';
+      this.auth.error = err.message.length > 0 ? err.message : '网络错误，请确认已连接校园网';
     });
   }
 

@@ -84,7 +84,16 @@ export class TsinghuaAuthService {
 
     this.cachedCredentials = credentials;
 
-    const oauthPage: string = await this.transport.getOAuthPage();
+    let oauthPage: string = '';
+    try {
+      oauthPage = await this.transport.getOAuthPage();
+    } catch (e) {
+      const result: LoginResult = new LoginResult();
+      result.type = LoginResultType.ERROR;
+      result.message = '无法连接校园网，请确认已连接清华网络或使用演示模式';
+      result.trace = this.trace;
+      return result;
+    }
     this.addTrace('oauth_page_fetched');
 
     if (oauthPage.indexOf('sm2publicKey') < 0) {
@@ -125,7 +134,16 @@ export class TsinghuaAuthService {
     }
 
     this.addTrace('posting_login');
-    const loginResp: HttpResponse = await this.transport.postLoginForm(formData);
+    let loginResp: HttpResponse;
+    try {
+      loginResp = await this.transport.postLoginForm(formData);
+    } catch (e) {
+      const result: LoginResult = new LoginResult();
+      result.type = LoginResultType.ERROR;
+      result.message = '登录请求失败，请检查校园网连接';
+      result.trace = this.trace;
+      return result;
+    }
     this.addTrace('login_response:' + String(loginResp.statusCode));
 
     const body: string = loginResp.body;
