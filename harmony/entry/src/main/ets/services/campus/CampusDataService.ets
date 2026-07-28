@@ -22,37 +22,68 @@ export class CampusCourse {
 export class CampusDataService {
   private http: HttpClient;
   private csrfToken: string = '';
+  private learnReady: boolean = false;
 
   constructor(http: HttpClient) {
     this.http = http;
+  }
+
+  async activateLearn(): Promise<boolean> {
+    if (this.learnReady) {
+      return true;
+    }
+    try {
+      await this.http.get(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry');
+      this.learnReady = true;
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   async getCsrfToken(): Promise<string> {
     if (this.csrfToken.length > 0) {
       return this.csrfToken;
     }
-    const resp: HttpResponse = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/');
-    const body: string = resp.body;
-    const pattern: string = '_csrf"\\s+value\\s*=\\s*"([^"]+)"';
-    const re: RegExp = new RegExp(pattern, 'i');
-    const match = re.exec(body);
-    if (match !== null && match.length >= 2) {
-      this.csrfToken = match[1];
+    try {
+      const resp: HttpResponse = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/');
+      const body: string = resp.body;
+      const pattern: string = '_csrf"\\s+value\\s*=\\s*"([^"]+)"';
+      const re: RegExp = new RegExp(pattern, 'i');
+      const match = re.exec(body);
+      if (match !== null && match.length >= 2) {
+        this.csrfToken = match[1];
+      }
+    } catch (e) {
+      // ignore
     }
     return this.csrfToken;
   }
 
   async fetchCourses(): Promise<CampusCourse[]> {
     try {
+      await this.activateLearn();
       await this.getCsrfToken();
       const csrf: string = this.csrfToken;
       if (csrf.length === 0) {
         return [];
       }
-      const url: string = LEARN_BASE + '/b/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId/current/zh?_csrf=' + encodeURIComponent(csrf);
+
+      const semesterUrl: string = LEARN_BASE + '/b/kc/zhjw_v_code_xnxq/getCurrentAndNextSemester?_csrf=' + encodeURIComponent(csrf);
+      const semResp: HttpResponse = await this.http.get(semesterUrl);
+      const semJson: Record<string, Object> = JSON.parse(semResp.body) as Record<string, Object>;
+      const semResult: Record<string, Object> = semJson['result'] as Record<string, Object>;
+      let semesterId: string = '';
+      if (semResult !== undefined && semResult !== null) {
+        semesterId = String(semResult['id'] ?? '');
+      }
+      if (semesterId.length === 0) {
+        return [];
+      }
+
+      const url: string = LEARN_BASE + '/b/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId/' + semesterId + '/zh?_csrf=' + encodeURIComponent(csrf);
       const resp: HttpResponse = await this.http.get(url);
-      const jsonStr: string = resp.body;
-      const json: Record<string, Object> = JSON.parse(jsonStr) as Record<string, Object>;
+      const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
       const resultList = json['resultList'] as Object[];
       if (resultList === undefined || resultList === null) {
         return [];
