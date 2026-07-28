@@ -1,21 +1,7 @@
 import { HttpClient, HttpResponse } from '../HttpClient';
-import { encryptPassword, extractSm2PublicKey, extractFirstAnchorHref } from '../../utils/SM2Crypto';
-import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
-import { wrapWebVPNUrl } from '../WebvpnConstants';
 
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
-const ID_HOST: string = 'https://id.tsinghua.edu.cn';
-const ID_LOGIN_URL: string = ID_HOST + '/do/off/ui/auth/login/check';
-const ID_BASE_URL: string = ID_HOST + '/do/off/ui/auth/login/form/';
-const LEARN_LOGIN_YYFWID: string = 'bb5df85216504820be7bba2b0ae1535b/0';
 const SCHEDULE_BASE: string = 'https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290';
-
-class CourseRaw {
-  wlkcid: string = '';
-  kcm: string = '';
-  jsm: string = '';
-  kch: string = '';
-}
 
 export class CampusCourse {
   id: string = '';
@@ -39,65 +25,8 @@ export class CampusDataService {
       return true;
     }
     try {
-      const creds: SecureCredentials | undefined = await SecureStorage.getCredentials();
-      if (creds === undefined) {
-        this.trace = 'no_stored_creds';
-        return false;
-      }
-
-      this.trace = 'fetch_learn_form';
-      const formUrl: string = wrapWebVPNUrl(ID_BASE_URL + LEARN_LOGIN_YYFWID);
-      const formHtml: string = await this.http.get(formUrl).then((r: HttpResponse) => r.body);
-
-      const pk: string = extractSm2PublicKey(formHtml);
-      if (pk.length === 0) {
-        this.trace = 'no_pk;len=' + formHtml.length;
-        return false;
-      }
-
-      const epw: string = await encryptPassword(creds.password, pk);
-      if (epw.length === 0) {
-        this.trace = 'encrypt_fail';
-        return false;
-      }
-      this.trace = 'posting_learn';
-      const fd: Record<string, string> = {
-        'i_user': creds.studentId,
-        'i_pass': epw,
-        'fingerPrint': '',
-        'fingerGenPrint': '',
-        'fingerGenPrint3': '',
-        'i_captcha': '',
-      };
-
-      let postResp: string = '';
-      for (let i: number = 0; i < 2; i++) {
-        postResp = await this.http.postForm(ID_LOGIN_URL, fd).then((r: HttpResponse) => r.body);
-        if (postResp.indexOf('/b/doubleAuth/login') >= 0) {
-          this.trace = 'learn_2fa_required';
-          return false;
-        }
-        const cb: string = extractFirstAnchorHref(postResp);
-        if (cb.length > 0) { break; }
-      }
-
-      const callbackUrl: string = extractFirstAnchorHref(postResp);
-      if (callbackUrl.length === 0) {
-        this.trace = 'no_cb;resp=' + postResp.substring(0, 40);
-        return false;
-      }
-
-      const parts: string[] = callbackUrl.split('=');
-      const ticket: string = parts[parts.length - 1];
-      if (ticket.length === 0) {
-        this.trace = 'no_ticket';
-        return false;
-      }
-      this.trace = 'roaming_learn';
-      await this.http.get(wrapWebVPNUrl(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry?ticket=' + ticket));
-
       this.trace = 'home_page';
-      const homeHtml: string = await this.http.get(wrapWebVPNUrl(LEARN_BASE + '/f/wlxt/index/course/student/')).then((r: HttpResponse) => r.body);
+      const homeHtml: string = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/').then((r: HttpResponse) => r.body);
 
       let csrfFound: string = '';
       const p1: RegExp = new RegExp('_csrf"\\s+value\\s*=\\s*"([^"]+)"', 'i');
@@ -117,10 +46,16 @@ export class CampusDataService {
         return true;
       }
 
-      this.trace = 'no_csrf_home;len=' + homeHtml.length;
+      if (homeHtml.indexOf('sm2publicKey') >= 0) {
+        this.trace = 'need_sso';
+      } else if (homeHtml.length < 500) {
+        this.trace = 'short;' + homeHtml.length;
+      } else {
+        this.trace = 'no_csrf;' + homeHtml.length;
+      }
       return false;
     } catch (e) {
-      this.trace = 'ex:' + (e instanceof Error ? e.message : '');
+      this.trace = 'ex';
       return false;
     }
   }
@@ -140,20 +75,7 @@ export class CampusDataService {
       if (csrf.length === 0) {
         return [];
       }
-
-      const semesterUrl: string = LEARN_BASE + '/b/kc/zhjw_v_code_xnxq/getCurrentAndNextSemester?_csrf=' + encodeURIComponent(csrf);
-      const semResp: HttpResponse = await this.http.get(semesterUrl);
-      const semJson: Record<string, Object> = JSON.parse(semResp.body) as Record<string, Object>;
-      const semResult: Record<string, Object> = semJson['result'] as Record<string, Object>;
-      let semesterId: string = '';
-      if (semResult !== undefined && semResult !== null) {
-        semesterId = String(semResult['id'] ?? '');
-      }
-      if (semesterId.length === 0) {
-        return [];
-      }
-
-      const url: string = LEARN_BASE + '/b/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId/' + semesterId + '/zh?_csrf=' + encodeURIComponent(csrf);
+      const url: string = LEARN_BASE + '/b/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId/current/zh?_csrf=' + encodeURIComponent(csrf);
       const resp: HttpResponse = await this.http.get(url);
       const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
       const resultList = json['resultList'] as Object[];
