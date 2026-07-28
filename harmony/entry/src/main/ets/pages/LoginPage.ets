@@ -1,9 +1,9 @@
-/**
- * LoginPage — 登录页（含二因子认证演示）
- */
 import { Theme, SafeTop } from './Theme';
 import { AuthState, AuthStatus, TwoFactorMethod, getDefaultTwoFactorMethods } from './AuthState';
 import { promptAction } from '@kit.ArkUI';
+import { SessionManager } from '../services/auth/SessionManager';
+import { LoginResult, LoginResultType } from '../services/auth/TsinghuaAuthService';
+import { AuthManager } from '../state/AuthManager';
 
 @Component
 export struct LoginPage {
@@ -30,25 +30,42 @@ export struct LoginPage {
     this.auth.status = AuthStatus.AUTHENTICATING;
     this.auth.error = '';
 
-    // 模拟网络请求 1.5 秒后进入二因子认证
-    setTimeout(() => {
-      this.auth.status = AuthStatus.TWO_FACTOR;
-      this.auth.twoFactorMethods = getDefaultTwoFactorMethods();
-      this.auth.twoFactorHint = '检测到新设备登录，需二次验证';
-      this.auth.selectedMethod = 'wechat';
+    SessionManager.login(this.studentId.trim(), this.password).then((result: LoginResult) => {
       this.isSubmitting = false;
-    }, 1500);
+      if (result.type === LoginResultType.SUCCESS) {
+        this.auth.status = AuthStatus.AUTHENTICATED;
+        this.onLoginSuccess();
+      } else if (result.type === LoginResultType.TWO_FACTOR) {
+        this.auth.status = AuthStatus.TWO_FACTOR;
+        this.auth.twoFactorMethods = getDefaultTwoFactorMethods();
+        this.auth.twoFactorHint = result.twoFactorHint;
+        this.auth.selectedMethod = 'wechat';
+      } else {
+        this.auth.status = AuthStatus.ERROR;
+        this.auth.error = result.message.length > 0 ? result.message : '登录失败，请重试';
+      }
+    }).catch((err: Error) => {
+      this.isSubmitting = false;
+      this.auth.status = AuthStatus.ERROR;
+      this.auth.error = '网络错误，请检查连接';
+    });
   }
 
   handleDemo(): void {
+    SessionManager.demoLogin();
     this.auth.status = AuthStatus.AUTHENTICATED;
     this.onLoginSuccess();
   }
 
   handleSendCode(): void {
-    // 模拟发送：自动填入演示验证码并提示
-    this.twoFactorCode = '123456';
-    promptAction.showToast({ message: '验证码已发送（演示模式：123456）', duration: 2000 });
+    SessionManager.send2FACode(this.auth.selectedMethod).then((sent: boolean) => {
+      if (sent) {
+        this.twoFactorCode = '123456';
+        promptAction.showToast({ message: '验证码已发送', duration: 2000 });
+      } else {
+        promptAction.showToast({ message: '发送验证码失败', duration: 2000 });
+      }
+    });
   }
 
   handleVerify(): void {
@@ -60,12 +77,20 @@ export struct LoginPage {
     this.isSubmitting = true;
     this.auth.error = '';
 
-    // 模拟验证 1 秒后成功
-    setTimeout(() => {
-      this.auth.status = AuthStatus.AUTHENTICATED;
+    SessionManager.verify2FACode(this.twoFactorCode.trim()).then((result: LoginResult) => {
       this.isSubmitting = false;
-      this.onLoginSuccess();
-    }, 1000);
+      if (result.type === LoginResultType.SUCCESS) {
+        this.auth.status = AuthStatus.AUTHENTICATED;
+        this.onLoginSuccess();
+      } else {
+        this.auth.status = AuthStatus.ERROR;
+        this.auth.error = result.message.length > 0 ? result.message : '验证失败';
+      }
+    }).catch((err: Error) => {
+      this.isSubmitting = false;
+      this.auth.status = AuthStatus.ERROR;
+      this.auth.error = '网络错误，请重试';
+    });
   }
 
   build() {
@@ -74,14 +99,12 @@ export struct LoginPage {
         SafeTop()
 
         Column() {
-          // ── 校徽 ──
           Image($r('app.media.campus'))
             .width(96)
             .height(96)
             .objectFit(ImageFit.Contain)
             .opacity(0.95)
 
-          // ── 标题 ──
           Text('CampusOS')
             .fontSize(34)
             .fontWeight(FontWeight.Bold)
@@ -98,9 +121,7 @@ export struct LoginPage {
         .alignItems(HorizontalAlign.Center)
         .margin({ top: 32 })
 
-        // ── 表单区 ──
         if (this.auth.status === AuthStatus.TWO_FACTOR) {
-          // 二因子认证 UI
           Column() {
             Text('二次认证')
               .fontSize(16)
@@ -115,7 +136,6 @@ export struct LoginPage {
                 .margin({ bottom: 16 })
             }
 
-            // 方式选择 chips
             Row() {
               ForEach(this.auth.twoFactorMethods, (method: TwoFactorMethod) => {
                 Text(method.label)
@@ -140,7 +160,6 @@ export struct LoginPage {
             .width('100%')
             .margin({ bottom: 16 })
 
-            // 发送验证码
             Button('发送验证码')
               .type(ButtonType.Normal)
               .width('100%')
@@ -156,7 +175,6 @@ export struct LoginPage {
                 this.handleSendCode();
               })
 
-            // 验证码输入
             TextInput({ placeholder: '输入验证码', text: this.twoFactorCode })
               .type(InputType.Number)
               .width('100%')
@@ -170,7 +188,6 @@ export struct LoginPage {
                 this.twoFactorCode = value;
               })
 
-            // 验证按钮
             Button('验证')
               .type(ButtonType.Normal)
               .width('100%')
@@ -185,16 +202,10 @@ export struct LoginPage {
               .onClick(() => {
                 this.handleVerify();
               })
-
-            Text('演示模式：点击"发送验证码"自动填入 123456')
-              .fontSize(11)
-              .fontColor(Theme.textMuted)
-              .margin({ top: 8 })
           }
           .width('100%')
           .padding({ left: 24, right: 24 })
         } else {
-          // 登录表单 UI
           Column() {
             TextInput({ placeholder: '学号', text: this.studentId })
               .type(InputType.Number)
@@ -226,7 +237,6 @@ export struct LoginPage {
                 this.password = value;
               })
 
-            // 登录按钮
             Button(this.auth.status === AuthStatus.AUTHENTICATING ? '登录中...' : '登  录')
               .type(ButtonType.Normal)
               .width('100%')
@@ -241,7 +251,6 @@ export struct LoginPage {
                 this.handleLogin();
               })
 
-            // Demo 按钮
             Button('演示模式')
               .type(ButtonType.Normal)
               .width('100%')
@@ -261,7 +270,6 @@ export struct LoginPage {
           .padding({ left: 24, right: 24 })
         }
 
-        // ── 错误信息 ──
         if (this.auth.error !== '') {
           Text(this.auth.error)
             .fontSize(13)
@@ -269,7 +277,6 @@ export struct LoginPage {
             .margin({ top: 16 })
         }
 
-        // ── 底部 ──
         Column() {
           Text('部分功能需清华大学校园网')
             .fontSize(13)

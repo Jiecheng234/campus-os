@@ -87,9 +87,10 @@ export class HttpClient {
       }
     }
 
+    const defaultHeaders: Record<string, string> = { 'User-Agent': 'Mozilla/5.0 (HarmonyOS) CampusOS' };
     const requestOptions: http.HttpRequestOptions = {
       method: method === 'POST' ? http.RequestMethod.POST : http.RequestMethod.GET,
-      header: headerCount > 0 ? headerArr : { 'User-Agent': 'Mozilla/5.0 (HarmonyOS) CampusOS' },
+      header: headerCount > 0 ? headerArr : defaultHeaders,
       extraData: body.length > 0 ? body : undefined,
       expectDataType: http.HttpDataType.STRING,
       connectTimeout: this.timeoutMs,
