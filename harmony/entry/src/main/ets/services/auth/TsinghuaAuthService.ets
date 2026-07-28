@@ -3,7 +3,7 @@ import { CookieManager } from '../CookieManager';
 import { WEBVPN_OAUTH_LOGIN_URL, WEBVPN_BASE_URL, wrapWebVPNUrl, ID_HOST_URL, ID_LOGIN_URL, getSubsystemUrl, SUBSYSTEM_LEARN } from '../WebvpnConstants';
 import {
   encryptPassword, extractSm2PublicKey, extractCsrfToken,
-  extractFirstAnchorHref, extractMsgNote
+  extractFirstAnchorHref, extractMsgNote, extractMetaRedirect
 } from '../../utils/SM2Crypto';
 import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
@@ -228,9 +228,12 @@ export class TsinghuaAuthService {
       if (cb.length > 0) { break; }
     }
 
-    const callbackUrl: string = extractFirstAnchorHref(response);
+    let callbackUrl: string = extractFirstAnchorHref(response);
     if (callbackUrl.length === 0) {
-      throw new Error('no_cb;len=' + response.length);
+      callbackUrl = extractMetaRedirect(response);
+    }
+    if (callbackUrl.length === 0) {
+      throw new Error('no_cb;len=' + response.length + ';pre=' + response.substring(0, 80));
     }
 
     const parts: string[] = callbackUrl.split('=');

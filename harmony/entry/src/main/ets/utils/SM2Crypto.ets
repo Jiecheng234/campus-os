@@ -111,3 +111,18 @@ export function extractFormAction(html: string): string {
   const pattern: string = '<form[^>]+action\\s*=\\s*["\']([^"\']+)["\']';
   return regexCapture(html, pattern);
 }
+
+export function extractMetaRedirect(html: string): string {
+  const pattern: string = 'url=([^"\'>\\s]+)';
+  const re: RegExp = new RegExp(pattern, 'i');
+  const match = re.exec(html);
+  if (match === null || match.length < 2) {
+    return '';
+  }
+  const idx: number = 1;
+  const captured: string = match[idx];
+  if (captured === undefined) {
+    return '';
+  }
+  return captured.trim();
+}
