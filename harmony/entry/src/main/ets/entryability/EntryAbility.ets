@@ -3,6 +3,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { getTurboModuleList } from '../turbomodules/TurboModuleRegistry';
+import { runPhase4SelfTest } from '../utils/Phase4SelfTest';
 
 const DOMAIN = 0xCAFE;
 
@@ -52,6 +53,7 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, 'CampusOS', 'Content loaded successfully.');
+      runPhase4SelfTest();
     });
   }
 

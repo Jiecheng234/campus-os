@@ -1,4 +1,5 @@
-import { util } from '@kit.ArkTS';
+import { util, buffer } from '@kit.ArkTS';
+import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 
 export function encodeBase64(input: string): string {
   const helper: util.Base64Helper = new util.Base64Helper();
@@ -13,20 +14,18 @@ export function decodeBase64(input: string): string {
 }
 
 export function stringToUint8Array(str: string): Uint8Array {
-  const encoder: util.TextEncoder = new util.TextEncoder('utf-8');
-  return encoder.encodeInto(str);
+  return new Uint8Array(buffer.from(str, 'utf-8').buffer);
 }
 
 export function uint8ArrayToString(arr: Uint8Array): string {
-  const decoder: util.TextDecoder = new util.TextDecoder('utf-8');
-  const result: util.TextDecodeResult = decoder.decodeWithStream(arr, undefined);
-  return result.text;
+  const decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { fatal: false, ignoreBOM: true });
+  return decoder.decodeToString(arr, { stream: false });
 }
 
 export function bytesToHex(bytes: Uint8Array): string {
   let result: string = '';
   for (let i: number = 0; i < bytes.length; i++) {
-    const hex: string = bytes[i].toString(16).padStart(2, '0');
+    const hex: string = ('00' + bytes[i].toString(16)).slice(-2);
     result = result + hex;
   }
   return result;
@@ -54,15 +53,19 @@ export function generateRandomBytes(length: number): Uint8Array {
 }
 
 export function sha256(input: string): string {
+  const md: cryptoFramework.Md = cryptoFramework.createMd('SHA256');
   const uint8Array: Uint8Array = stringToUint8Array(input);
-  const hash: Uint8Array = util.computeSHA256(uint8Array);
-  return bytesToHex(hash);
+  md.updateSync({ data: uint8Array });
+  const result: cryptoFramework.DataBlob = md.digestSync();
+  return bytesToHex(result.data);
 }
 
 export function md5(input: string): string {
+  const md: cryptoFramework.Md = cryptoFramework.createMd('MD5');
   const uint8Array: Uint8Array = stringToUint8Array(input);
-  const hash: Uint8Array = util.computeMD5(uint8Array);
-  return bytesToHex(hash);
+  md.updateSync({ data: uint8Array });
+  const result: cryptoFramework.DataBlob = md.digestSync();
+  return bytesToHex(result.data);
 }
 
 export function formatDate(date: Date): string {

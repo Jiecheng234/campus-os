@@ -1,3 +1,5 @@
+import { ScheduleEvent } from './LearningTypes';
+
 export class PersonalEvent {
   id: string = '';
   title: string = '';

@@ -1,46 +1,80 @@
+import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
 
 export class PreferencesStorage {
-  private static context: object | undefined = undefined;
+  private static context: common.Context | undefined = undefined;
   private static storeName: string = 'campusos_preferences';
 
-  static init(context: object): void {
-    PreferencesStorage.context = context;
+  static init(ctx: common.Context): void {
+    PreferencesStorage.context = ctx;
   }
 
   static async getString(key: string, defaultValue: string = ''): Promise<string> {
-    const prefs: preferences.Preferences = await PreferencesStorage.getPreferences();
-    const value: string = prefs.getSync(key, defaultValue) as string;
-    return value;
+    const ctx: common.Context | undefined = PreferencesStorage.context;
+    if (ctx === undefined) {
+      return defaultValue;
+    }
+    const prefs: preferences.Preferences = await preferences.getPreferences(ctx, PreferencesStorage.storeName);
+    const value: preferences.ValueType = prefs.getSync(key, defaultValue);
+    if (typeof value === 'string') {
+      return value;
+    }
+    return defaultValue;
   }
 
   static async setString(key: string, value: string): Promise<void> {
-    const prefs: preferences.Preferences = await PreferencesStorage.getPreferences();
+    const ctx: common.Context | undefined = PreferencesStorage.context;
+    if (ctx === undefined) {
+      return;
+    }
+    const prefs: preferences.Preferences = await preferences.getPreferences(ctx, PreferencesStorage.storeName);
     prefs.putSync(key, value);
     await prefs.flush();
   }
 
   static async getBoolean(key: string, defaultValue: boolean = false): Promise<boolean> {
-    const prefs: preferences.Preferences = await PreferencesStorage.getPreferences();
-    const value: boolean = prefs.getSync(key, defaultValue) as boolean;
-    return value;
+    const ctx: common.Context | undefined = PreferencesStorage.context;
+    if (ctx === undefined) {
+      return defaultValue;
+    }
+    const prefs: preferences.Preferences = await preferences.getPreferences(ctx, PreferencesStorage.storeName);
+    const value: preferences.ValueType = prefs.getSync(key, defaultValue);
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    return defaultValue;
   }
 
   static async setBoolean(key: string, value: boolean): Promise<void> {
-    const prefs: preferences.Preferences = await PreferencesStorage.getPreferences();
+    const ctx: common.Context | undefined = PreferencesStorage.context;
+    if (ctx === undefined) {
+      return;
+    }
+    const prefs: preferences.Preferences = await preferences.getPreferences(ctx, PreferencesStorage.storeName);
     prefs.putSync(key, value);
     await prefs.flush();
   }
 
   static async getNumber(key: string, defaultValue: number = 0): Promise<number> {
-    const prefs: preferences.Preferences = await PreferencesStorage.getPreferences();
-    const value: number = prefs.getSync(key, defaultValue) as number;
-    return value;
+    const ctx: common.Context | undefined = PreferencesStorage.context;
+    if (ctx === undefined) {
+      return defaultValue;
+    }
+    const prefs: preferences.Preferences = await preferences.getPreferences(ctx, PreferencesStorage.storeName);
+    const value: preferences.ValueType = prefs.getSync(key, defaultValue);
+    if (typeof value === 'number') {
+      return value;
+    }
+    return defaultValue;
   }
 
   static async setNumber(key: string, value: number): Promise<void> {
-    const prefs: preferences.Preferences = await PreferencesStorage.getPreferences();
+    const ctx: common.Context | undefined = PreferencesStorage.context;
+    if (ctx === undefined) {
+      return;
+    }
+    const prefs: preferences.Preferences = await preferences.getPreferences(ctx, PreferencesStorage.storeName);
     prefs.putSync(key, value);
     await prefs.flush();
   }
@@ -59,23 +93,22 @@ export class PreferencesStorage {
   }
 
   static async remove(key: string): Promise<void> {
-    const prefs: preferences.Preferences = await PreferencesStorage.getPreferences();
+    const ctx: common.Context | undefined = PreferencesStorage.context;
+    if (ctx === undefined) {
+      return;
+    }
+    const prefs: preferences.Preferences = await preferences.getPreferences(ctx, PreferencesStorage.storeName);
     prefs.deleteSync(key);
     await prefs.flush();
   }
 
   static async clear(): Promise<void> {
-    const prefs: preferences.Preferences = await PreferencesStorage.getPreferences();
+    const ctx: common.Context | undefined = PreferencesStorage.context;
+    if (ctx === undefined) {
+      return;
+    }
+    const prefs: preferences.Preferences = await preferences.getPreferences(ctx, PreferencesStorage.storeName);
     prefs.clearSync();
     await prefs.flush();
-  }
-
-  private static async getPreferences(): Promise<preferences.Preferences> {
-    const ctx: object = PreferencesStorage.context;
-    if (ctx === undefined) {
-      throw new Error('PreferencesStorage not initialized');
-    }
-    const opts: preferences.Options = { name: PreferencesStorage.storeName };
-    return preferences.getPreferences(ctx, PreferencesStorage.storeName);
   }
 }
