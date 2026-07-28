@@ -85,31 +85,14 @@ export class TsinghuaAuthService {
     this.cachedCredentials = credentials;
 
     let oauthPage: string = '';
-    let lastUrl: string = '';
     try {
       this.addTrace('warmup');
       await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
 
-      lastUrl = WEBVPN_OAUTH_LOGIN_URL;
       this.addTrace('fetch_form');
-      let formResp: HttpResponse = await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
+      const formResp: HttpResponse = await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
       oauthPage = formResp.body;
-      this.addTrace('body_len:' + oauthPage.length + ' code:' + formResp.statusCode);
-
-      for (let hop: number = 0; hop < 10; hop++) {
-        if (oauthPage.indexOf('sm2publicKey') >= 0) {
-          break;
-        }
-        const nextUrl: string = extractFirstAnchorHref(oauthPage);
-        if (nextUrl.length === 0) {
-          break;
-        }
-        lastUrl = nextUrl;
-        this.addTrace('follow_hop' + hop);
-        formResp = await this.http.get(nextUrl);
-        oauthPage = formResp.body;
-      }
-      this.addTrace('done hops, final_len:' + oauthPage.length);
+      this.addTrace('form_len:' + oauthPage.length);
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
