@@ -63,36 +63,24 @@ export class HttpClient {
 
   private async request(method: string, url: string, body: string, extraHeaders?: Record<string, string>): Promise<HttpResponse> {
     const req: http.HttpRequest = http.createHttp();
-    const existingCookies: string = this.cookieJar.getCookieString(url);
 
-    const headerObj: Record<string, string> = {};
+    const isPost: boolean = method === 'POST';
+    let headerObj: Record<string, Object> = {};
+    const existingCookies: string = this.cookieJar.getCookieString(url);
     if (existingCookies.length > 0) {
       headerObj['Cookie'] = existingCookies;
     }
     if (extraHeaders !== undefined) {
-      const extraKeys: string[] = Object.keys(extraHeaders);
-      for (let i: number = 0; i < extraKeys.length; i++) {
-        const k: string = extraKeys[i];
-        headerObj[k] = extraKeys[k];
+      const keys: string[] = Object.keys(extraHeaders);
+      for (let i: number = 0; i < keys.length; i++) {
+        headerObj[keys[i]] = extraHeaders[keys[i]];
       }
     }
 
-    let headerCount: number = 0;
-    const headerArr: Record<string, string> = {};
-    const headerKeys: string[] = Object.keys(headerObj);
-    for (let i: number = 0; i < headerKeys.length; i++) {
-      if (headerObj[headerKeys[i]].length > 0) {
-        headerArr[headerKeys[i]] = headerObj[headerKeys[i]];
-        headerCount = headerCount + 1;
-      }
-    }
-
-    const defaultHeaders: Record<string, string> = { 'User-Agent': 'Mozilla/5.0 (HarmonyOS) CampusOS' };
-    const isPost: boolean = method === 'POST';
     const requestOptions: http.HttpRequestOptions = {
       method: isPost ? http.RequestMethod.POST : http.RequestMethod.GET,
-      header: headerCount > 0 ? headerArr : defaultHeaders,
-      extraData: isPost ? body : '',
+      header: headerObj,
+      extraData: isPost ? body : body,
       expectDataType: http.HttpDataType.STRING,
       connectTimeout: this.timeoutMs,
       readTimeout: this.timeoutMs,
@@ -102,41 +90,10 @@ export class HttpClient {
       req.request(url, requestOptions).then((resp: http.HttpResponse) => {
         const response: HttpResponse = new HttpResponse();
         response.statusCode = resp.responseCode;
-
         if (typeof resp.result === 'string') {
           response.body = resp.result;
-        } else if (resp.result !== undefined) {
-          response.body = JSON.stringify(resp.result);
         }
-
-        const respHeaders: Record<string, string> = {};
-        if (resp.header !== undefined) {
-          const hKeys: string[] = Object.keys(resp.header);
-          for (let i: number = 0; i < hKeys.length; i++) {
-            respHeaders[hKeys[i]] = String(resp.header[hKeys[i]]);
-          }
-        }
-        response.headers = respHeaders;
-
-        const setCookie: string = respHeaders['set-cookie'] || respHeaders['Set-Cookie'] || '';
-        if (setCookie.length > 0) {
-          const cookieValues: string[] = setCookie.split(',');
-          for (let i: number = 0; i < cookieValues.length; i++) {
-            this.cookieJar.setFromResponse(url, cookieValues[i]);
-          }
-        } else {
-          const cookieHeader: string = respHeaders['Cookie'] || '';
-          if (cookieHeader.length === 0) {
-            const allRespKeys: string[] = Object.keys(respHeaders);
-            for (let i: number = 0; i < allRespKeys.length; i++) {
-              const k: string = allRespKeys[i];
-              if (k.toLowerCase() === 'set-cookie') {
-                this.cookieJar.setFromResponse(url, respHeaders[k]);
-              }
-            }
-          }
-        }
-
+        response.headers = {};
         resolve(response);
       }).catch((error: BusinessError) => {
         const httpError: HttpError = new HttpError();
