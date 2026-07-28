@@ -7,6 +7,10 @@ import {
   CourseItem, HomeworkItem, NotificationItem, FileItem, DeadlineForm
 } from './LearningData';
 import { promptAction } from '@kit.ArkUI';
+import { CourseDetailPage } from './learning/CourseDetailPage';
+import { HomeworkDetailPage } from './learning/HomeworkDetailPage';
+import { NotificationDetailPage } from './learning/NotificationDetailPage';
+import { FileDetailPage } from './learning/FileDetailPage';
 
 @Component
 struct SegmentBar {
@@ -35,6 +39,7 @@ struct SegmentBar {
 @Component
 struct DDLCard {
   @Prop item: HomeworkItem = new HomeworkItem();
+  onCardClick: () => void = () => {};
 
   build() {
     Row() {
@@ -67,12 +72,16 @@ struct DDLCard {
     }
     .width('100%')
     .padding({ top: 12, bottom: 12 })
+    .onClick(() => {
+      this.onCardClick();
+    })
   }
 }
 
 @Component
 struct CourseCard {
   @Prop item: CourseItem = new CourseItem();
+  onCardClick: () => void = () => {};
 
   build() {
     Row() {
@@ -99,7 +108,7 @@ struct CourseCard {
     .width('100%')
     .padding({ top: 12, bottom: 12 })
     .onClick(() => {
-      promptAction.showToast({ message: `${this.item.name} — 详情功能开发中`, duration: 2000 });
+      this.onCardClick();
     })
   }
 }
@@ -107,6 +116,7 @@ struct CourseCard {
 @Component
 struct NotificationCard {
   @Prop item: NotificationItem = new NotificationItem();
+  onCardClick: () => void = () => {};
 
   build() {
     Row() {
@@ -141,6 +151,9 @@ struct NotificationCard {
     }
     .width('100%')
     .padding({ top: 12, bottom: 12 })
+    .onClick(() => {
+      this.onCardClick();
+    })
   }
 }
 
@@ -150,6 +163,7 @@ export struct LearningPage {
   @State showDialog: boolean = false;
   @State ddls: HomeworkItem[] = getHomeworkList();
   @State form: DeadlineForm = new DeadlineForm();
+  @State subScreen: string = '';
   private tabs: string[] = ['课程', '作业', '通知', '文件'];
 
   private getTabCounts(): number[] {
@@ -162,6 +176,15 @@ export struct LearningPage {
   }
 
   build() {
+    if (this.subScreen === 'course') {
+      CourseDetailPage({ onBack: () => { this.subScreen = ''; } })
+    } else if (this.subScreen === 'homework') {
+      HomeworkDetailPage({ onBack: () => { this.subScreen = ''; } })
+    } else if (this.subScreen === 'notification') {
+      NotificationDetailPage({ onBack: () => { this.subScreen = ''; } })
+    } else if (this.subScreen === 'file') {
+      FileDetailPage({ onBack: () => { this.subScreen = ''; } })
+    } else {
     Stack() {
       Scroll() {
         Column() {
@@ -206,7 +229,7 @@ export struct LearningPage {
           if (this.activeTab === '课程') {
             Column() {
               ForEach(getCourses(), (item: CourseItem, index: number) => {
-                CourseCard({ item: item })
+                CourseCard({ item: item, onCardClick: () => { this.subScreen = 'course'; } })
                 if (index < getCourses().length - 1) {
                   Divider().color(Theme.divider).margin({ left: 15 })
                 }
@@ -221,7 +244,7 @@ export struct LearningPage {
           } else if (this.activeTab === '作业') {
             Column() {
               ForEach(this.ddls, (item: HomeworkItem, index: number) => {
-                DDLCard({ item: item })
+                DDLCard({ item: item, onCardClick: () => { this.subScreen = 'homework'; } })
                 if (index < this.ddls.length - 1) {
                   Divider().color(Theme.divider).margin({ left: 15 })
                 }
@@ -242,7 +265,7 @@ export struct LearningPage {
           } else if (this.activeTab === '通知') {
             Column() {
               ForEach(getNotifications(), (item: NotificationItem) => {
-                NotificationCard({ item: item })
+                NotificationCard({ item: item, onCardClick: () => { this.subScreen = 'notification'; } })
               })
             }
             .width('100%')
@@ -292,6 +315,7 @@ export struct LearningPage {
       showClose: true,
       dragBar: true,
     })
+    }
   }
 
   @Builder
