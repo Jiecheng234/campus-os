@@ -2,6 +2,7 @@ export const WEBVPN_BASE_URL: string = 'https://webvpn.tsinghua.edu.cn';
 export const WEBVPN_OAUTH_LOGIN_URL: string = `${WEBVPN_BASE_URL}/login?oauth_login=true`;
 export const OAUTH_LBREDIRECT_PREFIX: string = 'https://oauth.tsinghua.edu.cn/lb-auth/lbredirect';
 export const ID_HOST_URL: string = 'https://id.tsinghua.edu.cn';
+export const ID_LOGIN_URL: string = `${ID_HOST_URL}/do/off/ui/auth/login/check`;
 export const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
 
 export function wrapWebVPNUrl(targetUrl: string): string {

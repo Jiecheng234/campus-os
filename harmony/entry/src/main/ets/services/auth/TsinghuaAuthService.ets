@@ -1,7 +1,7 @@
 import { CookieJar } from '../CookieJar';
 import { HttpClient, HttpResponse } from '../HttpClient';
 import { WebvpnTransport } from '../WebvpnTransport';
-import { WEBVPN_OAUTH_LOGIN_URL, WEBVPN_BASE_URL, wrapWebVPNUrl, ID_HOST_URL } from '../WebvpnConstants';
+import { WEBVPN_OAUTH_LOGIN_URL, WEBVPN_BASE_URL, wrapWebVPNUrl, ID_HOST_URL, ID_LOGIN_URL } from '../WebvpnConstants';
 import {
   encryptPassword, extractSm2PublicKey, extractCsrfToken,
   extractFirstAnchorHref, extractMsgNote
@@ -84,32 +84,15 @@ export class TsinghuaAuthService {
 
     this.cachedCredentials = credentials;
 
-    const idTargetUrl: string = `${ID_HOST_URL}/do/off/ui/auth/login/form/`;
-    const oauthUrl: string = wrapWebVPNUrl(idTargetUrl);
-    this.addTrace('oauth_url:' + oauthUrl);
-
     let oauthPage: string = '';
     try {
-      const baseUrl: string = 'https://id.tsinghua.edu.cn/o/authorize?client_id=WEBVPN&response_type=code';
-      const startUrl: string = wrapWebVPNUrl(baseUrl);
-      this.addTrace('start_url:' + startUrl);
+      this.addTrace('warmup');
+      await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
 
-      let currentUrl: string = startUrl;
-      for (let hop: number = 0; hop < 15; hop++) {
-        const oauthResp: HttpResponse = await this.http.get(currentUrl);
-        oauthPage = oauthResp.body;
-        this.addTrace('hop' + hop + ' code:' + oauthResp.statusCode + ' len:' + oauthPage.length);
-
-        if (oauthPage.indexOf('sm2publicKey') >= 0) {
-          break;
-        }
-
-        const nextUrl: string = extractFirstAnchorHref(oauthPage);
-        if (nextUrl.length === 0) {
-          break;
-        }
-        currentUrl = nextUrl;
-      }
+      this.addTrace('fetch_form');
+      const formResp: HttpResponse = await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
+      oauthPage = formResp.body;
+      this.addTrace('form_len:' + oauthPage.length);
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
@@ -117,7 +100,6 @@ export class TsinghuaAuthService {
       result.trace = this.trace;
       return result;
     }
-    this.addTrace('oauth_page_fetched');
 
     if (oauthPage.indexOf('sm2publicKey') < 0) {
       const result: LoginResult = new LoginResult();
@@ -128,8 +110,7 @@ export class TsinghuaAuthService {
     }
 
     const sm2Key: string = extractSm2PublicKey(oauthPage);
-    this.csrfToken = extractCsrfToken(oauthPage);
-    this.addTrace('sm2_key_extracted');
+    this.addTrace('pk:' + sm2Key.length);
 
     if (sm2Key.length === 0) {
       const result: LoginResult = new LoginResult();
@@ -149,17 +130,19 @@ export class TsinghuaAuthService {
     }
 
     const formData: Record<string, string> = {
-      'username': credentials.studentId,
-      'password': encryptedPw,
+      'i_user': credentials.studentId,
+      'i_pass': encryptedPw,
+      'fingerPrint': credentials.fingerprint,
+      'fingerGenPrint': '',
+      'fingerGenPrint3': '',
+      'i_captcha': '',
     };
-    if (this.csrfToken.length > 0) {
-      formData['_csrf'] = this.csrfToken;
-    }
+    this.addTrace('post_id_login');
 
-    this.addTrace('posting_login');
-    let loginResp: HttpResponse;
+    let idResponse: string = '';
     try {
-      loginResp = await this.transport.postLoginForm(formData, oauthUrl);
+      const idResp: HttpResponse = await this.http.postForm(ID_LOGIN_URL, formData);
+      idResponse = idResp.body;
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
@@ -167,12 +150,10 @@ export class TsinghuaAuthService {
       result.trace = this.trace;
       return result;
     }
-    this.addTrace('login_response:' + String(loginResp.statusCode));
+    this.addTrace('id_resp:' + idResponse.length);
 
-    const body: string = loginResp.body;
-
-    if (body.indexOf('two_factor') >= 0 || body.indexOf('tfa') >= 0 ||
-      body.indexOf('authCode') >= 0 || body.indexOf('验证码') >= 0) {
+    const TWO_FACTOR_MARK: string = '/b/doubleAuth/login';
+    if (idResponse.indexOf(TWO_FACTOR_MARK) >= 0) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.TWO_FACTOR;
       result.message = '需要双因子认证';
@@ -181,7 +162,7 @@ export class TsinghuaAuthService {
       return result;
     }
 
-    const errorMsg: string = extractMsgNote(body);
+    const errorMsg: string = extractMsgNote(idResponse);
     if (errorMsg.length > 0) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
@@ -190,11 +171,10 @@ export class TsinghuaAuthService {
       return result;
     }
 
-    const redirectUrl: string = extractFirstAnchorHref(body);
+    const redirectUrl: string = extractFirstAnchorHref(idResponse);
     if (redirectUrl.length > 0) {
       this.addTrace('following_redirect');
-      const redirectResp: HttpResponse = await this.http.get(redirectUrl);
-      this.addTrace('redirect_done:' + String(redirectResp.statusCode));
+      await this.http.get(redirectUrl);
     }
 
     const successResult: LoginResult = new LoginResult();
@@ -203,7 +183,6 @@ export class TsinghuaAuthService {
     successResult.trace = this.trace;
 
     await SecureStorage.saveCredentials(credentials.studentId, credentials.password);
-    await this.transport.roamToAllSubsystems();
 
     return successResult;
   }
