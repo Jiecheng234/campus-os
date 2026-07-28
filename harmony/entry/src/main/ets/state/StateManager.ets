@@ -13,7 +13,7 @@ export enum DataSourceType {
 
 export class AppSettings {
   locale: string = 'zh';
-  demoMode: boolean = true;
+  demoMode: boolean = false;
   trustDevice: boolean = false;
   apiProvider: string = 'openai';
   apiKey: string = '';

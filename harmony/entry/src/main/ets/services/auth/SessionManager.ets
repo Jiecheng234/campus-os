@@ -53,6 +53,7 @@ export class SessionManager {
 
     if (result.type === LoginResultType.SUCCESS) {
       AuthManager.loginSuccess();
+      StateManager.settings.demoMode = false;
       await PreferencesStorage.setBoolean(SESSION_SAVED_KEY, true);
     } else if (result.type === LoginResultType.TWO_FACTOR) {
       AuthManager.require2FA([]);
@@ -69,6 +70,7 @@ export class SessionManager {
 
     if (result.type === LoginResultType.SUCCESS) {
       AuthManager.loginSuccess();
+      StateManager.settings.demoMode = false;
       await PreferencesStorage.setBoolean(SESSION_SAVED_KEY, true);
     } else {
       AuthManager.loginFailed(result.message);
@@ -92,5 +94,6 @@ export class SessionManager {
   static demoLogin(): void {
     AuthManager.startLogin();
     AuthManager.loginSuccess();
+    StateManager.settings.demoMode = true;
   }
 }
