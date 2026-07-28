@@ -1,10 +1,10 @@
 import { CookieJar } from '../CookieJar';
 import { HttpClient, HttpResponse } from '../HttpClient';
 import { WebvpnTransport } from '../WebvpnTransport';
-import { WEBVPN_OAUTH_LOGIN_URL, WEBVPN_BASE_URL } from '../WebvpnConstants';
+import { WEBVPN_OAUTH_LOGIN_URL, WEBVPN_BASE_URL, wrapWebVPNUrl, ID_HOST_URL } from '../WebvpnConstants';
 import {
   encryptPassword, extractSm2PublicKey, extractCsrfToken,
-  extractFirstAnchorHref, extractMsgNote, extractFormAction
+  extractFirstAnchorHref, extractMsgNote
 } from '../../utils/SM2Crypto';
 import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
@@ -84,9 +84,14 @@ export class TsinghuaAuthService {
 
     this.cachedCredentials = credentials;
 
+    const idTargetUrl: string = `${ID_HOST_URL}/do/off/ui/auth/login/form/`;
+    const oauthUrl: string = wrapWebVPNUrl(idTargetUrl);
+    this.addTrace('oauth_url:' + oauthUrl);
+
     let oauthPage: string = '';
     try {
-      oauthPage = await this.transport.getOAuthPage();
+      const oauthResp: HttpResponse = await this.http.get(oauthUrl);
+      oauthPage = oauthResp.body;
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
@@ -136,7 +141,7 @@ export class TsinghuaAuthService {
     this.addTrace('posting_login');
     let loginResp: HttpResponse;
     try {
-      loginResp = await this.transport.postLoginForm(formData);
+      loginResp = await this.transport.postLoginForm(formData, oauthUrl);
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;

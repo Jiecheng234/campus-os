@@ -1,6 +1,24 @@
 export const WEBVPN_BASE_URL: string = 'https://webvpn.tsinghua.edu.cn';
-export const WEBVPN_OAUTH_LOGIN_URL: string = `${WEBVPN_BASE_URL}/login`;
-export const WEBVPN_ROAMING_URL: string = `${WEBVPN_BASE_URL}/portal/roaming.htm`;
+export const WEBVPN_OAUTH_LOGIN_URL: string = `${WEBVPN_BASE_URL}/login?oauth_login=true`;
+export const OAUTH_LBREDIRECT_PREFIX: string = 'https://oauth.tsinghua.edu.cn/lb-auth/lbredirect';
+export const ID_HOST_URL: string = 'https://id.tsinghua.edu.cn';
+export const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
+
+export function wrapWebVPNUrl(targetUrl: string): string {
+  const re: RegExp = new RegExp('^(https?):\\/\\/([^\\/:?#]+)(?::(\\d+))?(\\/[^?#]*)?(\\?[^#]*)?(#.*)?$');
+  const match = re.exec(targetUrl);
+  if (match === null) {
+    return targetUrl;
+  }
+  const scheme: string = match[1] || 'https';
+  const host: string = match[2] || '';
+  const port: string = match[3] || (scheme === 'https' ? '443' : '80');
+  const path: string = match[4] || '/';
+  const search: string = match[5] || '';
+  const hash: string = match[6] || '';
+  const uri: string = path + search + hash;
+  return `${OAUTH_LBREDIRECT_PREFIX}?scheme=${scheme}&host=${host}&port=${port}&uri=${encodeURIComponent(uri)}`;
+}
 
 export const SUBSYSTEM_INFO: string = 'info';
 export const SUBSYSTEM_LEARN: string = 'learn';
@@ -8,39 +26,23 @@ export const SUBSYSTEM_ID: string = 'id';
 
 export function getSubsystemUrl(subsystem: string): string {
   if (subsystem === SUBSYSTEM_INFO) {
-    return `${WEBVPN_BASE_URL}/http/77726476706e69737468656265737421.../`;
+    return `${WEBVPN_BASE_URL}/https/77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de/b/info/gxfw_fg/common/grjbxx`;
   }
   if (subsystem === SUBSYSTEM_LEARN) {
-    return `${WEBVPN_BASE_URL}/http/77726476706e69737468656265737421.../learn/`;
+    return `${LEARN_BASE}/b/j_spring_security_thauth_roaming_entry`;
   }
   if (subsystem === SUBSYSTEM_ID) {
-    return `${WEBVPN_BASE_URL}/http/77726476706e69737468656265737421.../id/`;
+    return `${ID_HOST_URL}/do/off/ui/auth/login/form/`;
   }
   return '';
 }
 
 export const CAMPUS_ENDPOINTS: Record<string, string> = {
-  'schedule': `${WEBVPN_BASE_URL}/http/learn.tsinghua.edu.cn/admin/...`,
-  'grades': `${WEBVPN_BASE_URL}/http/learn.tsinghua.edu.cn/grade/...`,
-  'classroom': `${WEBVPN_BASE_URL}/http/learn.tsinghua.edu.cn/classroom/...`,
-  'homework': `${WEBVPN_BASE_URL}/http/learn.tsinghua.edu.cn/homework/...`,
-  'notifications': `${WEBVPN_BASE_URL}/http/learn.tsinghua.edu.cn/notification/...`,
-  'files': `${WEBVPN_BASE_URL}/http/learn.tsinghua.edu.cn/coursefile/...`,
-  'finance_balance': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/card/balance`,
-  'finance_transactions': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/card/transactions`,
-  'network_info': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/network/info`,
-  'network_devices': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/network/devices`,
-  'electricity': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/dorm/electricity`,
-  'laundry': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/dorm/laundry`,
-  'mail_inbox': `${WEBVPN_BASE_URL}/http/mail.tsinghua.edu.cn/inbox`,
-  'mail_detail': `${WEBVPN_BASE_URL}/http/mail.tsinghua.edu.cn/mail/detail`,
-  'library_seats': `${WEBVPN_BASE_URL}/http/lib.tsinghua.edu.cn/seat/list`,
-  'library_reserve': `${WEBVPN_BASE_URL}/http/lib.tsinghua.edu.cn/seat/reserve`,
-  'petest': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/sport/petest`,
-  'sports_venues': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/sport/venues`,
-  'news_channels': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/news/channels`,
-  'news_list': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/news/list`,
-  'program': `${WEBVPN_BASE_URL}/http/info.tsinghua.edu.cn/program/completion`,
+  'schedule': `${LEARN_BASE}/f/wlxt/index/course/student/`,
+  'grades': `${LEARN_BASE}/grade/overview`,
+  'homework': `${LEARN_BASE}/b/wlxt/kczy/zy/student/zyListWj`,
+  'notifications': `${LEARN_BASE}/b/wlxt/kcgg/wlkc_ggb/student/pageListXsbyWgq`,
+  'files': `${LEARN_BASE}/b/wlxt/kj/wlkc_kjxxb/student/kjxxbByWlkcidAndSizeForStudent`,
 };
 
 export const ROAM_TARGETS: Record<string, string> = {
