@@ -183,6 +183,8 @@ export class TsinghuaAuthService {
     successResult.trace = this.trace;
 
     await SecureStorage.saveCredentials(credentials.studentId, credentials.password);
+    this.addTrace('roaming_subsystems');
+    await this.transport.roamToAllSubsystems();
 
     return successResult;
   }

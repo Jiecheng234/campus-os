@@ -9,6 +9,7 @@ const ID_LOGIN_URL: string = ID_HOST + '/do/off/ui/auth/login/check';
 const ID_BASE_URL: string = ID_HOST + '/do/off/ui/auth/login/form/';
 const LEARN_LOGIN_YYFWID: string = 'bb5df85216504820be7bba2b0ae1535b/0';
 const LOGIN_SUCCESS_MARK: string = '登录成功';
+const TWO_FACTOR_MARK: string = 'doubleAuth';
 
 const SCHEDULE_BASE: string = 'https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290';
 
@@ -38,90 +39,10 @@ export class CampusDataService {
 
   async activateLearn(): Promise<boolean> {
     if (this.learnReady) {
-      this.trace = 'already_ready';
       return true;
     }
     try {
-      const creds: SecureCredentials | undefined = await SecureStorage.getCredentials();
-      if (creds === undefined) {
-        this.trace = 'no_stored_creds';
-        return false;
-      }
-
-      this.trace = 'fetching_form';
-      const formUrl: string = ID_BASE_URL + LEARN_LOGIN_YYFWID;
-      let formHtml: string;
-      try {
-        formHtml = await this.http.get(formUrl).then((r: HttpResponse) => r.body);
-      } catch (e) {
-        this.trace = 'form_get_failed:' + (e instanceof Error ? e.message : 'unknown');
-        return false;
-      }
-
-      const pk: string = extractSm2PublicKey(formHtml);
-      if (pk.length === 0) {
-        this.trace = 'no_sm2_key;html_len=' + formHtml.length;
-        return false;
-      }
-      this.trace = 'got_sm2_key_len=' + pk.length;
-
-      const epw: string = await encryptPassword(creds.password, pk);
-      if (epw.length === 0) {
-        this.trace = 'encrypt_failed';
-        return false;
-      }
-      this.trace = 'encrypted_pw_len=' + epw.length;
-
-      const formData: Record<string, string> = {
-        'i_user': creds.studentId,
-        'i_pass': epw,
-        'fingerPrint': '',
-        'fingerGenPrint': '',
-        'fingerGenPrint3': '',
-        'i_captcha': '',
-      };
-
-      let response: string = '';
-      for (let i: number = 0; i < 2; i++) {
-        try {
-          response = await this.http.postForm(ID_LOGIN_URL, formData).then((r: HttpResponse) => r.body);
-        } catch (e) {
-          this.trace = 'post_failed:' + (e instanceof Error ? e.message : 'unknown');
-          return false;
-        }
-        if (response.indexOf(LOGIN_SUCCESS_MARK) >= 0) {
-          break;
-        }
-      }
-
-      if (response.indexOf(LOGIN_SUCCESS_MARK) < 0) {
-        this.trace = 'no_success_mark;resp_len=' + response.length;
-        return false;
-      }
-      this.trace = 'login_ok';
-
-      const callbackUrl: string = extractFirstAnchorHref(response);
-      if (callbackUrl.length === 0) {
-        this.trace = 'no_callback_url';
-        return false;
-      }
-
-      const parts: string[] = callbackUrl.split('=');
-      const ticket: string = parts[parts.length - 1];
-      if (ticket.length === 0) {
-        this.trace = 'no_ticket';
-        return false;
-      }
-      this.trace = 'ticket_len=' + ticket.length;
-
-      try {
-        await this.http.get(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry?ticket=' + ticket);
-      } catch (e) {
-        this.trace = 'roam_failed:' + (e instanceof Error ? e.message : 'unknown');
-        return false;
-      }
-      this.trace = 'roam_done';
-
+      this.trace = 'getting_home';
       const homeHtml: string = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/').then((r: HttpResponse) => r.body);
 
       const csrfPattern: string = '&_csrf=(\\S+?)["\']';
@@ -137,7 +58,7 @@ export class CampusDataService {
       this.trace = 'no_csrf;home_len=' + homeHtml.length;
       return false;
     } catch (e) {
-      this.trace = 'exception:' + (e instanceof Error ? e.message : 'unknown');
+      this.trace = 'home_fetch_failed:' + (e instanceof Error ? e.message : 'unknown');
       return false;
     }
   }
