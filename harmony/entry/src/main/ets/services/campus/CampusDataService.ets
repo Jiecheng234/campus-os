@@ -1,4 +1,5 @@
 import { HttpClient, HttpResponse } from '../HttpClient';
+import { SessionManager } from '../auth/SessionManager';
 
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
 const SCHEDULE_BASE: string = 'https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290';
@@ -20,59 +21,23 @@ export class CampusDataService {
     this.http = http;
   }
 
-  async activateLearn(): Promise<boolean> {
-    if (this.learnReady) {
-      return true;
-    }
-    try {
-      this.trace = 'home_page';
-      const homeHtml: string = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/').then((r: HttpResponse) => r.body);
-
-      let csrfFound: string = '';
-      const p1: RegExp = new RegExp('_csrf"\\s+value\\s*=\\s*"([^"]+)"', 'i');
-      const m1 = p1.exec(homeHtml);
-      if (m1 !== null && m1.length >= 2) { csrfFound = m1[1]; }
-
-      if (csrfFound.length === 0) {
-        const p2: RegExp = new RegExp('&_csrf=([a-zA-Z0-9\\-]+)', 'g');
-        const m2 = p2.exec(homeHtml);
-        if (m2 !== null && m2.length >= 2) { csrfFound = m2[1]; }
-      }
-
-      if (csrfFound.length > 0) {
-        this.csrfToken = csrfFound;
-        this.learnReady = true;
-        this.trace = 'learn_ok';
-        return true;
-      }
-
-      if (homeHtml.indexOf('sm2publicKey') >= 0) {
-        this.trace = 'need_sso';
-      } else if (homeHtml.length < 500) {
-        this.trace = 'short;' + homeHtml.length;
-      } else {
-        this.trace = 'no_csrf;' + homeHtml.length;
-      }
-      return false;
-    } catch (e) {
-      this.trace = 'ex';
-      return false;
-    }
-  }
-
   async getCsrfToken(): Promise<string> {
     if (this.csrfToken.length > 0) {
       return this.csrfToken;
     }
-    await this.activateLearn();
-    return this.csrfToken;
+    const authCsrf: string = SessionManager.getAuthService().getCsrfToken();
+    if (authCsrf.length > 0) {
+      this.csrfToken = authCsrf;
+      return authCsrf;
+    }
+    return '';
   }
 
   async fetchCourses(): Promise<CampusCourse[]> {
     try {
-      await this.activateLearn();
-      const csrf: string = this.csrfToken;
+      const csrf: string = await this.getCsrfToken();
       if (csrf.length === 0) {
+        this.trace = 'no_csrf';
         return [];
       }
       const url: string = LEARN_BASE + '/b/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId/current/zh?_csrf=' + encodeURIComponent(csrf);
@@ -80,6 +45,7 @@ export class CampusDataService {
       const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
       const resultList = json['resultList'] as Object[];
       if (resultList === undefined || resultList === null) {
+        this.trace = 'no_list';
         return [];
       }
       const courses: CampusCourse[] = [];
@@ -92,8 +58,10 @@ export class CampusDataService {
         c.code = String(row['kch'] ?? '');
         courses.push(c);
       }
+      this.trace = 'ok:' + courses.length;
       return courses;
     } catch (e) {
+      this.trace = 'ex';
       return [];
     }
   }

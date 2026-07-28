@@ -9,6 +9,10 @@ import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
 import { CampusCredentials } from '../../domain/AuthTypes';
 
+const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
+const ID_BASE_URL: string = 'https://id.tsinghua.edu.cn/do/off/ui/auth/login/form/';
+const LEARN_LOGIN_YYFWID: string = 'bb5df85216504820be7bba2b0ae1535b/0';
+
 export enum LoginResultType {
   SUCCESS = 'success',
   TWO_FACTOR = 'two_factor',
@@ -178,10 +182,72 @@ export class TsinghuaAuthService {
     successResult.trace = this.trace;
 
     await SecureStorage.saveCredentials(credentials.studentId, credentials.password);
-    this.addTrace('roaming_subsystems');
-      await this.http.get(getSubsystemUrl(SUBSYSTEM_LEARN));
+    this.addTrace('activating_learn');
+    try {
+      await this.activateLearnSession(credentials);
+      this.addTrace('learn_activated');
+    } catch (e) {
+      this.addTrace('learn_fail:' + (e instanceof Error ? e.message : ''));
+    }
 
     return successResult;
+  }
+
+  private async activateLearnSession(credentials: CampusCredentials): Promise<void> {
+    const formUrl: string = ID_BASE_URL + LEARN_LOGIN_YYFWID;
+    const formHtml: string = await this.http.get(formUrl).then((r: HttpResponse) => r.body);
+
+    const pk: string = extractSm2PublicKey(formHtml);
+    if (pk.length === 0) {
+      throw new Error('no sm2 key in learn form');
+    }
+
+    const epw: string = await encryptPassword(credentials.password, pk);
+    if (epw.length === 0) {
+      throw new Error('learn encrypt failed');
+    }
+
+    const fd: Record<string, string> = {
+      'i_user': credentials.studentId,
+      'i_pass': epw,
+      'fingerPrint': '',
+      'fingerGenPrint': '',
+      'fingerGenPrint3': '',
+      'i_captcha': '',
+    };
+
+    let response: string = '';
+    for (let i: number = 0; i < 2; i++) {
+      response = await this.http.postForm(ID_LOGIN_URL, fd).then((r: HttpResponse) => r.body);
+      if (response.indexOf('/b/doubleAuth/login') >= 0) {
+        throw new Error('learn 2FA required');
+      }
+      const cb: string = extractFirstAnchorHref(response);
+      if (cb.length > 0) { break; }
+    }
+
+    const callbackUrl: string = extractFirstAnchorHref(response);
+    if (callbackUrl.length === 0) {
+      throw new Error('no callback in learn response');
+    }
+
+    const parts: string[] = callbackUrl.split('=');
+    const ticket: string = parts[parts.length - 1];
+    if (ticket.length === 0) {
+      throw new Error('no ticket');
+    }
+
+    await this.http.get(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry?ticket=' + ticket);
+    const homeHtml: string = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/').then((r: HttpResponse) => r.body);
+
+    let csrfFound: string = '';
+    const p: RegExp = new RegExp('_csrf"\\s+value\\s*=\\s*"([^"]+)"', 'i');
+    const m = p.exec(homeHtml);
+    if (m !== null && m.length >= 2) { csrfFound = m[1]; }
+
+    if (csrfFound.length > 0) {
+      this.csrfToken = csrfFound;
+    }
   }
 
   async send2FACode(method: string): Promise<boolean> {
