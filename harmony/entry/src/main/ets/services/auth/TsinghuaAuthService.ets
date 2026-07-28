@@ -224,27 +224,17 @@ export class TsinghuaAuthService {
       if (response.indexOf('/b/doubleAuth/login') >= 0) {
         throw new Error('learn 2FA required');
       }
-      const cb: string = extractFirstAnchorHref(response);
-      if (cb.length > 0) { break; }
+      if (response.indexOf('登录成功') >= 0) {
+        break;
+      }
     }
 
-    let callbackUrl: string = extractFirstAnchorHref(response);
-    if (callbackUrl.length === 0) {
-      callbackUrl = extractMetaRedirect(response);
-    }
-    if (callbackUrl.length === 0) {
-      throw new Error('no_cb;len=' + response.length + ';pre=' + response.substring(0, 80));
+    if (response.indexOf('登录成功') < 0) {
+      throw new Error('not_ok;len=' + response.length + ';' + response.substring(20, 120));
     }
 
-    const parts: string[] = callbackUrl.split('=');
-    const ticket: string = parts[parts.length - 1];
-    if (ticket.length === 0) {
-      throw new Error('no ticket');
-    }
-
-    await this.http.get(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry?ticket=' + ticket);
+    // Try the home page directly - the CSS login should have established the session
     const homeHtml: string = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/').then((r: HttpResponse) => r.body);
-
     let csrfFound: string = '';
     const p: RegExp = new RegExp('_csrf"\\s+value\\s*=\\s*"([^"]+)"', 'i');
     const m = p.exec(homeHtml);
@@ -252,7 +242,13 @@ export class TsinghuaAuthService {
 
     if (csrfFound.length > 0) {
       this.csrfToken = csrfFound;
+      return;
     }
+
+    if (homeHtml.indexOf('sm2publicKey') >= 0) {
+      throw new Error('home_needs_login;len=' + homeHtml.length);
+    }
+    throw new Error('no_csrf_home;len=' + homeHtml.length);
   }
 
   async send2FACode(method: string): Promise<boolean> {
