@@ -1,7 +1,7 @@
 import { HttpClient, HttpResponse } from '../HttpClient';
-import { CookieJar } from '../CookieJar';
-import { encryptPassword, extractSm2PublicKey, extractFirstAnchorHref, extractCsrfToken } from '../../utils/SM2Crypto';
+import { encryptPassword, extractSm2PublicKey, extractFirstAnchorHref } from '../../utils/SM2Crypto';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
+import { wrapWebVPNUrl } from '../WebvpnConstants';
 
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
 const ID_HOST: string = 'https://id.tsinghua.edu.cn';
@@ -46,7 +46,7 @@ export class CampusDataService {
       }
 
       this.trace = 'fetch_learn_form';
-      const formUrl: string = ID_BASE_URL + LEARN_LOGIN_YYFWID;
+      const formUrl: string = wrapWebVPNUrl(ID_BASE_URL + LEARN_LOGIN_YYFWID);
       const formHtml: string = await this.http.get(formUrl).then((r: HttpResponse) => r.body);
 
       const pk: string = extractSm2PublicKey(formHtml);
@@ -94,10 +94,10 @@ export class CampusDataService {
         return false;
       }
       this.trace = 'roaming_learn';
-      await this.http.get(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry?ticket=' + ticket);
+      await this.http.get(wrapWebVPNUrl(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry?ticket=' + ticket));
 
       this.trace = 'home_page';
-      const homeHtml: string = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/').then((r: HttpResponse) => r.body);
+      const homeHtml: string = await this.http.get(wrapWebVPNUrl(LEARN_BASE + '/f/wlxt/index/course/student/')).then((r: HttpResponse) => r.body);
 
       let csrfFound: string = '';
       const p1: RegExp = new RegExp('_csrf"\\s+value\\s*=\\s*"([^"]+)"', 'i');

@@ -102,7 +102,7 @@ export struct HomePage {
 
   syncCampusData(): void {
     if (!AuthManager.isLoggedIn() || StateManager.isDemoMode()) {
-      promptAction.showToast({ message: '真实登录后才能同步校园数据', duration: 2000 });
+      promptAction.showToast({ message: '演示模式下使用本地数据', duration: 2000 });
       return;
     }
     this.syncStatus = '同步中...';
@@ -112,10 +112,10 @@ export struct HomePage {
       if (courses.length > 0) {
         this.syncStatus = '已同步 ' + String(courses.length) + ' 门课程';
       } else {
-        this.syncStatus = 'trace: ' + service.trace;
+        this.syncStatus = '数据同步需完整 WebVPN 传输层(dbg:' + service.trace + ')';
       }
     }).catch(() => {
-      this.syncStatus = 'trace: ' + service.trace;
+      this.syncStatus = '同步失败(dbg:' + service.trace + ')';
     });
   }
 
