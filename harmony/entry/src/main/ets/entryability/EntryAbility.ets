@@ -4,6 +4,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { getTurboModuleList } from '../turbomodules/TurboModuleRegistry';
 import { runPhase4SelfTest } from '../utils/Phase4SelfTest';
+import { PreferencesStorage } from '../storage/PreferencesStorage';
 
 const DOMAIN = 0xCAFE;
 
@@ -15,6 +16,7 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, 'CampusOS', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
     hilog.info(DOMAIN, 'CampusOS', 'CampusOS EntryAbility onCreate');
+    PreferencesStorage.init(this.context);
 
     // TODO(Phase 4): Initialize React Native runtime
     // 1. Create RN instance: const rnInstance = await RNInstanceFactory.create(this.context);
