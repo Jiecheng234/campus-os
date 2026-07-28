@@ -120,7 +120,15 @@ export class HttpClient {
         const location: string = getHeaderValue(respHeaderObj, 'Location');
 
         if (status >= 300 && status < 400 && location.length > 0) {
-          this.manualRedirectRequest(location, requestOptions, depth + 1).then((result: HttpResponse) => {
+          const followOptions: http.HttpRequestOptions = {
+            method: http.RequestMethod.GET,
+            header: requestOptions.header,
+            extraData: '',
+            expectDataType: http.HttpDataType.STRING,
+            connectTimeout: requestOptions.connectTimeout,
+            readTimeout: requestOptions.readTimeout,
+          };
+          this.manualRedirectRequest(location, followOptions, depth + 1).then((result: HttpResponse) => {
             resolve(result);
           }).catch((err: HttpError) => {
             reject(err);
