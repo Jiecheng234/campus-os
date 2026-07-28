@@ -13,20 +13,18 @@ export class HttpError extends Error {
   body: string = '';
 }
 
-function getHeaderValue(headerObj: Record<string, Object>, key: string): string {
-  if (key.length === 0) {
-    return '';
-  }
-  const val: Object = headerObj[key];
-  if (val === undefined || val === null) {
-    return '';
-  }
-  return String(val);
+interface PendingRequest {
+  resolve: (value: HttpResponse) => void;
+  reject: (reason: HttpError) => void;
+  url: string;
+  requestOptions: http.HttpRequestOptions;
+  depth: number;
 }
 
 export class HttpClient {
   private cookieJar: CookieJar;
   private timeoutMs: number = 30000;
+  private maxRedirects: number = 30;
 
   constructor(cookieJar: CookieJar) {
     this.cookieJar = cookieJar;
@@ -58,7 +56,7 @@ export class HttpClient {
       const extraKeys: string[] = Object.keys(extraHeaders);
       for (let i: number = 0; i < extraKeys.length; i++) {
         const k: string = extraKeys[i];
-        headers[k] = extraHeaders[k];
+        headers[k] = extraKeys[k];
       }
     }
     return this.request('POST', url, body, headers);
@@ -96,30 +94,39 @@ export class HttpClient {
       readTimeout: this.timeoutMs,
     };
 
-    return this.manualRedirectRequest(url, requestOptions, 0);
+    return this.interceptedRequest(url, requestOptions, 0);
   }
 
-  private async manualRedirectRequest(url: string, requestOptions: http.HttpRequestOptions, depth: number): Promise<HttpResponse> {
-    const MAX_REDIRECTS: number = 20;
-    if (depth > MAX_REDIRECTS) {
-      const err: HttpError = new HttpError();
-      err.message = 'Too many redirects';
-      err.statusCode = -1;
-      throw err;
-    }
-
-    const innerReq: http.HttpRequest = http.createHttp();
+  private interceptedRequest(url: string, requestOptions: http.HttpRequestOptions, depth: number): Promise<HttpResponse> {
     return new Promise<HttpResponse>((resolve: (value: HttpResponse) => void, reject: (reason: HttpError) => void) => {
+      if (depth >= this.maxRedirects) {
+        const err: HttpError = new HttpError();
+        err.message = 'Too many redirects';
+        reject(err);
+        return;
+      }
+
+      const innerReq: http.HttpRequest = http.createHttp();
+      let redirectUrl: string = '';
+      let responseHeaders: Record<string, string> = {};
+
+      innerReq.on('headersReceive', (header: Object) => {
+        if (header === undefined || header === null) {
+          return;
+        }
+        const headerRecord: Record<string, Object> = header as Record<string, Object>;
+        const location: string = String(headerRecord['Location'] || '');
+        if (location.length > 0) {
+          redirectUrl = location;
+          innerReq.destroy();
+        }
+        responseHeaders['Location'] = location;
+      });
+
       innerReq.request(url, requestOptions).then((resp: http.HttpResponse) => {
         innerReq.destroy();
-        const status: number = resp.responseCode;
-        const respHeaderObj: Record<string, Object> = {};
-        if (resp.header !== undefined) {
-          respHeaderObj['Location'] = resp.header['Location'];
-        }
-        const location: string = getHeaderValue(respHeaderObj, 'Location');
 
-        if (status >= 300 && status < 400 && location.length > 0) {
+        if (redirectUrl.length > 0) {
           const followOptions: http.HttpRequestOptions = {
             method: http.RequestMethod.GET,
             header: requestOptions.header,
@@ -128,7 +135,7 @@ export class HttpClient {
             connectTimeout: requestOptions.connectTimeout,
             readTimeout: requestOptions.readTimeout,
           };
-          this.manualRedirectRequest(location, followOptions, depth + 1).then((result: HttpResponse) => {
+          this.interceptedRequest(redirectUrl, followOptions, depth + 1).then((result: HttpResponse) => {
             resolve(result);
           }).catch((err: HttpError) => {
             reject(err);
@@ -137,13 +144,32 @@ export class HttpClient {
         }
 
         const response: HttpResponse = new HttpResponse();
-        response.statusCode = status;
+        response.statusCode = resp.responseCode;
         if (typeof resp.result === 'string') {
           response.body = resp.result;
         }
+        response.headers = responseHeaders;
         resolve(response);
       }).catch((error: BusinessError) => {
         innerReq.destroy();
+
+        if (redirectUrl.length > 0) {
+          const followOptions: http.HttpRequestOptions = {
+            method: http.RequestMethod.GET,
+            header: requestOptions.header,
+            extraData: '',
+            expectDataType: http.HttpDataType.STRING,
+            connectTimeout: requestOptions.connectTimeout,
+            readTimeout: requestOptions.readTimeout,
+          };
+          this.interceptedRequest(redirectUrl, followOptions, depth + 1).then((result: HttpResponse) => {
+            resolve(result);
+          }).catch((err: HttpError) => {
+            reject(err);
+          });
+          return;
+        }
+
         const httpError: HttpError = new HttpError();
         httpError.message = error.message;
         httpError.statusCode = error.code;
