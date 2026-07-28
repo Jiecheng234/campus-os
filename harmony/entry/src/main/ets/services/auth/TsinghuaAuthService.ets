@@ -251,4 +251,8 @@ export class TsinghuaAuthService {
   getCookieString(url: string): string {
     return this.cookieJar.getCookieString(url);
   }
+
+  getHttpClient(): HttpClient {
+    return this.http;
+  }
 }

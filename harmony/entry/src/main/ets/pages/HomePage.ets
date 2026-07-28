@@ -5,6 +5,10 @@ import { Theme, SafeTop } from './Theme';
 import { getTodayCourses, getBriefingMetrics, getQuickActions, getGreeting,
   getDateString, CourseItem, BriefingMetrics, QuickAction } from './HomeData';
 import { promptAction } from '@kit.ArkUI';
+import { SessionManager } from '../services/auth/SessionManager';
+import { CampusCourse, CampusDataService } from '../services/campus/CampusDataService';
+import { AuthManager } from '../state/AuthManager';
+import { StateManager } from '../state/StateManager';
 
 @Component
 struct MetricCard {
@@ -93,6 +97,27 @@ struct QuickActionButton {
 @Component
 export struct HomePage {
   @State showActionsToast: string = '';
+  @State syncStatus: string = '';
+  @State realCourseCount: number = 0;
+
+  syncCampusData(): void {
+    if (!AuthManager.isLoggedIn() || StateManager.isDemoMode()) {
+      promptAction.showToast({ message: '真实登录后才能同步校园数据', duration: 2000 });
+      return;
+    }
+    this.syncStatus = '同步中...';
+    const service: CampusDataService = SessionManager.getCampusDataService();
+    service.fetchCourses().then((courses: CampusCourse[]) => {
+      this.realCourseCount = courses.length;
+      if (courses.length > 0) {
+        this.syncStatus = '已同步 ' + String(courses.length) + ' 门课程';
+      } else {
+        this.syncStatus = '未获取到课程数据';
+      }
+    }).catch(() => {
+      this.syncStatus = '同步失败';
+    });
+  }
 
   build() {
     Scroll() {
@@ -117,6 +142,24 @@ export struct HomePage {
             .margin({ top: 2 })
         }
         .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: 4 })
+
+        Row() {
+          Button('同步校园数据')
+            .type(ButtonType.Capsule)
+            .fontSize(12)
+            .fontColor(Theme.primary)
+            .backgroundColor('rgba(124,92,250,0.08)')
+            .onClick(() => { this.syncCampusData(); })
+
+          if (this.syncStatus.length > 0) {
+            Text(this.syncStatus)
+              .fontSize(12)
+              .fontColor(Theme.textMuted)
+              .margin({ left: 10 })
+          }
+        }
         .width('100%')
         .padding({ left: 20, right: 20, bottom: 4 })
 

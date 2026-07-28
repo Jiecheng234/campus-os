@@ -4,17 +4,28 @@ import { PreferencesStorage } from '../../storage/PreferencesStorage';
 import { StorageKeys } from '../../storage/StorageKeys';
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
+import { CampusDataService } from '../campus/CampusDataService';
 
 const SESSION_SAVED_KEY: string = 'auth_session_saved';
 
 export class SessionManager {
   private static authService: TsinghuaAuthService | undefined = undefined;
+  private static campusDataService: CampusDataService | undefined = undefined;
 
   static getAuthService(): TsinghuaAuthService {
     if (SessionManager.authService === undefined) {
       SessionManager.authService = new TsinghuaAuthService();
     }
     return SessionManager.authService;
+  }
+
+  static getCampusDataService(): CampusDataService {
+    if (SessionManager.campusDataService === undefined) {
+      const auth: TsinghuaAuthService = SessionManager.getAuthService();
+      const http = auth.getHttpClient();
+      SessionManager.campusDataService = new CampusDataService(http);
+    }
+    return SessionManager.campusDataService;
   }
 
   static async tryRestoreCachedLogin(): Promise<boolean> {
