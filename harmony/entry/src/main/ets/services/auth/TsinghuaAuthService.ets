@@ -90,8 +90,22 @@ export class TsinghuaAuthService {
 
     let oauthPage: string = '';
     try {
-      const oauthResp: HttpResponse = await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
-      oauthPage = oauthResp.body;
+      let currentUrl: string = WEBVPN_OAUTH_LOGIN_URL;
+      for (let hop: number = 0; hop < 10; hop++) {
+        const oauthResp: HttpResponse = await this.http.get(currentUrl);
+        oauthPage = oauthResp.body;
+        this.addTrace('hop' + hop + ':' + currentUrl.substring(0, 50));
+
+        if (oauthPage.indexOf('sm2publicKey') >= 0) {
+          break;
+        }
+
+        const nextUrl: string = extractFirstAnchorHref(oauthPage);
+        if (nextUrl.length === 0) {
+          break;
+        }
+        currentUrl = nextUrl;
+      }
     } catch (e) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
