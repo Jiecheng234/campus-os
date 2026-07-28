@@ -90,7 +90,7 @@ export class TsinghuaAuthService {
 
     let oauthPage: string = '';
     try {
-      const oauthResp: HttpResponse = await this.http.get(oauthUrl);
+      const oauthResp: HttpResponse = await this.http.get(WEBVPN_OAUTH_LOGIN_URL);
       oauthPage = oauthResp.body;
     } catch (e) {
       const result: LoginResult = new LoginResult();
@@ -104,7 +104,7 @@ export class TsinghuaAuthService {
     if (oauthPage.indexOf('sm2publicKey') < 0) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.ERROR;
-      result.message = '无法获取登录页面，请检查网络连接';
+      result.message = '无法获取登录页面: ' + oauthPage.substring(0, 100);
       result.trace = this.trace;
       return result;
     }
