@@ -30,6 +30,7 @@ export class CampusDataService {
   private http: HttpClient;
   private csrfToken: string = '';
   private learnReady: boolean = false;
+  public trace: string = '';
 
   constructor(http: HttpClient) {
     this.http = http;
@@ -37,26 +38,39 @@ export class CampusDataService {
 
   async activateLearn(): Promise<boolean> {
     if (this.learnReady) {
+      this.trace = 'already_ready';
       return true;
     }
     try {
       const creds: SecureCredentials | undefined = await SecureStorage.getCredentials();
       if (creds === undefined) {
+        this.trace = 'no_stored_creds';
         return false;
       }
 
+      this.trace = 'fetching_form';
       const formUrl: string = ID_BASE_URL + LEARN_LOGIN_YYFWID;
-      const formHtml: string = await this.http.get(formUrl).then((r: HttpResponse) => r.body);
+      let formHtml: string;
+      try {
+        formHtml = await this.http.get(formUrl).then((r: HttpResponse) => r.body);
+      } catch (e) {
+        this.trace = 'form_get_failed:' + (e instanceof Error ? e.message : 'unknown');
+        return false;
+      }
 
       const pk: string = extractSm2PublicKey(formHtml);
       if (pk.length === 0) {
+        this.trace = 'no_sm2_key;html_len=' + formHtml.length;
         return false;
       }
+      this.trace = 'got_sm2_key_len=' + pk.length;
 
       const epw: string = await encryptPassword(creds.password, pk);
       if (epw.length === 0) {
+        this.trace = 'encrypt_failed';
         return false;
       }
+      this.trace = 'encrypted_pw_len=' + epw.length;
 
       const formData: Record<string, string> = {
         'i_user': creds.studentId,
@@ -69,24 +83,45 @@ export class CampusDataService {
 
       let response: string = '';
       for (let i: number = 0; i < 2; i++) {
-        response = await this.http.postForm(ID_LOGIN_URL, formData).then((r: HttpResponse) => r.body);
+        try {
+          response = await this.http.postForm(ID_LOGIN_URL, formData).then((r: HttpResponse) => r.body);
+        } catch (e) {
+          this.trace = 'post_failed:' + (e instanceof Error ? e.message : 'unknown');
+          return false;
+        }
         if (response.indexOf(LOGIN_SUCCESS_MARK) >= 0) {
           break;
         }
       }
 
+      if (response.indexOf(LOGIN_SUCCESS_MARK) < 0) {
+        this.trace = 'no_success_mark;resp_len=' + response.length;
+        return false;
+      }
+      this.trace = 'login_ok';
+
       const callbackUrl: string = extractFirstAnchorHref(response);
       if (callbackUrl.length === 0) {
+        this.trace = 'no_callback_url';
         return false;
       }
 
       const parts: string[] = callbackUrl.split('=');
       const ticket: string = parts[parts.length - 1];
       if (ticket.length === 0) {
+        this.trace = 'no_ticket';
         return false;
       }
+      this.trace = 'ticket_len=' + ticket.length;
 
-      await this.http.get(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry?ticket=' + ticket);
+      try {
+        await this.http.get(LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry?ticket=' + ticket);
+      } catch (e) {
+        this.trace = 'roam_failed:' + (e instanceof Error ? e.message : 'unknown');
+        return false;
+      }
+      this.trace = 'roam_done';
+
       const homeHtml: string = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/').then((r: HttpResponse) => r.body);
 
       const csrfPattern: string = '&_csrf=(\\S+?)["\']';
@@ -95,11 +130,14 @@ export class CampusDataService {
       if (csrfMatch !== null && csrfMatch.length >= 2) {
         this.csrfToken = csrfMatch[1];
         this.learnReady = true;
+        this.trace = 'learn_ok';
         return true;
       }
 
+      this.trace = 'no_csrf;home_len=' + homeHtml.length;
       return false;
     } catch (e) {
+      this.trace = 'exception:' + (e instanceof Error ? e.message : 'unknown');
       return false;
     }
   }

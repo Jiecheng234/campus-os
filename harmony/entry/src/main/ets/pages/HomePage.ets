@@ -112,10 +112,10 @@ export struct HomePage {
       if (courses.length > 0) {
         this.syncStatus = '已同步 ' + String(courses.length) + ' 门课程';
       } else {
-        this.syncStatus = '未获取到课程数据';
+        this.syncStatus = 'trace: ' + service.trace;
       }
     }).catch(() => {
-      this.syncStatus = '同步失败';
+      this.syncStatus = 'trace: ' + service.trace;
     });
   }
 
