@@ -1,6 +1,8 @@
 import { rcp } from '@kit.RemoteCommunicationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CookieManager } from './CookieManager';
+import { decodeGBK, isGBKContentType } from '../utils/EncodingUtils';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 export class HttpResponse {
   statusCode: number = 0;
@@ -98,9 +100,16 @@ export class HttpClient {
     let currentMethod: string = method;
     let currentUrl: string = url;
     let currentBody: string = body;
+    let currentHeaders: Record<string, string> = {};
+    if (extraHeaders !== undefined) {
+      const keys: string[] = Object.keys(extraHeaders);
+      for (let i: number = 0; i < keys.length; i++) {
+        currentHeaders[keys[i]] = extraHeaders[keys[i]];
+      }
+    }
 
     for (let hop: number = 0; hop < this.maxRedirects; hop++) {
-      const resp: HttpResponse = await this.rcpRequest(currentMethod, currentUrl, currentBody);
+      const resp: HttpResponse = await this.rcpRequest(currentMethod, currentUrl, currentBody, currentHeaders);
       const status: number = resp.statusCode;
 
       if (status < 300 || status >= 400) {
@@ -115,6 +124,7 @@ export class HttpClient {
       currentMethod = 'GET';
       currentUrl = resolveUrl(currentUrl, location);
       currentBody = '';
+      currentHeaders = {};
     }
 
     const err: HttpError = new HttpError();
@@ -124,12 +134,19 @@ export class HttpClient {
 
   private lastResponseHeaders: Record<string, string | string[] | undefined> = {};
 
-  private async rcpRequest(method: string, url: string, body: string): Promise<HttpResponse> {
+  private async rcpRequest(method: string, url: string, body: string, extraHeaders?: Record<string, string>): Promise<HttpResponse> {
     const cookieHeader: string = this.cookieManager.getCookieHeader(url);
 
     const reqHeaders: Record<string, string> = {};
+    reqHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36';
     if (cookieHeader.length > 0) {
       reqHeaders['Cookie'] = cookieHeader;
+    }
+    if (extraHeaders !== undefined) {
+      const keys: string[] = Object.keys(extraHeaders);
+      for (let i: number = 0; i < keys.length; i++) {
+        reqHeaders[keys[i]] = extraHeaders[keys[i]];
+      }
     }
 
     const config: rcp.Configuration = {
@@ -154,7 +171,27 @@ export class HttpClient {
 
       const httpResp: HttpResponse = new HttpResponse();
       httpResp.statusCode = resp.statusCode;
-      httpResp.body = resp.toString() ?? '';
+
+      let contentType: string = '';
+      const ctVal = resp.headers['Content-Type'] || resp.headers['content-type'];
+      if (typeof ctVal === 'string') { contentType = ctVal; }
+      else if (Array.isArray(ctVal) && ctVal.length > 0) { contentType = ctVal[0]; }
+
+      if (isGBKContentType(contentType)) {
+        try {
+          const buf: ArrayBuffer | undefined = resp.body;
+          if (buf !== undefined) {
+            const bytes: Uint8Array = new Uint8Array(buf);
+            httpResp.body = decodeGBK(bytes);
+          } else {
+            httpResp.body = resp.toString() ?? '';
+          }
+        } catch (e) {
+          httpResp.body = resp.toString() ?? '';
+        }
+      } else {
+        httpResp.body = resp.toString() ?? '';
+      }
       return httpResp;
     } catch (e) {
       const err: HttpError = new HttpError();

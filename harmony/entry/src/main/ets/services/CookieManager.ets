@@ -26,7 +26,12 @@ export class CookieManager {
       if (kv.length < 2) { continue; }
       const entry: CookieEntry = new CookieEntry();
       entry.name = kv[0].trim();
-      entry.value = decodeURIComponent(kv.slice(1).join('=').trim());
+      const rawValue: string = kv.slice(1).join('=').trim();
+      try {
+        entry.value = decodeURIComponent(rawValue);
+      } catch (e) {
+        entry.value = rawValue;
+      }
       entry.domain = domain;
       for (let i: number = 1; i < parts.length; i++) {
         const attr: string = parts[i].trim().toLowerCase();
@@ -89,7 +94,12 @@ export class CookieManager {
 
   private domainMatch(requestDomain: string, cookieDomain: string): boolean {
     if (requestDomain === cookieDomain) { return true; }
-    if (requestDomain.endsWith('.' + cookieDomain)) { return true; }
+    let normalized: string = cookieDomain;
+    if (normalized.startsWith('.')) {
+      normalized = normalized.substring(1);
+    }
+    if (requestDomain === normalized) { return true; }
+    if (requestDomain.endsWith('.' + normalized)) { return true; }
     return false;
   }
 

@@ -3,10 +3,10 @@ import { PreferencesStorage } from './PreferencesStorage';
 const SECURE_KEY_PREFIX: string = '@secure:';
 
 export class SecureStorage {
-  static async saveCredentials(studentId: string, password: string): Promise<void> {
+  static async saveCredentials(studentId: string, password: string, fingerprint: string): Promise<void> {
     const encodedId: string = encodeURIComponent(studentId);
     const encodedPw: string = encodeURIComponent(password);
-    const combined: string = `${encodedId}:${encodedPw}`;
+    const combined: string = `${encodedId}:${encodedPw}:${fingerprint}`;
     await PreferencesStorage.setString(SECURE_KEY_PREFIX + 'credentials', combined);
   }
 
@@ -22,6 +22,9 @@ export class SecureStorage {
     const result: SecureCredentials = new SecureCredentials();
     result.studentId = decodeURIComponent(parts[0]);
     result.password = decodeURIComponent(parts[1]);
+    if (parts.length >= 3) {
+      result.fingerprint = parts[2];
+    }
     return result;
   }
 
@@ -33,4 +36,5 @@ export class SecureStorage {
 export class SecureCredentials {
   studentId: string = '';
   password: string = '';
+  fingerprint: string = '';
 }

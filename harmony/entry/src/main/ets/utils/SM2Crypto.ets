@@ -82,9 +82,79 @@ export async function encryptPassword(password: string, publicKey: string): Prom
     cipher = cryptoFramework.createCipher('SM2_256|SM3');
     await cipher.init(cryptoFramework.CryptoMode.ENCRYPT_MODE, pubKey, null);
     const encryptData: cryptoFramework.DataBlob = await cipher.doFinal(plainBlob);
-    return SM2_PREFIX + uint8ArrayToHex(encryptData.data);
+    const raw: Uint8Array = derToRawSM2(encryptData.data);
+    return uint8ArrayToHex(raw);
   } catch (e) {
     return '';
+  }
+}
+
+function readDerLength(data: Uint8Array, offset: number): number {
+  const first: number = data[offset];
+  if ((first & 0x80) === 0) {
+    return first;
+  }
+  const numBytes: number = first & 0x7F;
+  let len: number = 0;
+  for (let i: number = 1; i <= numBytes; i++) {
+    len = len * 256 + data[offset + i];
+  }
+  return len;
+}
+
+function derToRawSM2(der: Uint8Array): Uint8Array {
+  try {
+    let offset: number = 0;
+    if (der[offset] !== 0x30) {
+      return der;
+    }
+    offset = offset + 1;
+    const seqLen: number = readDerLength(der, offset);
+    offset = offset + 1;
+    if (seqLen > 0x7F) {
+      offset = offset + 1;
+    }
+
+    const parts: Uint8Array[] = [];
+    const end: number = offset + seqLen;
+    while (offset < end) {
+      const tag: number = der[offset];
+      offset = offset + 1;
+      const len: number = readDerLength(der, offset);
+      offset = offset + 1;
+      if (len > 0x7F) {
+        offset = offset + 1;
+      }
+      if (offset + len > der.length) {
+        break;
+      }
+      let valueStart: number = offset;
+      if (tag === 0x02 && der[valueStart] === 0x00) {
+        valueStart = valueStart + 1;
+      }
+      const part: Uint8Array = new Uint8Array(len - (valueStart - offset));
+      for (let i: number = 0; i < part.length; i++) {
+        part[i] = der[valueStart + i];
+      }
+      parts.push(part);
+      offset = offset + len;
+    }
+
+    if (parts.length >= 4) {
+      const total: number = 1 + parts[0].length + parts[1].length + parts[2].length + parts[3].length;
+      const raw: Uint8Array = new Uint8Array(total);
+      let idx: number = 0;
+      raw[idx] = 0x04;
+      idx = idx + 1;
+      for (let i: number = 0; i < parts[0].length; i++) { raw[idx] = parts[0][i]; idx = idx + 1; }
+      for (let i: number = 0; i < parts[1].length; i++) { raw[idx] = parts[1][i]; idx = idx + 1; }
+      for (let i: number = 0; i < parts[2].length; i++) { raw[idx] = parts[2][i]; idx = idx + 1; }
+      for (let i: number = 0; i < parts[3].length; i++) { raw[idx] = parts[3][i]; idx = idx + 1; }
+      return raw;
+    }
+    return der;
+  } catch (e) {
+    return der;
   }
 }
 

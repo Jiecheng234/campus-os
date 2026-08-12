@@ -5,6 +5,8 @@ import { StorageKeys } from '../../storage/StorageKeys';
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
 import { CampusDataService } from '../campus/CampusDataService';
+import { generateUUID } from '../../utils/CryptoUtils';
+import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
 
 const SESSION_SAVED_KEY: string = 'auth_session_saved';
 
@@ -48,6 +50,14 @@ export class SessionManager {
     const credentials: CampusCredentials = new CampusCredentials();
     credentials.studentId = studentId;
     credentials.password = password;
+
+    // 复用已持久化的 fingerprint（首次登录生成，后续复用，避免信任设备数量超限）
+    const saved: SecureCredentials | undefined = await SecureStorage.getCredentials();
+    if (saved !== undefined && saved.fingerprint.length > 0) {
+      credentials.fingerprint = saved.fingerprint;
+    } else {
+      credentials.fingerprint = generateUUID().replace(/-/g, '');
+    }
 
     const result: LoginResult = await service.login(credentials);
 

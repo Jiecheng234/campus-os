@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {                 
+    "deveco": {
+      "name": "DevEco Code",
+      "models": {
+        "kimi-k3": { // 模型名称，需要自行配置
+          "tool_call": true,
+          "limit": {
+            "context": 1000000,
+            "output": 8192
+          }
+        }
+      },
+      "options": {
+        "baseURL": "https://api.moonshot.cn/v1", // 模型的访问地址，需要自行配置
+        "apiKey": "sk-RmOH78Soaa10qLJr24I3lX7SeX3pKRuOmpq2KDWwAXGzzOLx" // 模型的访问密钥，需要自行配置
+      }
+    }
+  }
+}

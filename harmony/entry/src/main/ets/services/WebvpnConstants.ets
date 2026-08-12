@@ -3,7 +3,14 @@ export const WEBVPN_OAUTH_LOGIN_URL: string = `${WEBVPN_BASE_URL}/login?oauth_lo
 export const OAUTH_LBREDIRECT_PREFIX: string = 'https://oauth.tsinghua.edu.cn/lb-auth/lbredirect';
 export const ID_HOST_URL: string = 'https://id.tsinghua.edu.cn';
 export const ID_LOGIN_URL: string = `${ID_HOST_URL}/do/off/ui/auth/login/check`;
+export const DOUBLE_AUTH_URL: string = `${ID_HOST_URL}/b/doubleAuth/login`;
+export const SAVE_FINGER_URL: string = `${ID_HOST_URL}/b/doubleAuth/personal/saveFinger`;
+export const INFO_PORTAL_YYFWID: string = '10000ea055dd8d81d09d5a1ba55d39ad';
 export const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
+export const LEARN_AUTH_ROAM: string = `${LEARN_BASE}/b/j_spring_security_thauth_roaming_entry`;
+export const LEARN_STUDENT_HOME: string = `${LEARN_BASE}/f/wlxt/index/course/student/`;
+export const LEARN_CURRENT_SEMESTER: string = `${LEARN_BASE}/b/kc/zhjw_v_code_xnxq/getCurrentAndNextSemester`;
+export const LEARN_COURSE_LIST: string = `${LEARN_BASE}/b/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId`;
 
 export function wrapWebVPNUrl(targetUrl: string): string {
   const re: RegExp = new RegExp('^(https?):\\/\\/([^\\/:?#]+)(?::(\\d+))?(\\/[^?#]*)?(\\?[^#]*)?(#.*)?$');

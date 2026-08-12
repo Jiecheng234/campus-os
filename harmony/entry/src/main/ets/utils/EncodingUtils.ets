@@ -1,11 +1,18 @@
+import { util } from '@kit.ArkTS';
+
 export function decodeGBK(bytes: Uint8Array): string {
-  let result: string = '';
-  for (let i: number = 0; i < bytes.length; i++) {
-    if (bytes[i] < 0x80) {
-      result = result + String.fromCharCode(bytes[i]);
+  try {
+    const decoder: util.TextDecoder = util.TextDecoder.create('gbk', { ignoreBOM: true });
+    return decoder.decodeToString(bytes, { stream: false });
+  } catch (e) {
+    let result: string = '';
+    for (let i: number = 0; i < bytes.length; i++) {
+      if (bytes[i] < 0x80) {
+        result = result + String.fromCharCode(bytes[i]);
+      }
     }
+    return result;
   }
-  return result;
 }
 
 export function decodeURLEncodedGBK(str: string): string {
@@ -25,4 +32,9 @@ export function decodeURLEncodedGBK(str: string): string {
     i = i + 1;
   }
   return result;
+}
+
+export function isGBKContentType(contentType: string): boolean {
+  const lower: string = contentType.toLowerCase();
+  return lower.indexOf('gb2312') >= 0 || lower.indexOf('gbk') >= 0;
 }
