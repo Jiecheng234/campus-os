@@ -7,10 +7,15 @@ import {
   CourseItem, HomeworkItem, NotificationItem, FileItem, DeadlineForm
 } from './LearningData';
 import { promptAction } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { CourseDetailPage } from './learning/CourseDetailPage';
 import { HomeworkDetailPage } from './learning/HomeworkDetailPage';
 import { NotificationDetailPage } from './learning/NotificationDetailPage';
 import { FileDetailPage } from './learning/FileDetailPage';
+import { SessionManager } from '../services/auth/SessionManager';
+import { CampusCourse, CampusDataService } from '../services/campus/CampusDataService';
+import { AuthManager } from '../state/AuthManager';
+import { StateManager } from '../state/StateManager';
 
 @Component
 struct SegmentBar {
@@ -164,10 +169,44 @@ export struct LearningPage {
   @State ddls: HomeworkItem[] = getHomeworkList();
   @State form: DeadlineForm = new DeadlineForm();
   @State subScreen: string = '';
+  @State realCourses: CourseItem[] = [];
+  @State hasRealData: boolean = false;
   private tabs: string[] = ['课程', '作业', '通知', '文件'];
 
+  aboutToAppear(): void {
+    this.loadRealCourses();
+  }
+
+  private loadRealCourses(): void {
+    if (!AuthManager.isLoggedIn() || StateManager.isDemoMode()) {
+      return;
+    }
+    const service: CampusDataService = SessionManager.getCampusDataService();
+    service.fetchCourses().then((courses: CampusCourse[]) => {
+      hilog.info(0xCAFE, 'LearnAct', 'UI_FETCH_COURSES count=%{public}d trace=%{public}s', courses.length, service.trace);
+      if (courses.length > 0) {
+        const mapped: CourseItem[] = [];
+        for (let i: number = 0; i < courses.length; i++) {
+          const item: CourseItem = new CourseItem();
+          item.name = courses[i].name;
+          item.teacher = courses[i].teacher;
+          item.code = courses[i].code;
+          mapped.push(item);
+        }
+        this.realCourses = mapped;
+        this.hasRealData = true;
+      }
+    }).catch((e: Object) => {
+      hilog.info(0xCAFE, 'LearnAct', 'UI_FETCH_COURSES ex trace=%{public}s', service.trace);
+    });
+  }
+
+  private getDisplayCourses(): CourseItem[] {
+    return this.hasRealData ? this.realCourses : getCourses();
+  }
+
   private getTabCounts(): number[] {
-    return [getCourses().length, this.ddls.length, getNotifications().length, getFiles().length];
+    return [this.getDisplayCourses().length, this.ddls.length, getNotifications().length, getFiles().length];
   }
 
   private getTabCountsSnippet(): string {
@@ -228,9 +267,9 @@ export struct LearningPage {
 
           if (this.activeTab === '课程') {
             Column() {
-              ForEach(getCourses(), (item: CourseItem, index: number) => {
+              ForEach(this.getDisplayCourses(), (item: CourseItem, index: number) => {
                 CourseCard({ item: item, onCardClick: () => { this.subScreen = 'course'; } })
-                if (index < getCourses().length - 1) {
+                if (index < this.getDisplayCourses().length - 1) {
                   Divider().color(Theme.divider).margin({ left: 15 })
                 }
               })

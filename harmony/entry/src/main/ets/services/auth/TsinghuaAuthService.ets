@@ -13,6 +13,11 @@ import { CampusCredentials } from '../../domain/AuthTypes';
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
 const ID_BASE_URL: string = 'https://id.tsinghua.edu.cn/do/off/ui/auth/login/form/';
 const LEARN_LOGIN_YYFWID: string = 'bb5df85216504820be7bba2b0ae1535b/0';
+const LEARN_AUTH_ROAM: string = LEARN_BASE + '/b/j_spring_security_thauth_roaming_entry';
+const LEARN_STUDENT_HOME: string = LEARN_BASE + '/f/wlxt/index/course/student/';
+// 与原项目一致的权威判定标记
+const LOGIN_SUCCESS_MARK: string = '登录成功。正在重定向到';
+const TWO_FACTOR_MARK: string = '二次认证';
 
 export enum LoginResultType {
   SUCCESS = 'success',
@@ -42,6 +47,7 @@ export class TsinghuaAuthService {
   private trace: string[] = [];
   private cachedCredentials: CampusCredentials | undefined = undefined;
   private twoFactorHandler: TwoFactorHandler | undefined = undefined;
+  private twoFactorMethod: string = 'mobile';
   private http: HttpClient;
 
   constructor() {
@@ -70,7 +76,13 @@ export class TsinghuaAuthService {
       const campusCreds: CampusCredentials = new CampusCredentials();
       campusCreds.studentId = creds.studentId;
       campusCreds.password = creds.password;
-      campusCreds.fingerprint = generateUUID();
+      // 复用已持久化的 fingerprint（与服务器信任的设备保持一致）；
+      // 若无则生成 32 位无横线格式，与 SessionManager.login 保持一致
+      if (creds.fingerprint.length > 0) {
+        campusCreds.fingerprint = creds.fingerprint;
+      } else {
+        campusCreds.fingerprint = generateUUID().replace(/-/g, '');
+      }
       this.cachedCredentials = campusCreds;
       return true;
     }
@@ -177,8 +189,7 @@ export class TsinghuaAuthService {
     const mainCb: string = extractFirstAnchorHref(idResponse);
     hilog.info(0xCAFE, 'LearnAct', 'MAIN_POST cb=%{public}s', mainCb.substring(0, 80));
 
-    const TWO_FACTOR_MARK: string = '/b/doubleAuth/login';
-    if (idResponse.indexOf(TWO_FACTOR_MARK) >= 0 || idResponse.indexOf('doubleAuth') >= 0) {
+    if (idResponse.indexOf(TWO_FACTOR_MARK) >= 0 || idResponse.indexOf('/b/doubleAuth/login') >= 0) {
       const result: LoginResult = new LoginResult();
       result.type = LoginResultType.TWO_FACTOR;
       result.message = '需要双因子认证';
@@ -268,68 +279,93 @@ export class TsinghuaAuthService {
   }
 
   private async activateLearnSession(credentials: CampusCredentials): Promise<void> {
-    const formUrl: string = ID_BASE_URL + LEARN_LOGIN_YYFWID;
-    hilog.info(0xCAFE, 'LearnAct', 'form_url=%{public}s', formUrl);
-    const formHtml: string = await this.http.get(formUrl).then((r: HttpResponse) => r.body);
-    hilog.info(0xCAFE, 'LearnAct', 'form_len=%{public}d has_sm2=%{public}s', formHtml.length, formHtml.indexOf('sm2publicKey') >= 0);
-
-    const pk: string = extractSm2PublicKey(formHtml);
-    if (pk.length === 0) {
-      throw new Error('no_sm2;len=' + formHtml.length);
-    }
-
-    const epw: string = await encryptPassword(credentials.password, pk);
-    if (epw.length === 0) {
-      throw new Error('learn encrypt failed');
-    }
-
-    const fd: Record<string, string> = {
-      'i_user': credentials.studentId,
-      'i_pass': epw,
-      'fingerPrint': credentials.fingerprint,
-      'fingerGenPrint': '',
-      'fingerGenPrint3': '',
-      'i_captcha': '',
-    };
-
     let response: string = '';
+    hilog.info(0xCAFE, 'LearnAct', 'LEARN_FP=%{public}s len=%{public}d', credentials.fingerprint.substring(0, 8), credentials.fingerprint.length);
     for (let i: number = 0; i < 2; i++) {
+      const formUrl: string = ID_BASE_URL + LEARN_LOGIN_YYFWID;
+      const formHtml: string = await this.http.get(formUrl).then((r: HttpResponse) => r.body);
+      hilog.info(0xCAFE, 'LearnAct', 'form_len=%{public}d has_sm2=%{public}s', formHtml.length, formHtml.indexOf('sm2publicKey') >= 0);
+
+      const pk: string = extractSm2PublicKey(formHtml);
+      if (pk.length === 0) {
+        throw new Error('learn: missing sm2publicKey;len=' + formHtml.length);
+      }
+
+      const epw: string = await encryptPassword(credentials.password, pk);
+      if (epw.length === 0) {
+        throw new Error('learn encrypt failed');
+      }
+
+      const fd: Record<string, string> = {
+        'i_user': credentials.studentId,
+        'i_pass': epw,
+        'fingerPrint': credentials.fingerprint,
+        'fingerGenPrint': '',
+        'fingerGenPrint3': '',
+        'i_captcha': '',
+      };
+
       const respObj: HttpResponse = await this.http.postForm(ID_LOGIN_URL, fd);
       response = respObj.body;
-      hilog.info(0xCAFE, 'LearnAct', 'POST code=%{public}d body_len=%{public}d body=%{public}s',
-        respObj.statusCode, response.length, response.substring(0, 300));
-      if (response.indexOf('/b/doubleAuth/login') >= 0) {
-        throw new Error('learn 2FA required');
+      const has2fa: boolean = response.indexOf(TWO_FACTOR_MARK) >= 0;
+      const hasSuccess: boolean = response.indexOf(LOGIN_SUCCESS_MARK) >= 0;
+      hilog.info(0xCAFE, 'LearnAct', 'LEARN_POST len=%{public}d has_2fa=%{public}s has_success=%{public}s',
+        response.length, has2fa, hasSuccess);
+      // 完整 body（951 字节级别，用于判定页面真实类型）
+      if (response.length < 2000) {
+        hilog.info(0xCAFE, 'LearnAct', 'LEARN_BODY=%{public}s', response);
       }
-      if (response.indexOf('登录成功') >= 0) {
+      if (has2fa) {
+        throw new Error('learn: 2FA reappeared');
+      }
+      if (hasSuccess) {
         break;
       }
     }
 
-    if (response.indexOf('登录成功') < 0) {
-      throw new Error('not_ok;len=' + response.length + ';' + response.substring(20, 120));
+    if (response.indexOf(LOGIN_SUCCESS_MARK) < 0) {
+      throw new Error('learn: id login failed;len=' + response.length);
     }
 
-    // Try the home page directly - the CSS login should have established the session
-    const homeHtml: string = await this.http.get(LEARN_BASE + '/f/wlxt/index/course/student/').then((r: HttpResponse) => r.body);
-    let csrfFound: string = '';
-    const p: RegExp = new RegExp('_csrf"\\s+value\\s*=\\s*"([^"]+)"', 'i');
-    const m = p.exec(homeHtml);
-    if (m !== null && m.length >= 2) { csrfFound = m[1]; }
+    // 提取 callback → ticket
+    const callbackUrl: string = extractFirstAnchorHref(response);
+    if (callbackUrl.length === 0) {
+      throw new Error('learn: no callback href');
+    }
+    const cbParts: string[] = callbackUrl.split('=');
+    const ticket: string = cbParts[cbParts.length - 1];
+    if (ticket.length === 0) {
+      throw new Error('learn: no ticket in callback');
+    }
+    hilog.info(0xCAFE, 'LearnAct', 'LEARN_TICKET len=%{public}d', ticket.length);
 
+    // learnAuthRoam：直接请求 learn.tsinghua.edu.cn 建立 learn 域会话
+    const roamResp: HttpResponse = await this.http.get(LEARN_AUTH_ROAM + '?ticket=' + ticket);
+    hilog.info(0xCAFE, 'LearnAct', 'LEARN_ROAM code=%{public}d len=%{public}d', roamResp.statusCode, roamResp.body.length);
+    if (roamResp.statusCode !== 200) {
+      throw new Error('learn: roam HTTP ' + roamResp.statusCode);
+    }
+
+    // 学生首页提取 _csrf
+    const homeHtml: string = await this.http.get(LEARN_STUDENT_HOME).then((r: HttpResponse) => r.body);
+    hilog.info(0xCAFE, 'LearnAct', 'LEARN_HOME len=%{public}d', homeHtml.length);
+    const csrfPattern: RegExp = new RegExp('&_csrf=(\\S+?)["\'&]', 'g');
+    let csrfFound: string = '';
+    const m = csrfPattern.exec(homeHtml);
+    if (m !== null && m.length >= 2) {
+      csrfFound = m[1];
+    }
     if (csrfFound.length > 0) {
       this.csrfToken = csrfFound;
+      hilog.info(0xCAFE, 'LearnAct', 'LEARN_CSRF ok len=%{public}d', csrfFound.length);
       return;
     }
-
-    if (homeHtml.indexOf('sm2publicKey') >= 0) {
-      throw new Error('home_needs_login;len=' + homeHtml.length);
-    }
-    throw new Error('no_csrf_home;len=' + homeHtml.length);
+    throw new Error('learn: no _csrf in student home;len=' + homeHtml.length);
   }
 
   async send2FACode(method: string): Promise<boolean> {
     this.addTrace('sending_2fa:' + method);
+    this.twoFactorMethod = method;
     const formData: Record<string, string> = {
       'action': 'SEND_CODE',
       'type': method,
@@ -353,7 +389,7 @@ export class TsinghuaAuthService {
     this.addTrace('verifying_2fa');
     const formData: Record<string, string> = {
       'action': 'VERITY_CODE',
-      'type': 'mobile',
+      'type': this.twoFactorMethod,
       'vericode': code,
     };
     try {
