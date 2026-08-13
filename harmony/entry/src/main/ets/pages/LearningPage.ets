@@ -13,7 +13,7 @@ import { HomeworkDetailPage } from './learning/HomeworkDetailPage';
 import { NotificationDetailPage } from './learning/NotificationDetailPage';
 import { FileDetailPage } from './learning/FileDetailPage';
 import { SessionManager } from '../services/auth/SessionManager';
-import { CampusCourse, CampusDataService } from '../services/campus/CampusDataService';
+import { CampusCourse, CampusDataService, CampusHomework, CampusNotification, CampusFile } from '../services/campus/CampusDataService';
 import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
 
@@ -163,6 +163,50 @@ struct NotificationCard {
 }
 
 @Component
+struct FileCard {
+  @Prop item: FileItem = new FileItem();
+  onCardClick: () => void = () => {};
+
+  build() {
+    Row() {
+      Column()
+        .width(3)
+        .height('100%')
+        .borderRadius(2)
+        .backgroundColor(this.item.isNew ? Theme.warning : Theme.divider)
+
+      Column() {
+        Text(this.item.title)
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Theme.text)
+        Text(`${this.item.course}  ·  ${this.item.size}`)
+          .fontSize(12)
+          .fontColor(Theme.textSecondary)
+          .margin({ top: 4 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .margin({ left: 12 })
+      .layoutWeight(1)
+
+      if (this.item.isNew) {
+        Text('NEW')
+          .fontSize(11)
+          .fontColor(Theme.warning)
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .borderRadius(4)
+          .backgroundColor('rgba(217,119,6,0.10)')
+      }
+    }
+    .width('100%')
+    .padding({ top: 12, bottom: 12 })
+    .onClick(() => {
+      this.onCardClick();
+    })
+  }
+}
+
+@Component
 export struct LearningPage {
   @State activeTab: string = '课程';
   @State showDialog: boolean = false;
@@ -171,6 +215,12 @@ export struct LearningPage {
   @State subScreen: string = '';
   @State realCourses: CourseItem[] = [];
   @State hasRealData: boolean = false;
+  @State realDdls: HomeworkItem[] = [];
+  @State realNotifications: NotificationItem[] = [];
+  @State realFiles: FileItem[] = [];
+  @State hasRealHw: boolean = false;
+  @State hasRealNotif: boolean = false;
+  @State hasRealFile: boolean = false;
   private tabs: string[] = ['课程', '作业', '通知', '文件'];
 
   aboutToAppear(): void {
@@ -195,18 +245,81 @@ export struct LearningPage {
         }
         this.realCourses = mapped;
         this.hasRealData = true;
+        this.loadRealExtras(service, courses);
       }
     }).catch((e: Object) => {
       hilog.info(0xCAFE, 'LearnAct', 'UI_FETCH_COURSES ex trace=%{public}s', service.trace);
     });
   }
 
+  private loadRealExtras(service: CampusDataService, courses: CampusCourse[]): void {
+    service.fetchHomework(courses).then((list: CampusHomework[]) => {
+      if (list.length > 0) {
+        const mapped: HomeworkItem[] = [];
+        for (let i: number = 0; i < list.length; i++) {
+          const item: HomeworkItem = new HomeworkItem();
+          item.title = list[i].title;
+          item.course = list[i].courseName;
+          item.deadline = list[i].deadline;
+          item.status = list[i].status;
+          mapped.push(item);
+        }
+        this.realDdls = mapped;
+        this.hasRealHw = true;
+      }
+    }).catch((e: Object) => { /* ignore */ });
+
+    service.fetchNotifications(courses).then((list: CampusNotification[]) => {
+      if (list.length > 0) {
+        const mapped: NotificationItem[] = [];
+        for (let i: number = 0; i < list.length; i++) {
+          const item: NotificationItem = new NotificationItem();
+          item.title = list[i].title;
+          item.publisher = list[i].publisher;
+          item.time = list[i].publishTime;
+          item.isNew = list[i].isNew;
+          mapped.push(item);
+        }
+        this.realNotifications = mapped;
+        this.hasRealNotif = true;
+      }
+    }).catch((e: Object) => { /* ignore */ });
+
+    service.fetchFiles(courses).then((list: CampusFile[]) => {
+      if (list.length > 0) {
+        const mapped: FileItem[] = [];
+        for (let i: number = 0; i < list.length; i++) {
+          const item: FileItem = new FileItem();
+          item.title = list[i].title;
+          item.course = list[i].courseName;
+          item.size = list[i].size;
+          item.isNew = list[i].isNew;
+          mapped.push(item);
+        }
+        this.realFiles = mapped;
+        this.hasRealFile = true;
+      }
+    }).catch((e: Object) => { /* ignore */ });
+  }
+
   private getDisplayCourses(): CourseItem[] {
     return this.hasRealData ? this.realCourses : getCourses();
   }
 
+  private getDisplayHomework(): HomeworkItem[] {
+    return this.hasRealHw ? this.realDdls : this.ddls;
+  }
+
+  private getDisplayNotifications(): NotificationItem[] {
+    return this.hasRealNotif ? this.realNotifications : getNotifications();
+  }
+
+  private getDisplayFiles(): FileItem[] {
+    return this.hasRealFile ? this.realFiles : getFiles();
+  }
+
   private getTabCounts(): number[] {
-    return [this.getDisplayCourses().length, this.ddls.length, getNotifications().length, getFiles().length];
+    return [this.getDisplayCourses().length, this.getDisplayHomework().length, this.getDisplayNotifications().length, this.getDisplayFiles().length];
   }
 
   private getTabCountsSnippet(): string {
@@ -282,13 +395,13 @@ export struct LearningPage {
             .margin({ left: 16, right: 16 })
           } else if (this.activeTab === '作业') {
             Column() {
-              ForEach(this.ddls, (item: HomeworkItem, index: number) => {
+              ForEach(this.getDisplayHomework(), (item: HomeworkItem, index: number) => {
                 DDLCard({ item: item, onCardClick: () => { this.subScreen = 'homework'; } })
-                if (index < this.ddls.length - 1) {
+                if (index < this.getDisplayHomework().length - 1) {
                   Divider().color(Theme.divider).margin({ left: 15 })
                 }
               })
-              if (this.ddls.length === 0) {
+              if (this.getDisplayHomework().length === 0) {
                 Text('暂无作业')
                   .fontSize(14)
                   .fontColor(Theme.textMuted)
@@ -303,9 +416,15 @@ export struct LearningPage {
             .margin({ left: 16, right: 16 })
           } else if (this.activeTab === '通知') {
             Column() {
-              ForEach(getNotifications(), (item: NotificationItem) => {
+              ForEach(this.getDisplayNotifications(), (item: NotificationItem) => {
                 NotificationCard({ item: item, onCardClick: () => { this.subScreen = 'notification'; } })
               })
+              if (this.getDisplayNotifications().length === 0) {
+                Text('暂无通知')
+                  .fontSize(14)
+                  .fontColor(Theme.textMuted)
+                  .padding({ top: 16, bottom: 16 })
+              }
             }
             .width('100%')
             .padding(16)
@@ -315,10 +434,15 @@ export struct LearningPage {
             .margin({ left: 16, right: 16 })
           } else {
             Column() {
-              Text('暂无文件')
-                .fontSize(14)
-                .fontColor(Theme.textMuted)
-                .padding({ top: 16, bottom: 16 })
+              ForEach(this.getDisplayFiles(), (item: FileItem) => {
+                FileCard({ item: item, onCardClick: () => { this.subScreen = 'file'; } })
+              })
+              if (this.getDisplayFiles().length === 0) {
+                Text('暂无文件')
+                  .fontSize(14)
+                  .fontColor(Theme.textMuted)
+                  .padding({ top: 16, bottom: 16 })
+              }
             }
             .width('100%')
             .padding(16)
