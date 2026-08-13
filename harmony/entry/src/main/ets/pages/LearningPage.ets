@@ -27,18 +27,29 @@ struct SegmentBar {
   build() {
     Row() {
       ForEach(this.tabs, (tab: string, index: number) => {
-        Text(`${tab} ${this.counts[index]}`)
-          .fontSize(13)
-          .fontColor(this.activeTab === tab ? Theme.textInvert : Theme.textSecondary)
-          .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-          .borderRadius(999)
-          .backgroundColor(this.activeTab === tab ? Theme.primary : Theme.surfaceAlt)
-          .margin({ right: 8 })
-          .onClick(() => {
-            this.activeTab = tab;
-          })
+        Row({ space: 4 }) {
+          Text(tab)
+            .fontSize(FontSize.caption)
+            .fontWeight(this.activeTab === tab ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.activeTab === tab ? Theme.text : Theme.textSecondary)
+          Text(String(this.counts[index]))
+            .fontSize(FontSize.micro)
+            .fontColor(this.activeTab === tab ? Theme.primary : Theme.textMuted)
+        }
+        .justifyContent(FlexAlign.Center)
+        .layoutWeight(1)
+        .height(38)
+        .borderRadius(Radius.sm)
+        .backgroundColor(this.activeTab === tab ? Theme.surface : 'transparent')
+        .onClick(() => {
+          this.activeTab = tab;
+        })
       })
     }
+    .width('100%')
+    .padding(4)
+    .borderRadius(Radius.md)
+    .backgroundColor(Theme.surfaceAlt)
   }
 }
 

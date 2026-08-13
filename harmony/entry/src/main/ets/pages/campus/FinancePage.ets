@@ -1,4 +1,5 @@
 import { Theme, SafeTop } from '../Theme';
+import { DetailHeader } from '../../components/Ui';
 
 class Transaction {
   date: string = '';
@@ -38,24 +39,7 @@ export struct FinancePage {
     Column() {
       SafeTop()
 
-      Row() {
-        Button('← 返回')
-          .type(ButtonType.Normal)
-          .fontSize(14)
-          .fontColor(Theme.primary)
-          .backgroundColor(Theme.background)
-          .onClick(() => { this.onBack(); })
-
-        Text('校园财务')
-          .fontSize(18)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Theme.text)
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .margin({ right: 60 })
-      }
-      .width('100%')
-      .padding({ left: 8, right: 16, top: 8, bottom: 8 })
+      DetailHeader({ title: '校园财务', onBack: () => { this.onBack(); } })
 
       Divider().color(Theme.divider)
 

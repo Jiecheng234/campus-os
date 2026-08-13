@@ -1,4 +1,5 @@
-import { Theme, SafeTop } from '../Theme';
+import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
+import { DetailHeader } from '../../components/Ui';
 import { CampusNotification } from '../../services/campus/CampusDataService';
 
 @Component
@@ -10,24 +11,7 @@ export struct NotificationDetailPage {
     Column() {
       SafeTop()
 
-      Row() {
-        Button('← 返回')
-          .type(ButtonType.Normal)
-          .fontSize(14)
-          .fontColor(Theme.primary)
-          .backgroundColor(Theme.background)
-          .onClick(() => { this.onBack(); })
-
-        Text('通知详情')
-          .fontSize(17)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Theme.text)
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .margin({ right: 60 })
-      }
-      .width('100%')
-      .padding({ left: 8, right: 16, top: 8, bottom: 8 })
+      DetailHeader({ title: '通知详情', onBack: () => { this.onBack(); } })
 
       Divider().color(Theme.divider)
 

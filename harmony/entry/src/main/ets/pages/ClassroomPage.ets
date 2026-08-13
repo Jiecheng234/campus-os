@@ -2,6 +2,7 @@
  * ClassroomPage — 空教室查询
  */
 import { Theme, SafeTop } from './Theme';
+import { DetailHeader } from '../components/Ui';
 
 const PERIODS: string[] = ['08:00', '10:10', '13:30', '15:20', '19:20'];
 const BUILDINGS: string[] = ['六教', '四教', '五教', '新水', '三教'];
@@ -59,24 +60,7 @@ export struct ClassroomPage {
     Column() {
       SafeTop()
 
-      Row() {
-        Button('← 返回')
-          .type(ButtonType.Normal)
-          .fontSize(14)
-          .fontColor(Theme.primary)
-          .backgroundColor(Theme.background)
-          .onClick(() => { this.onBack(); })
-
-        Text('空教室查询')
-          .fontSize(18)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Theme.text)
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .margin({ right: 60 })
-      }
-      .width('100%')
-      .padding({ left: 8, right: 16, top: 8, bottom: 8 })
+      DetailHeader({ title: '空教室查询', onBack: () => { this.onBack(); } })
 
       Divider().color(Theme.divider)
 

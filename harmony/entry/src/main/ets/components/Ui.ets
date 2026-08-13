@@ -325,3 +325,43 @@ export struct MetricPill {
     .padding(Space.sm)
   }
 }
+
+// ────────────────────────────────
+// DetailHeader：详情页头部（‹ 返回 + 居中标题 + 可选右操作）
+// ────────────────────────────────
+@Component
+export struct DetailHeader {
+  title: string = '';
+  onBack: () => void = () => {};
+  @BuilderParam right: () => void = emptyContent;
+
+  build() {
+    Row() {
+      Text('‹')
+        .fontSize(32)
+        .fontWeight(FontWeight.Lighter)
+        .fontColor(Theme.text)
+        .width(40)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .onClick(() => { this.onBack(); })
+
+      Text(this.title)
+        .fontSize(FontSize.h3)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Theme.text)
+        .layoutWeight(1)
+        .textAlign(TextAlign.Center)
+        .maxLines(1)
+
+      Column() {
+        this.right()
+      }
+      .width(40)
+      .alignItems(HorizontalAlign.End)
+    }
+    .width('100%')
+    .padding({ left: Space.sm, right: Space.md, top: Space.sm, bottom: Space.sm })
+    .alignItems(VerticalAlign.Center)
+  }
+}

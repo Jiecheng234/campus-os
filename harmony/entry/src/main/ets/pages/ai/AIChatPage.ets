@@ -1,4 +1,5 @@
-import { Theme, SafeTop } from '../Theme';
+import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
+import { ScreenHeader } from '../../components/Ui';
 
 class ChatMessage {
   id: string = '';
@@ -188,28 +189,33 @@ export struct AIChatPage {
     this.isTyping = false;
   }
 
+  @Builder
+  newChatButton() {
+    Text('新建对话')
+      .fontSize(FontSize.caption)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(Theme.primary)
+      .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+      .borderRadius(Radius.pill)
+      .backgroundColor(Theme.surfaceAlt)
+      .onClick(() => {
+        this.startNewChat();
+      })
+  }
+
   build() {
     Column() {
       SafeTop()
 
-      Row() {
-        Text('AI 助手')
-          .fontSize(20)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Theme.text)
-          .layoutWeight(1)
-
-        Button('新建对话')
-          .type(ButtonType.Capsule)
-          .fontSize(12)
-          .fontColor(Theme.primary)
-          .backgroundColor(Theme.surfaceAlt)
-          .onClick(() => {
-            this.startNewChat();
-          })
+      Column() {
+        ScreenHeader({
+          eyebrow: 'AI ASSISTANT',
+          title: 'AI 助手',
+          right: (): void => this.newChatButton()
+        })
       }
       .width('100%')
-      .padding({ left: 20, right: 16, top: 12, bottom: 8 })
+      .padding({ left: Space.lg, right: Space.md, top: Space.lg, bottom: Space.sm })
 
       Divider().color(Theme.divider)
 

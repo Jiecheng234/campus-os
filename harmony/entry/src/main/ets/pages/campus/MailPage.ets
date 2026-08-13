@@ -1,4 +1,5 @@
 import { Theme, SafeTop } from '../Theme';
+import { DetailHeader } from '../../components/Ui';
 
 class MailItem {
   id: string = '';
@@ -117,36 +118,22 @@ export struct MailPage {
     return count;
   }
 
+  @Builder
+  composeButton() {
+    Button('✏️')
+      .type(ButtonType.Circle)
+      .width(36)
+      .height(36)
+      .fontSize(18)
+      .fontColor(Theme.textInvert)
+      .backgroundColor(Theme.primary)
+  }
+
   build() {
     Column() {
       SafeTop()
 
-      Row() {
-        Button('← 返回')
-          .type(ButtonType.Normal)
-          .fontSize(14)
-          .fontColor(Theme.primary)
-          .backgroundColor(Theme.background)
-          .onClick(() => { this.onBack(); })
-
-        Text('校园邮件')
-          .fontSize(18)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Theme.text)
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-
-        Button('✏️')
-          .type(ButtonType.Circle)
-          .width(36)
-          .height(36)
-          .fontSize(18)
-          .fontColor(Theme.textInvert)
-          .backgroundColor(Theme.primary)
-          .margin({ right: 8 })
-      }
-      .width('100%')
-      .padding({ left: 8, right: 8, top: 8, bottom: 8 })
+      DetailHeader({ title: '校园邮件', onBack: () => { this.onBack(); }, right: this.composeButton })
 
       Divider().color(Theme.divider)
 
