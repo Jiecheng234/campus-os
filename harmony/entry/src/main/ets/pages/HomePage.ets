@@ -1,7 +1,8 @@
 /**
- * HomePage — 首页仪表盘
+ * HomePage — 首页仪表盘（对齐原项目 HomeScreen 布局 + 设计系统 V1）
  */
-import { Theme, SafeTop } from './Theme';
+import { Theme, SafeTop, Space, Radius, FontSize } from './Theme';
+import { ScreenHeader, SectionHeader, MetricPill, BadgeTone } from '../components/Ui';
 import { getTodayCourses, getBriefingMetrics, getQuickActions, getGreeting,
   getDateString, CourseItem, BriefingMetrics, QuickAction } from './HomeData';
 import { promptAction } from '@kit.ArkUI';
@@ -10,36 +11,13 @@ import { CampusCourse, CampusDataService } from '../services/campus/CampusDataSe
 import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
 
+/** 今日课程行：3px 渐变竖条 + 课程名 + 时间地点（对齐原项目 scheduleRow） */
 @Component
-struct MetricCard {
-  @Prop label: string = '';
-  @Prop value: string = '';
-  @Prop tone: string = 'default';
-
-  build() {
-    Column() {
-      Text(this.value)
-        .fontSize(28)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.tone === 'warning' ? Theme.warning :
-          this.tone === 'success' ? Theme.success : Theme.primary)
-        .fontFamily('monospace')
-      Text(this.label)
-        .fontSize(12)
-        .fontColor(Theme.textSecondary)
-        .margin({ top: 4 })
-    }
-    .alignItems(HorizontalAlign.Center)
-    .layoutWeight(1)
-  }
-}
-
-@Component
-struct CourseCard {
+struct CourseRow {
   @Prop course: CourseItem = new CourseItem();
 
   build() {
-    Row() {
+    Row({ space: 12 }) {
       Column()
         .width(3)
         .height('100%')
@@ -49,44 +27,45 @@ struct CourseCard {
           colors: [[Theme.primary, 0], [Theme.primaryDark, 1]]
         })
 
-      Column() {
+      Column({ space: 4 }) {
         Text(this.course.title)
-          .fontSize(15)
+          .fontSize(FontSize.body)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.text)
-        Text(`${this.course.time}  |  ${this.course.location}`)
-          .fontSize(12)
+          .maxLines(1)
+        Text(`${this.course.time}  ·  ${this.course.location}`)
+          .fontSize(FontSize.caption)
           .fontColor(Theme.textSecondary)
-          .margin({ top: 4 })
+          .maxLines(1)
       }
       .alignItems(HorizontalAlign.Start)
-      .margin({ left: 12 })
       .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
+    .padding({ top: Space.md, bottom: Space.md })
     .alignItems(VerticalAlign.Center)
   }
 }
 
+/** 快捷操作胶囊按钮（primaryMuted 底 pill） */
 @Component
 struct QuickActionButton {
   @Prop action: QuickAction = new QuickAction();
   @Link onClickAction: string;
 
   build() {
-    Button() {
-      Row() {
-        Text(this.action.icon)
-          .fontSize(14)
-        Text(this.action.label)
-          .fontSize(13)
-          .fontColor(Theme.primary)
-          .margin({ left: 4 })
-      }
+    Row({ space: 4 }) {
+      Text(this.action.icon)
+        .fontSize(FontSize.label)
+      Text(this.action.label)
+        .fontSize(FontSize.caption)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Theme.primary)
     }
-    .type(ButtonType.Capsule)
-    .backgroundColor('rgba(124,92,250,0.08)')
+    .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+    .borderRadius(Radius.pill)
+    .backgroundColor(Theme.primaryMuted)
+    .margin({ right: Space.sm })
     .onClick(() => {
       this.onClickAction = this.action.label;
       promptAction.showToast({ message: `${this.action.label} — 即将接入`, duration: 2000 });
@@ -112,10 +91,10 @@ export struct HomePage {
       if (courses.length > 0) {
         this.syncStatus = '已同步 ' + String(courses.length) + ' 门课程';
       } else {
-        this.syncStatus = '数据同步需完整 WebVPN 传输层(dbg:' + service.trace + ')';
+        this.syncStatus = '数据同步需完整 WebVPN 传输层';
       }
     }).catch(() => {
-      this.syncStatus = '同步失败(dbg:' + service.trace + ')';
+      this.syncStatus = '同步失败';
     });
   }
 
@@ -124,108 +103,91 @@ export struct HomePage {
       Column() {
         SafeTop()
 
-        // ── 头部 ──
-        Column() {
-          Text(`${getGreeting()} · ${getDateString()}`)
-            .fontSize(13)
-            .fontColor(Theme.textMuted)
-
-          Text('CampusOS')
-            .fontSize(28)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(Theme.text)
-            .margin({ top: 2 })
-
-          Text('海淀 23° · 晴')
-            .fontSize(13)
-            .fontColor(Theme.textSecondary)
-            .margin({ top: 2 })
-        }
-        .alignItems(HorizontalAlign.Start)
-        .width('100%')
-        .padding({ left: 20, right: 20, bottom: 4 })
-
+        // ── 头部（eyebrow=问候语·日期 / 标题 / 天气）──
         Row() {
-          Button('同步校园数据')
-            .type(ButtonType.Capsule)
-            .fontSize(12)
+          ScreenHeader({
+            eyebrow: `${getGreeting()} · ${getDateString()}`,
+            title: 'CampusOS',
+            subtitle: '海淀 23° · 晴'
+          })
+        }
+        .width('100%')
+        .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.md })
+
+        // 同步状态行
+        Row({ space: Space.sm }) {
+          Text('同步校园数据')
+            .fontSize(FontSize.caption)
+            .fontWeight(FontWeight.Medium)
             .fontColor(Theme.primary)
-            .backgroundColor('rgba(124,92,250,0.08)')
+            .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+            .borderRadius(Radius.pill)
+            .backgroundColor(Theme.primaryMuted)
             .onClick(() => { this.syncCampusData(); })
 
           if (this.syncStatus.length > 0) {
             Text(this.syncStatus)
-              .fontSize(12)
+              .fontSize(FontSize.caption)
               .fontColor(Theme.textMuted)
-              .margin({ left: 10 })
           }
         }
         .width('100%')
-        .padding({ left: 20, right: 20, bottom: 4 })
+        .alignItems(VerticalAlign.Center)
+        .padding({ left: Space.lg, right: Space.lg, bottom: Space.sm })
 
-        // ── 简报卡片 ──
+        // ── 今日重点（简报卡 + 指标凹槽块）──
         Column() {
-          Text('📋 今日重点')
-            .fontSize(14)
+          Text('今日重点')
+            .fontSize(FontSize.h3)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
+            .margin({ bottom: Space.md })
 
-          Row() {
-            MetricCard({ label: '今日课程', value: '3', tone: 'default' })
-            MetricCard({ label: '待处理任务', value: '2', tone: 'default' })
-            MetricCard({ label: '未读通知', value: '1', tone: 'warning' })
+          Row({ space: Space.sm }) {
+            MetricPill({ label: '今日课程', value: '3', tone: BadgeTone.Default })
+            MetricPill({ label: '待处理任务', value: '2', tone: BadgeTone.Default })
+            MetricPill({ label: '未读通知', value: '1', tone: BadgeTone.Warning })
           }
           .width('100%')
-          .margin({ top: 12 })
         }
         .width('100%')
-        .padding(16)
-        .borderRadius(Theme.cardRadius)
+        .alignItems(HorizontalAlign.Start)
+        .padding(Space.md)
+        .borderRadius(Radius.lg)
         .backgroundColor(Theme.surface)
         .border({ width: 1, color: Theme.borderSubtle })
-        .margin({ left: 16, right: 16 })
+        .margin({ left: Space.lg, right: Space.lg })
 
         // ── 今日课程 ──
         Column() {
-          Text('今日课程')
-            .fontSize(15)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Theme.text)
-            .margin({ bottom: 12 })
-
-          Column() {
-            ForEach(getTodayCourses(), (item: CourseItem, index: number) => {
-              CourseCard({ course: item })
-              if (index < getTodayCourses().length - 1) {
-                Divider()
-                  .color(Theme.divider)
-                  .margin({ left: 15 })
-              }
-            })
-          }
-          .width('100%')
-          .padding({ top: 4, bottom: 4 })
-          .borderRadius(Theme.cardRadius)
-          .backgroundColor(Theme.surface)
-          .border({ width: 1, color: Theme.borderSubtle })
+          SectionHeader({ title: '今日课程' })
+            .padding({ left: Space.lg, right: Space.lg })
         }
         .width('100%')
-        .padding(16)
-        .borderRadius(Theme.cardRadius)
+        .alignItems(HorizontalAlign.Start)
+
+        Column() {
+          ForEach(getTodayCourses(), (item: CourseItem, index: number) => {
+            CourseRow({ course: item })
+            if (index < getTodayCourses().length - 1) {
+              Divider().color(Theme.divider).margin({ left: 15 })
+            }
+          })
+        }
+        .width('100%')
+        .padding({ left: Space.md, right: Space.md, top: Space.xs, bottom: Space.xs })
+        .borderRadius(Radius.lg)
         .backgroundColor(Theme.surface)
         .border({ width: 1, color: Theme.borderSubtle })
-        .margin({ left: 16, right: 16, top: 16 })
+        .margin({ left: Space.lg, right: Space.lg })
 
         // ── 快捷操作 ──
-        Row() {
-          Text('快捷操作')
-            .fontSize(15)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Theme.text)
-          Blank()
+        Column() {
+          SectionHeader({ title: '快捷操作' })
+            .padding({ left: Space.lg, right: Space.lg })
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: 20, bottom: 8 })
+        .alignItems(HorizontalAlign.Start)
 
         Row() {
           ForEach(getQuickActions(), (action: QuickAction) => {
@@ -233,9 +195,9 @@ export struct HomePage {
           })
         }
         .width('100%')
-        .padding({ left: 20, right: 20, bottom: 32 })
+        .padding({ left: Space.lg, right: Space.lg })
 
-        Blank().height(80)
+        Blank().height(Space.xxl)
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)

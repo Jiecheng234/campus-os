@@ -1,13 +1,14 @@
 /**
  * LearningPage — 学习页（4 子标签 + DDL 弹窗）
  */
-import { Theme, SafeTop } from './Theme';
+import { Theme, SafeTop, Space, Radius, FontSize } from './Theme';
+import { ScreenHeader } from '../components/Ui';
 import {
   getCourses, getHomeworkList, getNotifications, getFiles, getTodayDateStr,
   CourseItem, HomeworkItem, NotificationItem, FileItem, DeadlineForm
 } from './LearningData';
 import { promptAction } from '@kit.ArkUI';
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { Log } from '../utils/Logger';
 import { CourseDetailPage } from './learning/CourseDetailPage';
 import { HomeworkDetailPage } from './learning/HomeworkDetailPage';
 import { NotificationDetailPage } from './learning/NotificationDetailPage';
@@ -245,7 +246,7 @@ export struct LearningPage {
     }
     const service: CampusDataService = SessionManager.getCampusDataService();
     service.fetchCourses().then((courses: CampusCourse[]) => {
-      hilog.info(0xCAFE, 'LearnAct', 'UI_FETCH_COURSES count=%{public}d trace=%{public}s', courses.length, service.trace);
+      Log.i('LearnAct',  'UI_FETCH_COURSES count=%{public}d trace=%{public}s', courses.length, service.trace);
       this.realCampusCourses = courses;
       this.currentSemester = service.currentSemester;
       const mapped: CourseItem[] = [];
@@ -261,7 +262,7 @@ export struct LearningPage {
         this.loadRealExtras(service, courses);
       }
     }).catch((e: Object) => {
-      hilog.info(0xCAFE, 'LearnAct', 'UI_FETCH_COURSES ex trace=%{public}s', service.trace);
+      Log.i('LearnAct',  'UI_FETCH_COURSES ex trace=%{public}s', service.trace);
     });
   }
 
@@ -334,6 +335,23 @@ export struct LearningPage {
     return `${c[0]} 门课程 · ${c[1]} 项作业 · ${c[2]} 通知 · ${c[3]} 文件`;
   }
 
+  @Builder
+  addActionButton() {
+    Button('+')
+      .type(ButtonType.Circle)
+      .width(36)
+      .height(36)
+      .fontSize(20)
+      .fontColor(Theme.textInvert)
+      .backgroundColor(Theme.primary)
+      .onClick(() => {
+        this.form = new DeadlineForm();
+        this.form.date = getTodayDateStr();
+        this.form.time = '23:59';
+        this.showDialog = true;
+      })
+  }
+
   build() {
     if (this.subScreen === 'course') {
       CourseDetailPage({ onBack: () => { this.subScreen = ''; }, course: this.selectedCourse, semester: this.currentSemester })
@@ -349,33 +367,13 @@ export struct LearningPage {
         Column() {
           SafeTop()
 
-          Row() {
-            Column() {
-              Text('学习')
-                .fontSize(20)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(Theme.text)
-              Text(this.getTabCountsSnippet())
-                .fontSize(12)
-                .fontColor(Theme.textMuted)
-                .margin({ top: 2 })
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            Button('+')
-              .type(ButtonType.Circle)
-              .width(36)
-              .height(36)
-              .fontSize(20)
-              .fontColor(Theme.textInvert)
-              .backgroundColor(Theme.primary)
-              .onClick(() => {
-                this.form = new DeadlineForm();
-                this.form.date = getTodayDateStr();
-                this.form.time = '23:59';
-                this.showDialog = true;
-              })
+          Column() {
+            ScreenHeader({
+              eyebrow: 'LEARNING',
+              title: '学习',
+              subtitle: this.getTabCountsSnippet(),
+              right: (): void => this.addActionButton()
+            })
           }
           .width('100%')
           .padding({ left: 20, right: 16, top: 12, bottom: 8 })

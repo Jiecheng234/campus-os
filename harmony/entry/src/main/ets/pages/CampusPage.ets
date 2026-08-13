@@ -1,4 +1,5 @@
-import { Theme, SafeTop } from './Theme';
+import { Theme, SafeTop, Space, Radius, FontSize } from './Theme';
+import { ScreenHeader } from '../components/Ui';
 import { ClassroomPage } from './ClassroomPage';
 import { GradesPage } from './GradesPage';
 import { PETestPage } from './campus/PETestPage';
@@ -11,42 +12,45 @@ import { NewsPage } from './campus/NewsPage';
 import { ProgramPage } from './campus/ProgramPage';
 
 class CampusEntry {
-  key: string = '';
-  icon: string = '';
+  iconRes: Resource = $r('app.media.campus');
   title: string = '';
   subtitle: string = '';
   action: string = '';
 }
 
+/** 校园入口行：40×40 图标瓷砖（圆角 10 + hairline 描边）+ 标题/副标题 + 右侧 › */
 @Component
 struct EntryRow {
   @Prop entry: CampusEntry = new CampusEntry();
 
   build() {
-    Row() {
-      Text(this.entry.icon)
-        .fontSize(24)
-        .width(44)
+    Row({ space: Space.md }) {
+      Image(this.entry.iconRes)
+        .width(40)
+        .height(40)
+        .borderRadius(Radius.sm)
+        .border({ width: 1, color: Theme.borderSubtle })
+        .objectFit(ImageFit.Cover)
 
-      Column() {
+      Column({ space: 2 }) {
         Text(this.entry.title)
-          .fontSize(15)
+          .fontSize(FontSize.body)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.text)
         Text(this.entry.subtitle)
-          .fontSize(12)
+          .fontSize(FontSize.caption)
           .fontColor(Theme.textMuted)
-          .margin({ top: 2 })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Text('>')
-        .fontSize(14)
+      Text('›')
+        .fontSize(22)
+        .fontWeight(FontWeight.Lighter)
         .fontColor(Theme.textMuted)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+    .padding(Space.md)
     .alignItems(VerticalAlign.Center)
   }
 }
@@ -56,37 +60,28 @@ export struct CampusPage {
   @State subScreen: string = '';
   private entries: CampusEntry[] = [];
 
+  private makeEntry(iconRes: Resource, title: string, subtitle: string, action: string): CampusEntry {
+    const e: CampusEntry = new CampusEntry();
+    e.iconRes = iconRes;
+    e.title = title;
+    e.subtitle = subtitle;
+    e.action = action;
+    return e;
+  }
+
   aboutToAppear(): void {
-    const e1: CampusEntry = new CampusEntry();
-    e1.icon = '🏫'; e1.title = '空教室查询'; e1.subtitle = '查询空闲教室'; e1.action = 'classroom';
-    this.entries.push(e1);
-    const e2: CampusEntry = new CampusEntry();
-    e2.icon = '📊'; e2.title = '成绩查询'; e2.subtitle = '查看成绩绩点'; e2.action = 'grades';
-    this.entries.push(e2);
-    const e3: CampusEntry = new CampusEntry();
-    e3.icon = '🏃'; e3.title = '体测成绩'; e3.subtitle = '查看体测结果'; e3.action = 'petest';
-    this.entries.push(e3);
-    const e4: CampusEntry = new CampusEntry();
-    e4.icon = '🛏️'; e4.title = '宿舍服务'; e4.subtitle = '电费 · 洗衣机'; e4.action = 'dormitory';
-    this.entries.push(e4);
-    const e5: CampusEntry = new CampusEntry();
-    e5.icon = '💰'; e5.title = '校园财务'; e5.subtitle = '校园卡 · 消费记录'; e5.action = 'finance';
-    this.entries.push(e5);
-    const e6: CampusEntry = new CampusEntry();
-    e6.icon = '🌐'; e6.title = '校园网络'; e6.subtitle = '余额 · 在线设备'; e6.action = 'network';
-    this.entries.push(e6);
-    const e7: CampusEntry = new CampusEntry();
-    e7.icon = '📅'; e7.title = '场馆预约'; e7.subtitle = '研读间 · 体育'; e7.action = 'reservation';
-    this.entries.push(e7);
-    const e8: CampusEntry = new CampusEntry();
-    e8.icon = '✉️'; e8.title = '校园邮件'; e8.subtitle = '清华邮箱'; e8.action = 'mail';
-    this.entries.push(e8);
-    const e9: CampusEntry = new CampusEntry();
-    e9.icon = '📰'; e9.title = '校园新闻'; e9.subtitle = '清华快讯'; e9.action = 'news';
-    this.entries.push(e9);
-    const e10: CampusEntry = new CampusEntry();
-    e10.icon = '🎓'; e10.title = '培养方案'; e10.subtitle = '学分完成度'; e10.action = 'program';
-    this.entries.push(e10);
+    this.entries = [
+      this.makeEntry($r('app.media.news'), '校园资讯', '清华快讯 · 公告', 'news'),
+      this.makeEntry($r('app.media.classroom'), '空闲教室', '查询空闲教室', 'classroom'),
+      this.makeEntry($r('app.media.grades'), '成绩查询', '查看成绩绩点', 'grades'),
+      this.makeEntry($r('app.media.petest'), '体测成绩', '查看体测结果', 'petest'),
+      this.makeEntry($r('app.media.dormitory'), '宿舍服务', '电费 · 洗衣机', 'dormitory'),
+      this.makeEntry($r('app.media.finance'), '财务缴费', '校园卡 · 消费记录', 'finance'),
+      this.makeEntry($r('app.media.network'), '校园网', '余额 · 在线设备', 'network'),
+      this.makeEntry($r('app.media.reservation'), '场馆预约', '研读间 · 体育场馆', 'reservation'),
+      this.makeEntry($r('app.media.mail'), '校园邮箱', '清华邮箱', 'mail'),
+      this.makeEntry($r('app.media.campus'), '培养方案', '学分完成度', 'program'),
+    ];
   }
 
   handleEntryClick(entry: CampusEntry): void {
@@ -119,29 +114,28 @@ export struct CampusPage {
         Column() {
           SafeTop()
 
-          Text('校园服务')
-            .fontSize(20)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Theme.text)
-            .width('100%')
-            .padding({ left: 20, top: 12, bottom: 16 })
+          Column() {
+            ScreenHeader({ eyebrow: 'CAMPUS', title: '校园', subtitle: `${this.entries.length} 项校园服务` })
+          }
+          .width('100%')
+          .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.lg })
 
           Column() {
             ForEach(this.entries, (entry: CampusEntry, index: number) => {
               EntryRow({ entry: entry })
                 .onClick(() => { this.handleEntryClick(entry); })
               if (index < this.entries.length - 1) {
-                Divider().color(Theme.divider).margin({ left: 60 })
+                Divider().color(Theme.divider).margin({ left: 72 })
               }
             })
           }
           .width('100%')
-          .borderRadius(Theme.cardRadius)
+          .borderRadius(Radius.lg)
           .backgroundColor(Theme.surface)
           .border({ width: 1, color: Theme.borderSubtle })
-          .margin({ left: 16, right: 16 })
+          .margin({ left: Space.lg, right: Space.lg })
 
-          Blank().height(32)
+          Blank().height(Space.xxl)
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)

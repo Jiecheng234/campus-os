@@ -1,7 +1,8 @@
 /**
  * SchedulePage — 课表页（周网格 + 周选择器）
  */
-import { Theme, SafeTop } from './Theme';
+import { Theme, SafeTop, Space, Radius, FontSize } from './Theme';
+import { ScreenHeader } from '../components/Ui';
 
 class ScheduleCourse {
   day: number = 0;
@@ -60,15 +61,24 @@ export struct SchedulePage {
     Column() {
       SafeTop()
 
-      // 周选择器
+      // 头部
+      Column() {
+        ScreenHeader({ eyebrow: 'SCHEDULE', title: '课表', subtitle: `第 ${this.currentWeek} 周 · 2026年7月` })
+      }
+      .width('100%')
+      .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.sm })
+
+      // 周选择器（36×36 白底方块 ‹ › + 周标签）
       Row() {
-        Button('←')
-          .type(ButtonType.Circle)
-          .width(32)
-          .height(32)
-          .fontSize(14)
-          .backgroundColor('rgba(124,92,250,0.10)')
-          .fontColor(Theme.primary)
+        Text('‹')
+          .fontSize(20)
+          .fontColor(Theme.text)
+          .width(36)
+          .height(36)
+          .textAlign(TextAlign.Center)
+          .borderRadius(Radius.sm)
+          .backgroundColor(Theme.surface)
+          .border({ width: 1, color: Theme.borderSubtle })
           .onClick(() => {
             if (this.currentWeek > 1) {
               this.currentWeek--;
@@ -77,29 +87,31 @@ export struct SchedulePage {
 
         Column() {
           Text(`第 ${this.currentWeek} 周`)
-            .fontSize(16)
+            .fontSize(FontSize.h3)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
           Text('2026年7月')
-            .fontSize(11)
+            .fontSize(FontSize.micro)
             .fontColor(Theme.textMuted)
         }
         .alignItems(HorizontalAlign.Center)
         .layoutWeight(1)
 
-        Button('→')
-          .type(ButtonType.Circle)
-          .width(32)
-          .height(32)
-          .fontSize(14)
-          .backgroundColor('rgba(124,92,250,0.10)')
-          .fontColor(Theme.primary)
+        Text('›')
+          .fontSize(20)
+          .fontColor(Theme.text)
+          .width(36)
+          .height(36)
+          .textAlign(TextAlign.Center)
+          .borderRadius(Radius.sm)
+          .backgroundColor(Theme.surface)
+          .border({ width: 1, color: Theme.borderSubtle })
           .onClick(() => {
             this.currentWeek++;
           })
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+      .padding({ left: Space.lg, right: Space.lg, top: Space.sm, bottom: Space.sm })
 
       // 分割线
       Divider()

@@ -16,16 +16,29 @@ struct Index {
   @State currentIndex: number = 0;
   @State isLoggedIn: boolean = false;
   private tabTitles: string[] = ['首页', '学习', '课表', '校园', 'AI', '设置'];
-  private tabIcons: string[] = ['🏠', '📚', '📅', '🏫', '🤖', '⚙️'];
+  private tabIcons: Resource[] = [
+    $r('app.media.home'), $r('app.media.learning'), $r('app.media.schedule'),
+    $r('app.media.campus'), $r('app.media.ai'), $r('app.media.settings')
+  ];
 
   @Builder
-  TabBarBuilder(title: string, icon: string, index: number) {
+  TabBarBuilder(title: string, iconRes: Resource, index: number) {
     Column() {
-      Text(icon)
-        .fontSize(20)
+      Image(iconRes)
+        .width(28)
+        .height(28)
+        .borderRadius(7)
+        .objectFit(ImageFit.Cover)
+        .opacity(this.currentIndex === index ? 1.0 : 0.55)
+        .border({
+          width: 1,
+          color: this.currentIndex === index ? Theme.primary : Theme.borderSubtle
+        })
       Text(title)
         .fontSize(10)
         .margin({ top: 2 })
+        .fontColor(this.currentIndex === index ? Theme.primary : Theme.textMuted)
+        .fontWeight(this.currentIndex === index ? FontWeight.Medium : FontWeight.Normal)
     }
     .padding({ top: 8, bottom: 6 })
     .alignItems(HorizontalAlign.Center)

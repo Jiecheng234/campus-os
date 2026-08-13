@@ -1,6 +1,6 @@
 import { HttpClient, HttpResponse } from '../HttpClient';
 import { SessionManager } from '../auth/SessionManager';
-import { hilog } from '@kit.PerformanceAnalysisKit';
+import { Log } from '../../utils/Logger';
 import { decodeBase64 } from '../../utils/CryptoUtils';
 
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
@@ -147,7 +147,7 @@ export class CampusDataService {
       // 1. 获取当前学期 ID（原项目 learnCurrentSemester）
       const semesterUrl: string = LEARN_BASE + '/b/kc/zhjw_v_code_xnxq/getCurrentAndNextSemester?_csrf=' + encodeURIComponent(csrf);
       const semesterResp: HttpResponse = await this.http.get(semesterUrl);
-      hilog.info(0xCAFE, 'LearnAct', 'SEMESTER code=%{public}d body=%{public}s',
+      Log.i('LearnAct',  'SEMESTER code=%{public}d body=%{public}s',
         semesterResp.statusCode, semesterResp.body.substring(0, 200));
       const semesterJson: Record<string, Object> = JSON.parse(semesterResp.body) as Record<string, Object>;
       const message: string = String(semesterJson['message'] ?? '');
@@ -167,13 +167,13 @@ export class CampusDataService {
       const listUrl: string = LEARN_BASE + '/b/wlxt/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId/'
         + semesterId + '/zh?_csrf=' + encodeURIComponent(csrf);
       const resp: HttpResponse = await this.http.get(listUrl);
-      hilog.info(0xCAFE, 'LearnAct', 'FETCH_COURSES code=%{public}d len=%{public}d body=%{public}s',
+      Log.i('LearnAct',  'FETCH_COURSES code=%{public}d len=%{public}d body=%{public}s',
         resp.statusCode, resp.body.length, resp.body.substring(0, 200));
       const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
       const resultList = json['resultList'] as Object[];
       if (resultList === undefined || resultList === null) {
         this.trace = 'no_list';
-        hilog.info(0xCAFE, 'LearnAct', 'FETCH_COURSES no_list keys=%{public}s', Object.keys(json).join(','));
+        Log.i('LearnAct',  'FETCH_COURSES no_list keys=%{public}s', Object.keys(json).join(','));
         return [];
       }
       const courses: CampusCourse[] = [];
@@ -192,7 +192,7 @@ export class CampusDataService {
       return courses;
     } catch (e) {
       this.trace = 'ex';
-      hilog.info(0xCAFE, 'LearnAct', 'FETCH_COURSES ex=%{public}s', e instanceof Error ? e.message : String(e));
+      Log.i('LearnAct',  'FETCH_COURSES ex=%{public}s', e instanceof Error ? e.message : String(e));
       return [];
     }
   }
@@ -251,7 +251,7 @@ export class CampusDataService {
         }
       }
     }
-    hilog.info(0xCAFE, 'LearnAct', 'FETCH_HW courses=%{public}d count=%{public}d', courses.length, result.length);
+    Log.i('LearnAct',  'FETCH_HW courses=%{public}d count=%{public}d', courses.length, result.length);
     return result;
   }
 
@@ -268,7 +268,7 @@ export class CampusDataService {
           const path: string = '/b/wlxt/kcgg/wlkc_ggb/student/pageListXsby' + suffixes[si];
           const aoData: string = '[{"name":"wlkcid","value":"' + course.id + '"}]';
           const resp: HttpResponse = await this.http.postForm(withCsrf(LEARN_BASE + path, csrf), { 'aoData': aoData });
-          hilog.info(0xCAFE, 'LearnAct', 'NOTIF_RESP sfx=%{public}s code=%{public}d body=%{public}s',
+          Log.i('LearnAct',  'NOTIF_RESP sfx=%{public}s code=%{public}d body=%{public}s',
             suffixes[si], resp.statusCode, resp.body.substring(0, 250));
           const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
           const objField = json['object'] as Record<string, Object>;
@@ -303,7 +303,7 @@ export class CampusDataService {
         }
       }
     }
-    hilog.info(0xCAFE, 'LearnAct', 'FETCH_NOTIF courses=%{public}d count=%{public}d', courses.length, result.length);
+    Log.i('LearnAct',  'FETCH_NOTIF courses=%{public}d count=%{public}d', courses.length, result.length);
     return result;
   }
 
@@ -318,7 +318,7 @@ export class CampusDataService {
         const url: string = withCsrf(
           LEARN_BASE + '/b/wlxt/kj/wlkc_kjxxb/student/kjxxbByWlkcidAndSizeForStudent?wlkcid=' + course.id + '&size=200', csrf);
         const resp: HttpResponse = await this.http.get(url);
-        hilog.info(0xCAFE, 'LearnAct', 'FILE_RESP code=%{public}d body=%{public}s',
+        Log.i('LearnAct',  'FILE_RESP code=%{public}d body=%{public}s',
           resp.statusCode, resp.body.substring(0, 250));
         const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
         // object 可能是数组（直接是文件列表）或 {resultsList: [...]}
@@ -350,7 +350,7 @@ export class CampusDataService {
         // skip
       }
     }
-    hilog.info(0xCAFE, 'LearnAct', 'FETCH_FILES courses=%{public}d count=%{public}d', courses.length, result.length);
+    Log.i('LearnAct',  'FETCH_FILES courses=%{public}d count=%{public}d', courses.length, result.length);
     return result;
   }
 
@@ -364,9 +364,9 @@ export class CampusDataService {
       if (c55.length > 0) { result.description = stripHtml(c55[0]); }
       if (c55.length > 1) { result.answerContent = stripHtml(c55[1]); }
       result.attachments = this.extractAttachmentNames(html);
-      hilog.info(0xCAFE, 'LearnAct', 'HW_DETAIL desc_len=%{public}d attach=%{public}d', result.description.length, result.attachments.length);
+      Log.i('LearnAct',  'HW_DETAIL desc_len=%{public}d attach=%{public}d', result.description.length, result.attachments.length);
     } catch (e) {
-      hilog.info(0xCAFE, 'LearnAct', 'HW_DETAIL ex=%{public}s', e instanceof Error ? e.message : String(e));
+      Log.i('LearnAct',  'HW_DETAIL ex=%{public}s', e instanceof Error ? e.message : String(e));
     }
     return result;
   }
