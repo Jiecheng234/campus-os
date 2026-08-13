@@ -44,6 +44,19 @@ function decodeHtmlEntities(value: string): string {
     .replace(/&quot;/g, '"');
 }
 
+/** 去除 HTML 标签，保留文本与换行（用于通知/作业内容纯文本展示） */
+function stripHtml(html: string): string {
+  let s: string = html;
+  s = s.replace(/<br\s*\/?>/gi, '\n');
+  s = s.replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n');
+  s = s.replace(/<li>/gi, '· ');
+  s = s.replace(/<[^>]+>/g, '');
+  s = decodeHtmlEntities(s);
+  // 压缩多余空行
+  s = s.replace(/\n{3,}/g, '\n\n');
+  return s.trim();
+}
+
 function withCsrf(url: string, csrf: string): string {
   const sep: string = url.indexOf('?') >= 0 ? '&' : '?';
   return url + sep + '_csrf=' + encodeURIComponent(csrf);
@@ -58,12 +71,17 @@ export class CampusCourse {
 
 export class CampusHomework {
   id: string = '';
+  baseId: string = '';
+  courseId: string = '';
   title: string = '';
   courseName: string = '';
   deadline: string = '';
   status: string = '';
   submitted: boolean = false;
   graded: boolean = false;
+  url: string = '';
+  grade: string = '';
+  gradeContent: string = '';
 }
 
 export class CampusNotification {
@@ -72,14 +90,27 @@ export class CampusNotification {
   publisher: string = '';
   publishTime: string = '';
   isNew: boolean = false;
+  content: string = '';
 }
 
 export class CampusFile {
   id: string = '';
+  fileId: string = '';
   title: string = '';
   courseName: string = '';
   size: string = '';
   isNew: boolean = false;
+  description: string = '';
+  uploadTime: string = '';
+  downloadUrl: string = '';
+  previewUrl: string = '';
+}
+
+/** 作业详情（解析 viewCj 页面 HTML 得到） */
+export class HomeworkDetailData {
+  description: string = '';
+  answerContent: string = '';
+  attachments: string[] = [];
 }
 
 export class CampusDataService {
@@ -87,6 +118,7 @@ export class CampusDataService {
   private csrfToken: string = '';
   private learnReady: boolean = false;
   public trace: string = '';
+  public currentSemester: string = '';
 
   constructor(http: HttpClient) {
     this.http = http;
@@ -129,6 +161,7 @@ export class CampusDataService {
         this.trace = 'no_semester_id';
         return [];
       }
+      this.currentSemester = String(resultObj['xnxqmc'] ?? '');
 
       // 2. 用真实学期 ID 获取课程列表（正确路径含 /wlxt/）
       const listUrl: string = LEARN_BASE + '/b/wlxt/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId/'
@@ -198,12 +231,19 @@ export class CampusDataService {
             const row = rows[ri] as Record<string, Object>;
             const item: CampusHomework = new CampusHomework();
             item.id = String(row['xszyid'] ?? '');
+            item.baseId = String(row['zyid'] ?? '');
+            item.courseId = course.id;
             item.title = decodeHtmlEntities(String(row['bt'] ?? ''));
             item.courseName = course.name;
             item.deadline = formatDateTime(row['jzsj']);
             item.submitted = submittedFlags[si];
             item.graded = gradedFlags[si];
             item.status = gradedFlags[si] ? '已批改' : (submittedFlags[si] ? '已提交' : '待提交');
+            const wlkcid: string = String(row['wlkcid'] ?? course.id);
+            item.url = LEARN_BASE + '/f/wlxt/kczy/zy/student/viewCj?wlkcid=' + wlkcid + '&xszyid=' + item.id;
+            const cjVal: Object = row['cj'] as Object;
+            item.grade = (cjVal !== undefined && cjVal !== null) ? String(cjVal) : '';
+            item.gradeContent = String(row['pynr'] ?? '').trim();
             result.push(item);
           }
         } catch (e) {
@@ -245,6 +285,17 @@ export class CampusDataService {
             item.publishTime = formatDateTime(row['fbsj']);
             const hasRead: boolean = String(row['sfyd'] ?? '') === '是';
             item.isNew = !hasRead;
+            // 通知内容 ggnr 是 Base64 编码的 HTML
+            const ggnr: string = String(row['ggnr'] ?? '');
+            let content: string = '';
+            if (ggnr.length > 0) {
+              try {
+                content = stripHtml(decodeBase64(ggnr));
+              } catch (e) {
+                content = stripHtml(ggnr);
+              }
+            }
+            item.content = content;
             result.push(item);
           }
         } catch (e) {
@@ -284,10 +335,15 @@ export class CampusDataService {
           const row = rows[ri] as Record<string, Object>;
           const item: CampusFile = new CampusFile();
           item.id = String(row['kjxxid'] ?? '');
+          item.fileId = String(row['wjid'] ?? '');
           item.title = decodeHtmlEntities(String(row['bt'] ?? ''));
           item.courseName = course.name;
           item.size = String(row['fileSize'] ?? row['wjdx'] ?? '');
           item.isNew = String(row['sfqd'] ?? '') === '是';
+          item.description = stripHtml(String(row['ms'] ?? ''));
+          item.uploadTime = formatDateTime(row['scsj']);
+          item.downloadUrl = LEARN_BASE + '/b/wlxt/kj/wlkc_kjxxb/student/downloadFile?sfgk=0&wjid=' + item.fileId;
+          item.previewUrl = LEARN_BASE + '/f/wlxt/kc/wj_wjb/student/beforePlay?wjid=' + item.fileId + '&mk=mk_kcwj&browser=-1&sfgk=0&pageType=all';
           result.push(item);
         }
       } catch (e) {
@@ -296,5 +352,91 @@ export class CampusDataService {
     }
     hilog.info(0xCAFE, 'LearnAct', 'FETCH_FILES courses=%{public}d count=%{public}d', courses.length, result.length);
     return result;
+  }
+
+  /** 抓取并解析单条作业 viewCj 详情页（作业说明 + 附件），对齐 thu-learn-lib parseHomeworkAtUrl */
+  async fetchHomeworkDetail(url: string): Promise<HomeworkDetailData> {
+    const result: HomeworkDetailData = new HomeworkDetailData();
+    try {
+      const resp: HttpResponse = await this.http.get(url);
+      const html: string = resp.body;
+      const c55: string[] = this.extractByMarker(html, 'class="c55"');
+      if (c55.length > 0) { result.description = stripHtml(c55[0]); }
+      if (c55.length > 1) { result.answerContent = stripHtml(c55[1]); }
+      result.attachments = this.extractAttachmentNames(html);
+      hilog.info(0xCAFE, 'LearnAct', 'HW_DETAIL desc_len=%{public}d attach=%{public}d', result.description.length, result.attachments.length);
+    } catch (e) {
+      hilog.info(0xCAFE, 'LearnAct', 'HW_DETAIL ex=%{public}s', e instanceof Error ? e.message : String(e));
+    }
+    return result;
+  }
+
+  /** 提取所有匹配 marker 的 <div> 的平衡内容 */
+  private extractByMarker(html: string, marker: string): string[] {
+    const results: string[] = [];
+    let searchFrom: number = 0;
+    while (searchFrom < html.length) {
+      const idx: number = html.indexOf(marker, searchFrom);
+      if (idx < 0) { break; }
+      const divStart: number = html.lastIndexOf('<div', idx);
+      if (divStart < 0) { break; }
+      const content: string = this.extractDivContent(html, divStart);
+      results.push(content);
+      searchFrom = idx + marker.length;
+    }
+    return results;
+  }
+
+  /** 从 <div 起始位置提取到平衡 </div> 的内部内容 */
+  private extractDivContent(html: string, divStart: number): string {
+    let depth: number = 0;
+    let i: number = divStart;
+    let contentStart: number = -1;
+    const len: number = html.length;
+    while (i < len) {
+      if (html.substring(i, i + 4) === '<div') {
+        depth++;
+        if (contentStart < 0) {
+          const gt: number = html.indexOf('>', i);
+          if (gt < 0) { return ''; }
+          contentStart = gt + 1;
+          i = gt + 1;
+          continue;
+        }
+        i += 4;
+      } else if (html.substring(i, i + 6) === '</div>') {
+        depth--;
+        if (depth === 0 && contentStart >= 0) {
+          return html.substring(contentStart, i);
+        }
+        i += 6;
+      } else {
+        i++;
+      }
+    }
+    return '';
+  }
+
+  /** 提取作业附件文件名（div.list.fujian 区域内的链接文本） */
+  private extractAttachmentNames(html: string): string[] {
+    const names: string[] = [];
+    const blocks: string[] = this.extractByMarker(html, 'list fujian');
+    for (let bi: number = 0; bi < blocks.length; bi++) {
+      const text: string = this.extractFirstAnchorText(blocks[bi]);
+      if (text.length > 0) {
+        names.push(text);
+      }
+    }
+    return names;
+  }
+
+  private extractFirstAnchorText(fragment: string): string {
+    const aStart: number = fragment.indexOf('<a');
+    if (aStart < 0) { return ''; }
+    const gt: number = fragment.indexOf('>', aStart);
+    if (gt < 0) { return ''; }
+    const aEnd: number = fragment.indexOf('</a>', gt);
+    if (aEnd < 0) { return ''; }
+    return stripHtml(fragment.substring(gt + 1, aEnd)).trim();
   }
 }

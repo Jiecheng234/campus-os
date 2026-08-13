@@ -1,32 +1,26 @@
 import { Theme, SafeTop } from '../Theme';
-
-class HomeworkDetail {
-  title: string = '';
-  course: string = '';
-  deadline: string = '';
-  status: string = '';
-  description: string = '';
-  grade: string = '';
-  feedback: string = '';
-  attachments: string[] = [];
-}
+import { CampusHomework, HomeworkDetailData, CampusDataService } from '../../services/campus/CampusDataService';
+import { SessionManager } from '../../services/auth/SessionManager';
 
 @Component
 export struct HomeworkDetailPage {
   onBack: () => void = () => {};
-  @State hw: HomeworkDetail = new HomeworkDetail();
+  item: CampusHomework = new CampusHomework();
+  @State detail: HomeworkDetailData = new HomeworkDetailData();
+  @State detailLoaded: boolean = false;
 
   aboutToAppear(): void {
-    const h: HomeworkDetail = new HomeworkDetail();
-    h.title = '习题集 第5章';
-    h.course = '高等数学(1)';
-    h.deadline = '2025年7月25日 23:59';
-    h.status = '即将截止';
-    h.description = '完成教材第5章课后习题：\n\n1. 习题5.1：第1、3、5、7、9题\n2. 习题5.2：第2、4、6、8、10题\n3. 习题5.3：第1、3、5题\n4. 综合练习：第5章全部复习题\n\n要求：手写或打印均可，务必标注姓名和学号，拍照上传至网络学堂。';
-    h.grade = '未批改';
-    h.feedback = '';
-    h.attachments = ['第5章习题集.pdf', '高等数学教材第5章.pdf', '参考答案_第5章.pdf'];
-    this.hw = h;
+    if (this.item.url.length > 0) {
+      const service: CampusDataService = SessionManager.getCampusDataService();
+      service.fetchHomeworkDetail(this.item.url).then((d: HomeworkDetailData) => {
+        this.detail = d;
+        this.detailLoaded = true;
+      }).catch((e: Object) => {
+        this.detailLoaded = true;
+      });
+    } else {
+      this.detailLoaded = true;
+    }
   }
 
   build() {
@@ -59,12 +53,12 @@ export struct HomeworkDetailPage {
           // 标题卡片
           Column() {
             Row() {
-              Text(this.hw.title)
+              Text(this.item.title)
                 .fontSize(20)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(Theme.text)
               Blank()
-              Text(this.hw.status)
+              Text(this.item.status)
                 .fontSize(12)
                 .fontColor(Theme.warning)
                 .padding({ left: 8, right: 8, top: 3, bottom: 3 })
@@ -79,7 +73,7 @@ export struct HomeworkDetailPage {
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .width(60)
-              Text(this.hw.course)
+              Text(this.item.courseName)
                 .fontSize(14)
                 .fontColor(Theme.text)
             }
@@ -91,7 +85,7 @@ export struct HomeworkDetailPage {
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .width(60)
-              Text(this.hw.deadline)
+              Text(this.item.deadline.length > 0 ? this.item.deadline : '—')
                 .fontSize(14)
                 .fontColor(Theme.warning)
             }
@@ -112,10 +106,17 @@ export struct HomeworkDetailPage {
               .fontColor(Theme.text)
               .margin({ bottom: 8 })
 
-            Text(this.hw.description)
-              .fontSize(14)
-              .fontColor(Theme.textSecondary)
-              .lineHeight(22)
+            if (!this.detailLoaded) {
+              Text('加载中…')
+                .fontSize(14)
+                .fontColor(Theme.textMuted)
+                .lineHeight(22)
+            } else {
+              Text(this.detail.description.length > 0 ? this.detail.description : '暂无作业要求')
+                .fontSize(14)
+                .fontColor(Theme.textSecondary)
+                .lineHeight(22)
+            }
           }
           .width('100%')
           .padding(16)
@@ -125,15 +126,15 @@ export struct HomeworkDetailPage {
           .margin({ left: 16, right: 16, bottom: 16 })
 
           // 附件
-          if (this.hw.attachments.length > 0) {
+          if (this.detail.attachments.length > 0) {
             Column() {
-              Text('附件材料 (' + String(this.hw.attachments.length) + ')')
+              Text('附件材料 (' + String(this.detail.attachments.length) + ')')
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
                 .margin({ bottom: 12 })
 
-              ForEach(this.hw.attachments, (file: string, index: number) => {
+              ForEach(this.detail.attachments, (file: string, index: number) => {
                 Row() {
                   Text('📄')
                     .fontSize(16)
@@ -166,19 +167,19 @@ export struct HomeworkDetailPage {
               .fontColor(Theme.text)
               .margin({ bottom: 8 })
 
-            if (this.hw.grade.length > 0) {
-              Text('等级：' + this.hw.grade)
+            if (this.item.grade.length > 0) {
+              Text('成绩：' + this.item.grade)
                 .fontSize(14)
                 .fontColor(Theme.text)
             }
-            if (this.hw.feedback.length > 0) {
-              Text(this.hw.feedback)
+            if (this.item.gradeContent.length > 0) {
+              Text(this.item.gradeContent)
                 .fontSize(14)
                 .fontColor(Theme.textSecondary)
                 .margin({ top: 6 })
             }
-            if (this.hw.grade === '未批改' && this.hw.feedback.length === 0) {
-              Text('作业尚未批改，请耐心等待。')
+            if (this.item.grade.length === 0 && this.item.gradeContent.length === 0) {
+              Text(this.item.graded ? '已批改' : '作业尚未批改，请耐心等待。')
                 .fontSize(14)
                 .fontColor(Theme.textMuted)
             }

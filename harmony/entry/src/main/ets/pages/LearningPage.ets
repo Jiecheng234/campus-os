@@ -213,38 +213,51 @@ export struct LearningPage {
   @State ddls: HomeworkItem[] = getHomeworkList();
   @State form: DeadlineForm = new DeadlineForm();
   @State subScreen: string = '';
+  // 列表显示（UI 模型）
   @State realCourses: CourseItem[] = [];
-  @State hasRealData: boolean = false;
   @State realDdls: HomeworkItem[] = [];
   @State realNotifications: NotificationItem[] = [];
   @State realFiles: FileItem[] = [];
-  @State hasRealHw: boolean = false;
-  @State hasRealNotif: boolean = false;
-  @State hasRealFile: boolean = false;
+  @State currentSemester: string = '';
+  // 选中项（真实数据，传详情页）
+  @State selectedCourse: CampusCourse = new CampusCourse();
+  @State selectedHomework: CampusHomework = new CampusHomework();
+  @State selectedNotification: CampusNotification = new CampusNotification();
+  @State selectedFile: CampusFile = new CampusFile();
+  // 原始 Campus 数据（详情页数据源）
+  private realCampusCourses: CampusCourse[] = [];
+  private realCampusHomework: CampusHomework[] = [];
+  private realCampusNotifications: CampusNotification[] = [];
+  private realCampusFiles: CampusFile[] = [];
   private tabs: string[] = ['课程', '作业', '通知', '文件'];
 
   aboutToAppear(): void {
     this.loadRealCourses();
   }
 
+  private isRealMode(): boolean {
+    return AuthManager.isLoggedIn() && !StateManager.isDemoMode();
+  }
+
   private loadRealCourses(): void {
-    if (!AuthManager.isLoggedIn() || StateManager.isDemoMode()) {
+    if (!this.isRealMode()) {
       return;
     }
     const service: CampusDataService = SessionManager.getCampusDataService();
     service.fetchCourses().then((courses: CampusCourse[]) => {
       hilog.info(0xCAFE, 'LearnAct', 'UI_FETCH_COURSES count=%{public}d trace=%{public}s', courses.length, service.trace);
+      this.realCampusCourses = courses;
+      this.currentSemester = service.currentSemester;
+      const mapped: CourseItem[] = [];
+      for (let i: number = 0; i < courses.length; i++) {
+        const item: CourseItem = new CourseItem();
+        item.name = courses[i].name;
+        item.teacher = courses[i].teacher;
+        item.code = courses[i].code;
+        mapped.push(item);
+      }
+      this.realCourses = mapped;
       if (courses.length > 0) {
-        const mapped: CourseItem[] = [];
-        for (let i: number = 0; i < courses.length; i++) {
-          const item: CourseItem = new CourseItem();
-          item.name = courses[i].name;
-          item.teacher = courses[i].teacher;
-          item.code = courses[i].code;
-          mapped.push(item);
-        }
-        this.realCourses = mapped;
-        this.hasRealData = true;
         this.loadRealExtras(service, courses);
       }
     }).catch((e: Object) => {
@@ -254,68 +267,62 @@ export struct LearningPage {
 
   private loadRealExtras(service: CampusDataService, courses: CampusCourse[]): void {
     service.fetchHomework(courses).then((list: CampusHomework[]) => {
-      if (list.length > 0) {
-        const mapped: HomeworkItem[] = [];
-        for (let i: number = 0; i < list.length; i++) {
-          const item: HomeworkItem = new HomeworkItem();
-          item.title = list[i].title;
-          item.course = list[i].courseName;
-          item.deadline = list[i].deadline;
-          item.status = list[i].status;
-          mapped.push(item);
-        }
-        this.realDdls = mapped;
-        this.hasRealHw = true;
+      this.realCampusHomework = list;
+      const mapped: HomeworkItem[] = [];
+      for (let i: number = 0; i < list.length; i++) {
+        const item: HomeworkItem = new HomeworkItem();
+        item.title = list[i].title;
+        item.course = list[i].courseName;
+        item.deadline = list[i].deadline;
+        item.status = list[i].status;
+        mapped.push(item);
       }
+      this.realDdls = mapped;
     }).catch((e: Object) => { /* ignore */ });
 
     service.fetchNotifications(courses).then((list: CampusNotification[]) => {
-      if (list.length > 0) {
-        const mapped: NotificationItem[] = [];
-        for (let i: number = 0; i < list.length; i++) {
-          const item: NotificationItem = new NotificationItem();
-          item.title = list[i].title;
-          item.publisher = list[i].publisher;
-          item.time = list[i].publishTime;
-          item.isNew = list[i].isNew;
-          mapped.push(item);
-        }
-        this.realNotifications = mapped;
-        this.hasRealNotif = true;
+      this.realCampusNotifications = list;
+      const mapped: NotificationItem[] = [];
+      for (let i: number = 0; i < list.length; i++) {
+        const item: NotificationItem = new NotificationItem();
+        item.title = list[i].title;
+        item.publisher = list[i].publisher;
+        item.time = list[i].publishTime;
+        item.isNew = list[i].isNew;
+        mapped.push(item);
       }
+      this.realNotifications = mapped;
     }).catch((e: Object) => { /* ignore */ });
 
     service.fetchFiles(courses).then((list: CampusFile[]) => {
-      if (list.length > 0) {
-        const mapped: FileItem[] = [];
-        for (let i: number = 0; i < list.length; i++) {
-          const item: FileItem = new FileItem();
-          item.title = list[i].title;
-          item.course = list[i].courseName;
-          item.size = list[i].size;
-          item.isNew = list[i].isNew;
-          mapped.push(item);
-        }
-        this.realFiles = mapped;
-        this.hasRealFile = true;
+      this.realCampusFiles = list;
+      const mapped: FileItem[] = [];
+      for (let i: number = 0; i < list.length; i++) {
+        const item: FileItem = new FileItem();
+        item.title = list[i].title;
+        item.course = list[i].courseName;
+        item.size = list[i].size;
+        item.isNew = list[i].isNew;
+        mapped.push(item);
       }
+      this.realFiles = mapped;
     }).catch((e: Object) => { /* ignore */ });
   }
 
   private getDisplayCourses(): CourseItem[] {
-    return this.hasRealData ? this.realCourses : getCourses();
+    return this.isRealMode() ? this.realCourses : getCourses();
   }
 
   private getDisplayHomework(): HomeworkItem[] {
-    return this.hasRealHw ? this.realDdls : this.ddls;
+    return this.isRealMode() ? this.realDdls : this.ddls;
   }
 
   private getDisplayNotifications(): NotificationItem[] {
-    return this.hasRealNotif ? this.realNotifications : getNotifications();
+    return this.isRealMode() ? this.realNotifications : getNotifications();
   }
 
   private getDisplayFiles(): FileItem[] {
-    return this.hasRealFile ? this.realFiles : getFiles();
+    return this.isRealMode() ? this.realFiles : getFiles();
   }
 
   private getTabCounts(): number[] {
@@ -329,13 +336,13 @@ export struct LearningPage {
 
   build() {
     if (this.subScreen === 'course') {
-      CourseDetailPage({ onBack: () => { this.subScreen = ''; } })
+      CourseDetailPage({ onBack: () => { this.subScreen = ''; }, course: this.selectedCourse, semester: this.currentSemester })
     } else if (this.subScreen === 'homework') {
-      HomeworkDetailPage({ onBack: () => { this.subScreen = ''; } })
+      HomeworkDetailPage({ onBack: () => { this.subScreen = ''; }, item: this.selectedHomework })
     } else if (this.subScreen === 'notification') {
-      NotificationDetailPage({ onBack: () => { this.subScreen = ''; } })
+      NotificationDetailPage({ onBack: () => { this.subScreen = ''; }, item: this.selectedNotification })
     } else if (this.subScreen === 'file') {
-      FileDetailPage({ onBack: () => { this.subScreen = ''; } })
+      FileDetailPage({ onBack: () => { this.subScreen = ''; }, item: this.selectedFile })
     } else {
     Stack() {
       Scroll() {
@@ -381,7 +388,10 @@ export struct LearningPage {
           if (this.activeTab === '课程') {
             Column() {
               ForEach(this.getDisplayCourses(), (item: CourseItem, index: number) => {
-                CourseCard({ item: item, onCardClick: () => { this.subScreen = 'course'; } })
+                CourseCard({ item: item, onCardClick: () => {
+                  if (index < this.realCampusCourses.length) { this.selectedCourse = this.realCampusCourses[index]; }
+                  this.subScreen = 'course';
+                } })
                 if (index < this.getDisplayCourses().length - 1) {
                   Divider().color(Theme.divider).margin({ left: 15 })
                 }
@@ -396,7 +406,10 @@ export struct LearningPage {
           } else if (this.activeTab === '作业') {
             Column() {
               ForEach(this.getDisplayHomework(), (item: HomeworkItem, index: number) => {
-                DDLCard({ item: item, onCardClick: () => { this.subScreen = 'homework'; } })
+                DDLCard({ item: item, onCardClick: () => {
+                  if (index < this.realCampusHomework.length) { this.selectedHomework = this.realCampusHomework[index]; }
+                  this.subScreen = 'homework';
+                } })
                 if (index < this.getDisplayHomework().length - 1) {
                   Divider().color(Theme.divider).margin({ left: 15 })
                 }
@@ -416,8 +429,11 @@ export struct LearningPage {
             .margin({ left: 16, right: 16 })
           } else if (this.activeTab === '通知') {
             Column() {
-              ForEach(this.getDisplayNotifications(), (item: NotificationItem) => {
-                NotificationCard({ item: item, onCardClick: () => { this.subScreen = 'notification'; } })
+              ForEach(this.getDisplayNotifications(), (item: NotificationItem, index: number) => {
+                NotificationCard({ item: item, onCardClick: () => {
+                  if (index < this.realCampusNotifications.length) { this.selectedNotification = this.realCampusNotifications[index]; }
+                  this.subScreen = 'notification';
+                } })
               })
               if (this.getDisplayNotifications().length === 0) {
                 Text('暂无通知')
@@ -434,8 +450,11 @@ export struct LearningPage {
             .margin({ left: 16, right: 16 })
           } else {
             Column() {
-              ForEach(this.getDisplayFiles(), (item: FileItem) => {
-                FileCard({ item: item, onCardClick: () => { this.subScreen = 'file'; } })
+              ForEach(this.getDisplayFiles(), (item: FileItem, index: number) => {
+                FileCard({ item: item, onCardClick: () => {
+                  if (index < this.realCampusFiles.length) { this.selectedFile = this.realCampusFiles[index]; }
+                  this.subScreen = 'file';
+                } })
               })
               if (this.getDisplayFiles().length === 0) {
                 Text('暂无文件')

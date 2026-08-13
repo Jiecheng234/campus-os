@@ -1,30 +1,15 @@
 import { Theme, SafeTop } from '../Theme';
-
-class FileInfo {
-  title: string = '';
-  course: string = '';
-  size: string = '';
-  extension: string = '';
-  uploadTime: string = '';
-  downloads: number = 0;
-  description: string = '';
-}
+import { CampusFile } from '../../services/campus/CampusDataService';
 
 @Component
 export struct FileDetailPage {
   onBack: () => void = () => {};
-  @State file: FileInfo = new FileInfo();
+  item: CampusFile = new CampusFile();
 
-  aboutToAppear(): void {
-    const f: FileInfo = new FileInfo();
-    f.title = '高等数学第5章课件.pptx';
-    f.course = '高等数学(1)';
-    f.size = '12.5 MB';
-    f.extension = 'pptx';
-    f.uploadTime = '2025年7月15日 14:30';
-    f.downloads = 42;
-    f.description = '第5章：定积分的应用\n\n内容包括：微元法、平面图形的面积、旋转体的体积、平面曲线的弧长、定积分在物理中的应用等。';
-    this.file = f;
+  private getExtension(title: string): string {
+    const dot: number = title.lastIndexOf('.');
+    if (dot < 0 || dot === title.length - 1) { return ''; }
+    return title.substring(dot + 1).toLowerCase();
   }
 
   build() {
@@ -56,10 +41,10 @@ export struct FileDetailPage {
         Column() {
           // 文件图标预览
           Column() {
-            Text(this.getFileIcon(this.file.extension))
+            Text(this.getFileIcon(this.getExtension(this.item.title)))
               .fontSize(56)
               .margin({ bottom: 12 })
-            Text(this.file.title)
+            Text(this.item.title)
               .fontSize(18)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.text)
@@ -71,11 +56,10 @@ export struct FileDetailPage {
 
           // 文件信息
           Column() {
-            InfoRow({ label: '所属课程', value: this.file.course })
-            InfoRow({ label: '文件大小', value: this.file.size })
-            InfoRow({ label: '文件类型', value: this.file.extension.toUpperCase() })
-            InfoRow({ label: '上传时间', value: this.file.uploadTime })
-            InfoRow({ label: '下载次数', value: String(this.file.downloads) + ' 次' })
+            InfoRow({ label: '所属课程', value: this.item.courseName })
+            InfoRow({ label: '文件大小', value: this.item.size.length > 0 ? this.item.size : '—' })
+            InfoRow({ label: '文件类型', value: this.getExtension(this.item.title).toUpperCase() })
+            InfoRow({ label: '上传时间', value: this.item.uploadTime.length > 0 ? this.item.uploadTime : '—' })
           }
           .width('100%')
           .padding(16)
@@ -92,7 +76,7 @@ export struct FileDetailPage {
               .fontColor(Theme.text)
               .margin({ bottom: 8 })
 
-            Text(this.file.description)
+            Text(this.item.description.length > 0 ? this.item.description : '暂无说明')
               .fontSize(14)
               .fontColor(Theme.textSecondary)
               .lineHeight(22)
@@ -105,7 +89,7 @@ export struct FileDetailPage {
           .margin({ left: 16, right: 16, bottom: 20 })
 
           // 下载按钮
-          Button('下载文件 (' + this.file.size + ')')
+          Button('下载文件' + (this.item.size.length > 0 ? ' (' + this.item.size + ')' : ''))
             .type(ButtonType.Normal)
             .width('100%')
             .height(52)
