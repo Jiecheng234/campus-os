@@ -1,3 +1,21 @@
+/**
+ * ============================================================================
+ * WebvpnConstants — 清华认证/WebVPN 端点常量与 URL 包装
+ * ============================================================================
+ *
+ * 关键端点：
+ *   - WEBVPN_OAUTH_LOGIN_URL   认证启动（预热 WebVPN→OAuth→ID 链）
+ *   - ID_LOGIN_URL             ID 登录 POST（i_user/i_pass/fingerPrint/...）
+ *   - DOUBLE_AUTH_URL          2FA 端点（SEND_CODE/VERITY_CODE）
+ *   - SAVE_FINGER_URL          信任设备（须在 2FA redirectUrl 之前调用）
+ *   - LEARN_AUTH_ROAM          learn 域激活（ticket → 建立 learn 会话）
+ *
+ * yyfwid（应用服务 ID）：
+ *   - INFO_PORTAL_YYFWID       信息门户（校园通用门户漫游）
+ *
+ * wrapWebVPNUrl()：把任意内网 URL 包装为 WebVPN lbredirect 形式（ roam 时 follow callback 用）。
+ * ============================================================================
+ */
 export const WEBVPN_BASE_URL: string = 'https://webvpn.tsinghua.edu.cn';
 export const WEBVPN_OAUTH_LOGIN_URL: string = `${WEBVPN_BASE_URL}/login?oauth_login=true`;
 export const OAUTH_LBREDIRECT_PREFIX: string = 'https://oauth.tsinghua.edu.cn/lb-auth/lbredirect';

@@ -61,7 +61,6 @@ export struct LoginPage {
   handleSendCode(): void {
     SessionManager.send2FACode(this.auth.selectedMethod).then((sent: boolean) => {
       if (sent) {
-        this.twoFactorCode = '123456';
         promptAction.showToast({ message: '验证码已发送', duration: 2000 });
       } else {
         promptAction.showToast({ message: '发送验证码失败', duration: 2000 });

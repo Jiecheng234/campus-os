@@ -7,7 +7,7 @@ import { getTodayCourses, getBriefingMetrics, getQuickActions, getGreeting,
   getDateString, CourseItem, BriefingMetrics, QuickAction } from './HomeData';
 import { promptAction } from '@kit.ArkUI';
 import { SessionManager } from '../services/auth/SessionManager';
-import { CampusCourse, CampusDataService } from '../services/campus/CampusDataService';
+import { CampusCourse, CampusDataService, CampusHomework, CampusNotification, ScheduleEvent } from '../services/campus/CampusDataService';
 import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
 
@@ -78,6 +78,69 @@ export struct HomePage {
   @State showActionsToast: string = '';
   @State syncStatus: string = '';
   @State realCourseCount: number = 0;
+  @State todayCourses: CourseItem[] = [];
+  @State metricClasses: string = '0';
+  @State metricTasks: string = '0';
+  @State metricUnread: string = '0';
+  @State hasRealHome: boolean = false;
+
+  aboutToAppear(): void {
+    this.loadRealData();
+  }
+
+  private isRealMode(): boolean {
+    return AuthManager.isLoggedIn() && !StateManager.isDemoMode();
+  }
+
+  private loadRealData(): void {
+    if (!this.isRealMode()) {
+      return;
+    }
+    const service: CampusDataService = SessionManager.getCampusDataService();
+    // 今日课程（课表）
+    service.fetchTodaySchedule().then((events: ScheduleEvent[]) => {
+      if (events.length > 0) {
+        const mapped: CourseItem[] = [];
+        for (let i: number = 0; i < events.length; i++) {
+          const item: CourseItem = new CourseItem();
+          item.title = events[i].title;
+          item.time = events[i].startTime + ' - ' + events[i].endTime;
+          item.location = events[i].location;
+          mapped.push(item);
+        }
+        this.todayCourses = mapped;
+        this.metricClasses = String(events.length);
+        this.hasRealHome = true;
+      }
+    });
+    // 指标（待办 DDL + 未读通知）
+    service.fetchCourses().then((courses: CampusCourse[]) => {
+      if (courses.length > 0) {
+        service.fetchHomework(courses).then((hw: CampusHomework[]) => {
+          let pending: number = 0;
+          for (let i: number = 0; i < hw.length; i++) {
+            if (!hw[i].submitted && !hw[i].graded) {
+              pending++;
+            }
+          }
+          this.metricTasks = String(pending);
+        });
+        service.fetchNotifications(courses).then((notif: CampusNotification[]) => {
+          let unread: number = 0;
+          for (let i: number = 0; i < notif.length; i++) {
+            if (notif[i].isNew) {
+              unread++;
+            }
+          }
+          this.metricUnread = String(unread);
+        });
+      }
+    });
+  }
+
+  private getDisplayTodayCourses(): CourseItem[] {
+    return this.hasRealHome ? this.todayCourses : getTodayCourses();
+  }
 
   syncCampusData(): void {
     if (!AuthManager.isLoggedIn() || StateManager.isDemoMode()) {
@@ -144,9 +207,9 @@ export struct HomePage {
             .margin({ bottom: Space.md })
 
           Row({ space: Space.sm }) {
-            MetricPill({ label: '今日课程', value: '3', tone: BadgeTone.Default })
-            MetricPill({ label: '待处理任务', value: '2', tone: BadgeTone.Default })
-            MetricPill({ label: '未读通知', value: '1', tone: BadgeTone.Warning })
+            MetricPill({ label: '今日课程', value: this.metricClasses, tone: BadgeTone.Default })
+            MetricPill({ label: '待处理任务', value: this.metricTasks, tone: BadgeTone.Default })
+            MetricPill({ label: '未读通知', value: this.metricUnread, tone: BadgeTone.Warning })
           }
           .width('100%')
         }
@@ -167,12 +230,18 @@ export struct HomePage {
         .alignItems(HorizontalAlign.Start)
 
         Column() {
-          ForEach(getTodayCourses(), (item: CourseItem, index: number) => {
+          ForEach(this.getDisplayTodayCourses(), (item: CourseItem, index: number) => {
             CourseRow({ course: item })
-            if (index < getTodayCourses().length - 1) {
+            if (index < this.getDisplayTodayCourses().length - 1) {
               Divider().color(Theme.divider).margin({ left: 15 })
             }
           })
+          if (this.getDisplayTodayCourses().length === 0) {
+            Text('今日无课程安排')
+              .fontSize(FontSize.caption)
+              .fontColor(Theme.textMuted)
+              .padding({ top: Space.md, bottom: Space.md })
+          }
         }
         .width('100%')
         .padding({ left: Space.md, right: Space.md, top: Space.xs, bottom: Space.xs })

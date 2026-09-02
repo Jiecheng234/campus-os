@@ -1,3 +1,28 @@
+/**
+ * ============================================================================
+ * CampusDataService — 校园真实数据接入服务（learn 域 + 教务 zhjw 域）
+ * ============================================================================
+ *
+ * 【数据接入总览】（均需先经 TsinghuaAuthService 完成 learn 激活拿到 _csrf）：
+ *   - fetchCourses          课程列表（先取学期 ID，再取课程；URL 含 /wlxt/ 段）
+ *   - fetchHomework         作业（按课程遍历 Wj/Yjwg/Ypg 三状态端点，POST aoData）
+ *   - fetchNotifications    通知（POST aoData；内容 ggnr 是 Base64 编码 HTML）
+ *   - fetchFiles            课件文件（GET；object 可能是数组或 {resultsList}）
+ *   - fetchHomeworkDetail   作业详情（GET viewCj 页 HTML 解析作业要求/附件）
+ *   - fetchScheduleEvents   课表（教务 zhjw JSONP，需先 ensureRegistrarRoam 教务激活）
+ *
+ * 【learn API 通用规则】：
+ *   - URL 用 withCsrf(url, csrf) 拼 _csrf 参数
+ *   - aoData 是 [{"name":"wlkcid","value":"课程id"}] 的 JSON 字符串，POST urlencoded 提交
+ *   - 响应数据行通常在 object.aaData 或 object.resultsList
+ *
+ * 【CSRF 区分】：
+ *   - learn csrf（getCsrfToken）     learn 学生首页提取，用于 learn API
+ *   - WebVPN csrf（getWebvpnCsrf）   cookieSync 接口提取 XSRF-TOKEN，用于教务等漫游
+ *
+ * 参考：原项目 src/services/campus/learningAdapter.ts、scheduleService.ts
+ * ============================================================================
+ */
 import { HttpClient, HttpResponse } from '../HttpClient';
 import { SessionManager } from '../auth/SessionManager';
 import { Log } from '../../utils/Logger';
@@ -62,6 +87,36 @@ function withCsrf(url: string, csrf: string): string {
   return url + sep + '_csrf=' + encodeURIComponent(csrf);
 }
 
+/** 解析 JSONP（形如 m([...])，取首个 [ 到末个 ]） */
+function parseJsonpArray(raw: string): Object[] {
+  const start: number = raw.indexOf('[');
+  const end: number = raw.lastIndexOf(']');
+  if (start < 0 || end < 0 || end <= start) { return []; }
+  try {
+    return JSON.parse(raw.substring(start, end + 1)) as Object[];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** 课表日期归一为 YYYY-MM-DD（兼容 YYYYMMDD） */
+function normalizeScheduleDate(value: string): string {
+  const s: string = value.trim();
+  if (s.length >= 10 && s.charAt(4) === '-') { return s.substring(0, 10); }
+  if (s.length === 8) {
+    return s.substring(0, 4) + '-' + s.substring(4, 6) + '-' + s.substring(6, 8);
+  }
+  return s;
+}
+
+function formatYmd(d: Date): string {
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+}
+
+function formatDash(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 export class CampusCourse {
   id: string = '';
   name: string = '';
@@ -113,12 +168,24 @@ export class HomeworkDetailData {
   attachments: string[] = [];
 }
 
+/** 课表事件（教务 zhjw JSONP） */
+export class ScheduleEvent {
+  id: string = '';
+  date: string = '';
+  title: string = '';
+  location: string = '';
+  startTime: string = '';
+  endTime: string = '';
+}
+
 export class CampusDataService {
   private http: HttpClient;
   private csrfToken: string = '';
   private learnReady: boolean = false;
   public trace: string = '';
   public currentSemester: string = '';
+  private registrarRoamEnsured: boolean = false;
+  private webvpnCsrf: string = '';
 
   constructor(http: HttpClient) {
     this.http = http;
@@ -134,6 +201,45 @@ export class CampusDataService {
       return authCsrf;
     }
     return '';
+  }
+
+  /** WebVPN 的 XSRF-TOKEN（从 cookieSync 接口提取，用于 webvpn 漫游，与 learn csrf 不同） */
+  async getWebvpnCsrf(): Promise<string> {
+    if (this.webvpnCsrf.length > 0) {
+      return this.webvpnCsrf;
+    }
+    try {
+      // 先访问 infoUserData 确认/建立 info 后端会话（原项目 verifyInfoSession）
+      const INFO_TOKEN: string = '77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de';
+      const userDataUrl: string = 'https://webvpn.tsinghua.edu.cn/https/' + INFO_TOKEN + '/b/info/gxfw_fg/common/grjbxx';
+      const udResp: HttpResponse = await this.http.get(userDataUrl);
+      Log.i('LearnAct', 'INFO_USERDATA code=%{public}d body=%{public}s', udResp.statusCode, udResp.body.substring(0, 150));
+
+      const url: string = 'https://webvpn.tsinghua.edu.cn/wengine-vpn/cookie?method=get&host=info.tsinghua.edu.cn&scheme=https&path=/f/info/gxfw_fg/common/index';
+      const resp: HttpResponse = await this.http.get(url);
+      // 打印 cookieSync 的原始 Set-Cookie，定位 XSRF-TOKEN
+      const sc: string[] = this.http.lastSetCookies;
+      let scStr: string = '';
+      for (let i: number = 0; i < sc.length; i++) {
+        scStr = scStr + '[' + sc[i].substring(0, 60) + '] ';
+      }
+      Log.i('LearnAct', 'WEBVPN_CSRF code=%{public}d setcookies=%{public}s', resp.statusCode, scStr);
+      const infoCookies: string = this.http.getCookieManager().getCookieHeader('https://info.tsinghua.edu.cn/');
+      const webvpnCookies: string = this.http.getCookieManager().getCookieHeader('https://webvpn.tsinghua.edu.cn/');
+      let m = /XSRF-TOKEN=([^;]+)/.exec(infoCookies);
+      if (m === null || m.length < 2) {
+        m = /XSRF-TOKEN=([^;]+)/.exec(webvpnCookies);
+      }
+      if (m !== null && m.length >= 2) {
+        this.webvpnCsrf = m[1];
+        Log.i('LearnAct', 'WEBVPN_CSRF ok len=%{public}d', this.webvpnCsrf.length);
+      } else {
+        Log.i('LearnAct', 'WEBVPN_CSRF no_token infoLen=%{public}d', infoCookies.length);
+      }
+    } catch (e) {
+      Log.i('LearnAct', 'WEBVPN_CSRF ex=%{public}s', e instanceof Error ? e.message : String(e));
+    }
+    return this.webvpnCsrf;
   }
 
   async fetchCourses(): Promise<CampusCourse[]> {
@@ -197,13 +303,101 @@ export class CampusDataService {
     }
   }
 
-  async fetchSchedule(yyyymmdd: string): Promise<string> {
+  /** 教务域激活：经信息门户漫游到 zhjw（原项目 roamDefault + ensureRegistrarRoam） */
+  private async ensureRegistrarRoam(): Promise<void> {
+    if (this.registrarRoamEnsured) {
+      return;
+    }
+    const csrf: string = await this.getWebvpnCsrf();
+    if (csrf.length === 0) {
+      return;
+    }
     try {
-      const url: string = SCHEDULE_BASE + '/jxmh_out.do?m=bks_jxrl_all&p_start_date=' + yyyymmdd + '&p_end_date=' + yyyymmdd + '&jsoncallback=m';
-      const resp: HttpResponse = await this.http.get(url);
-      return resp.body;
+      const INFO_TOKEN: string = '77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de';
+      const roamUrl: string = 'https://webvpn.tsinghua.edu.cn/https/' + INFO_TOKEN
+        + '/b/yyfw/vyyfwxx/info/portal_fg/common/onlineAppRedirect?yyfwid=287C0C6D90ABB364CD5FDF1495199962&_csrf='
+        + encodeURIComponent(csrf) + '&machine=p';
+      const resp: HttpResponse = await this.http.get(roamUrl);
+      Log.i('LearnAct', 'REG_ROAM code=%{public}d body=%{public}s', resp.statusCode, resp.body.substring(0, 150));
+      const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
+      const objField = json['object'] as Record<string, Object>;
+      if (objField === undefined || objField === null) {
+        return;
+      }
+      const roamingurl: string = String(objField['roamingurl'] ?? '').replace(/&amp;/g, '&');
+      if (roamingurl.length === 0) {
+        return;
+      }
+      const finalUrl: string = this.parseToWebVPN(roamingurl);
+      const authResp: HttpResponse = await this.http.get(finalUrl);
+      Log.i('LearnAct', 'REG_AUTH code=%{public}d len=%{public}d', authResp.statusCode, authResp.body.length);
+      this.registrarRoamEnsured = true;
     } catch (e) {
-      return '';
+      Log.i('LearnAct', 'REG_ROAM ex=%{public}s', e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /** 把 zhjw 内网 URL 包装为 WebVPN URL（简化版 parseUrlToWebVPN） */
+  private parseToWebVPN(url: string): string {
+    if (url.indexOf('webvpn.tsinghua.edu.cn') >= 0) {
+      return url;
+    }
+    const zhjwMarker: string = 'zhjw.cic.tsinghua.edu.cn';
+    const idx: number = url.indexOf(zhjwMarker);
+    if (idx >= 0) {
+      const afterHost: string = url.substring(idx + zhjwMarker.length);
+      const path: string = afterHost.startsWith('/') ? afterHost.substring(1) : afterHost;
+      return SCHEDULE_BASE + '/' + path;
+    }
+    return url;
+  }
+
+  /** 拉取今日课表事件（今天 + 明天范围，过滤今天） */
+  async fetchTodaySchedule(): Promise<ScheduleEvent[]> {
+    const now: Date = new Date();
+    const tomorrow: Date = new Date(now.getTime() + 86400000);
+    const events: ScheduleEvent[] = await this.fetchScheduleEvents(formatYmd(now), formatYmd(tomorrow));
+    const todayDash: string = formatDash(now);
+    const result: ScheduleEvent[] = [];
+    for (let i: number = 0; i < events.length; i++) {
+      if (events[i].date === todayDash) {
+        result.push(events[i]);
+      }
+    }
+    return result;
+  }
+
+  /** 拉取日期范围内的课表事件（教务 zhjw JSONP） */
+  async fetchScheduleEvents(startYmd: string, endYmd: string): Promise<ScheduleEvent[]> {
+    try {
+      await this.ensureRegistrarRoam();
+      const url: string = SCHEDULE_BASE + '/jxmh_out.do?m=bks_jxrl_all&p_start_date=' + startYmd + '&p_end_date=' + endYmd + '&jsoncallback=m';
+      const resp: HttpResponse = await this.http.get(url);
+      let hexHead: string = '';
+      const hexLen: number = resp.body.length < 40 ? resp.body.length : 40;
+      for (let i: number = 0; i < hexLen; i++) {
+        hexHead = hexHead + resp.body.charCodeAt(i).toString(16) + ' ';
+      }
+      Log.i('LearnAct', 'SCHEDULE code=%{public}d len=%{public}d idxBracket=%{public}d hex=%{public}s',
+        resp.statusCode, resp.body.length, resp.body.indexOf('['), hexHead);
+      const rows: Object[] = parseJsonpArray(resp.body);
+      const events: ScheduleEvent[] = [];
+      for (let i: number = 0; i < rows.length; i++) {
+        const row = rows[i] as Record<string, Object>;
+        const ev: ScheduleEvent = new ScheduleEvent();
+        ev.date = normalizeScheduleDate(String(row['nq'] ?? ''));
+        ev.title = String(row['nr'] ?? '');
+        ev.location = String(row['dd'] ?? '');
+        ev.startTime = String(row['kssj'] ?? '').replace(/：/g, ':');
+        ev.endTime = String(row['jssj'] ?? '').replace(/：/g, ':');
+        ev.id = String(row['grrlID'] ?? (ev.date + '-' + ev.title + '-' + ev.startTime));
+        events.push(ev);
+      }
+      Log.i('LearnAct', 'SCHEDULE events=%{public}d', events.length);
+      return events;
+    } catch (e) {
+      Log.i('LearnAct', 'SCHEDULE ex=%{public}s', e instanceof Error ? e.message : String(e));
+      return [];
     }
   }
 

@@ -1,3 +1,22 @@
+/**
+ * ============================================================================
+ * HttpClient — 基于 RCP 的 HTTP 客户端封装（认证/数据链路的网络底座）
+ * ============================================================================
+ *
+ * 职责：
+ *   - 手动 Cookie 管理（CookieManager）：RCP 原生 cookie 与跨域重定向处理不符合
+ *     清华 SSO 链需求，故禁用 RCP autoRedirect + 自带 CookieManager 手动同步。
+ *   - 手动重定向（manualRedirect）：3xx 时 follow Location，重写 method 为 GET、清空 body。
+ *   - GBK 解码：按 content-type 检测（isGBKContentType），命中则 decodeGBK。
+ *   - POST urlencoded：postForm 自动拼 Content-Type: application/x-www-form-urlencoded
+ *     【关键】缺了这个头会导致清华 ID 登录失败（响应异常短）。
+ *
+ * 注意：
+ *   - lastSetCookies 暴露最近一次响应的原始 Set-Cookie（用于诊断，如 cookieSync 排查）。
+ *   - 307/308 语义上应保留 method+body，当前统一转 GET（清华主要用 302，影响小）。
+ *   - callback 类一次性 SSO URL 只能 follow 一次（重复消费会清 WebVPN 会话）。
+ * ============================================================================
+ */
 import { rcp } from '@kit.RemoteCommunicationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CookieManager } from './CookieManager';
@@ -59,6 +78,7 @@ export class HttpClient {
   private timeoutMs: number = 60000;
   private maxRedirects: number = 30;
   private session: rcp.Session;
+  public lastSetCookies: string[] = [];
 
   constructor(cookieManager: CookieManager) {
     this.cookieManager = cookieManager;
@@ -165,6 +185,7 @@ export class HttpClient {
       this.lastResponseHeaders = resp.headers;
 
       const setCookies: string[] = getSetCookieFromHeaders(resp.headers);
+      this.lastSetCookies = setCookies;
       for (let i: number = 0; i < setCookies.length; i++) {
         this.cookieManager.setFromResponse(url, setCookies[i]);
       }

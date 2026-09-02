@@ -10,6 +10,35 @@ import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
 import { CampusCredentials } from '../../domain/AuthTypes';
 
+/**
+ * ============================================================================
+ * TsinghuaAuthService — 清华大学统一身份认证服务（项目最核心、最易出错的部分）
+ * ============================================================================
+ *
+ * 【认证链路总览】（login()，顺序不可调整，每步依赖前一步写入的 Cookie）：
+ *   1. clearSession()                    清旧 Cookie，避免污染
+ *   2. GET WEBVPN_OAUTH_LOGIN_URL ×2     预热 WebVPN→OAuth→ID 链至登录表单
+ *   3. 提取 sm2publicKey                 #sm2publicKey 元素文本
+ *   4. SM2 加密密码                      输出需 DER→裸格式（见 SM2Crypto.derToRawSM2）
+ *   5. POST ID_LOGIN_URL                 i_user/i_pass/fingerPrint/.../i_captcha
+ *        - 含 TWO_FACTOR_MARK           → 返回 TWO_FACTOR，UI 走 verify2FACode 续链
+ *        - 含 LOGIN_SUCCESS_MARK        → 成功（设备被信任时跳过 2FA）
+ *   6. follow callback href（仅用一次）   建立 WebVPN 会话（重复消费会清会话）
+ *   7. roamIdPolicy(INFO_PORTAL_YYFWID)  建立 info 门户会话（校园通用门户漫游）
+ *   8. activateLearnSession              learn 域激活（ticket → learnAuthRoam → _csrf）
+ *
+ * 【判定标记】（极易错，务必用对）：
+ *   - LOGIN_SUCCESS_MARK = '登录成功。正在重定向到'（带后缀，不是裸「登录成功」）
+ *   - TWO_FACTOR_MARK    = '二次认证'（中文文本，不是 URL 路径 /b/doubleAuth/login）
+ *
+ * 【关键约束】：
+ *   - POST 必须带 Content-Type: application/x-www-form-urlencoded（HttpClient 已处理）
+ *   - fingerprint 复用 SecureStorage 持久化值（32 位无横线 UUID），避免设备信任超限
+ *   - learn csrf（本服务 csrfToken）≠ WebVPN csrf（教务等漫游用 XSRF-TOKEN）
+ *
+ * 参考：原项目 src/services/auth/tsinghuaAuth.ts、docs/login-to-thu.md
+ * ============================================================================
+ */
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
 const ID_BASE_URL: string = 'https://id.tsinghua.edu.cn/do/off/ui/auth/login/form/';
 const LEARN_LOGIN_YYFWID: string = 'bb5df85216504820be7bba2b0ae1535b/0';
@@ -70,6 +99,12 @@ export class TsinghuaAuthService {
     this.trace.push(msg);
   }
 
+  /**
+   * 从 SecureStorage 恢复凭证到内存（hydrate）。
+   * 【关键】fingerprint 复用已持久化值（服务器已信任的设备指纹）；
+   * 若无则生成 32 位无横线 UUID（与 SessionManager.login 格式一致）。
+   * 注意：仅恢复凭证，不执行 login()；建立会话需调 login()（见 SessionManager.tryAutoLogin）。
+   */
   async hydrateCredentials(): Promise<boolean> {
     const creds: SecureCredentials | undefined = await SecureStorage.getCredentials();
     if (creds !== undefined) {
@@ -242,6 +277,12 @@ export class TsinghuaAuthService {
     return successResult;
   }
 
+  /**
+   * 门户漫游（roamIdPolicy）：为目标 yyfwid 重新走一遍 ID 登录，建立该子系统会话。
+   * 用于 info 门户（INFO_PORTAL_YYFWID，校园通用门户）等。
+   * 步骤：取表单+SM2 → POST ID_LOGIN_URL → 提取 callback → wrapWebVPNUrl → follow lbredirect。
+   * 注意：原项目 roam 时若遇 2FA 会用 performTwoFactor 内联处理；本实现暂未触发。
+   */
   private async roamIdPolicy(credentials: CampusCredentials, payload: string): Promise<void> {
     let response: string = '';
     for (let i: number = 0; i < 2; i++) {
@@ -273,11 +314,27 @@ export class TsinghuaAuthService {
     }
     const wrapped: string = wrapWebVPNUrl(callbackHref);
     const lbResp: HttpResponse = await this.http.get(wrapped);
-    Log.i('LearnAct',  'ROAM_LB code=%{public}d len=%{public}d has_sm2=%{public}s',
+    Log.i('LearnAct', 'ROAM_LB code=%{public}d len=%{public}d has_sm2=%{public}s',
       lbResp.statusCode, lbResp.body.length, lbResp.body.indexOf('sm2publicKey') >= 0);
-    Log.i('LearnAct',  'ROAM_LB_BODY=%{public}s', lbResp.body.substring(0, 150));
+    Log.i('LearnAct', 'ROAM_LB_FULL=%{public}s', lbResp.body);
   }
 
+  /**
+   * learn 域激活（建立 learn.tsinghua.edu.cn 会话并取 _csrf）。
+   *
+   * 步骤（对齐原项目 activateLearn）：
+   *   1. GET  ID_BASE_URL + LEARN_LOGIN_YYFWID  取 learn 登录表单 + SM2 公钥
+   *   2. POST ID_LOGIN_URL                      learn yyfwid 的 ID 登录
+   *      - 含 TWO_FACTOR_MARK → throw（learn 激活遇 2FA 时原项目也 throw）
+   *      - 含 LOGIN_SUCCESS_MARK → 继续
+   *   3. 提取 callback href 末段 ticket（= 号后部分）
+   *   4. GET learnAuthRoam?ticket=…             【关键】建立 learn 域会话（漏了这步会拿不到 _csrf）
+   *   5. GET learnStudentHome（学生首页）
+   *   6. 提取 _csrf（正则 &_csrf=(\S+?)["'&]）   后续所有 learn API 的 CSRF token
+   *
+   * 注意：learn 激活返回的「登录成功页」内嵌 doubleauth JS，易被误判为 2FA 页，
+   *       必须用 TWO_FACTOR_MARK（'二次认证'）而非 URL 路径判定。
+   */
   private async activateLearnSession(credentials: CampusCredentials): Promise<void> {
     let response: string = '';
     Log.i('LearnAct',  'LEARN_FP=%{public}s len=%{public}d', credentials.fingerprint.substring(0, 8), credentials.fingerprint.length);
@@ -385,6 +442,12 @@ export class TsinghuaAuthService {
     }
   }
 
+  /**
+   * 二次认证验证码校验（主登录触发 2FA 后由 UI 调用，续主链）。
+   * 步骤：POST DOUBLE_AUTH_URL(VERITY_CODE) → saveFinger（信任设备，须在 redirectUrl 之前）
+   *       → follow redirectUrl → follow callback → roamIdPolicy(info) → activateLearnSession。
+   * twoFactorMethod 由 send2FACode 保存（mobile/wechat/totp），此处复用，避免方式不匹配。
+   */
   async verify2FACode(code: string): Promise<LoginResult> {
     this.addTrace('verifying_2fa');
     const formData: Record<string, string> = {

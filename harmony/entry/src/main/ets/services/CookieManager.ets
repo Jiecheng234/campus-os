@@ -1,3 +1,20 @@
+/**
+ * ============================================================================
+ * CookieManager — 手动 Cookie 存储与域匹配（替代 RCP 原生 cookie 管理）
+ * ============================================================================
+ *
+ * 职责：
+ *   - setFromResponse(url, setCookieHeader)：解析 Set-Cookie（name/value/domain/path/
+ *     expires/max-age/secure/httpOnly），按 name+domain 去重存储；空 value 视为删除。
+ *   - getCookieHeader(url)：返回该 URL 域匹配的 Cookie header 串（检查过期）。
+ *
+ * 注意：
+ *   - 域匹配支持前导点（.tsinghua.edu.cn）与子域后缀匹配。
+ *   - 【已知限制】getCookieHeader 只按 domain 匹配，不按 path——同域不同 path 的
+ *     同名 cookie 会全部发送（对清华 JSESSIONID 等 path=/ 的 cookie 无影响）。
+ *   - 内存态存储，应用重启即失——故每次冷启动都需重新 login() 重建会话。
+ * ============================================================================
+ */
 export class CookieEntry {
   name: string = '';
   value: string = '';

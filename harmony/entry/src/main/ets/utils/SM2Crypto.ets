@@ -1,3 +1,19 @@
+/**
+ * ============================================================================
+ * SM2Crypto — SM2 密码加密 + 认证页面 HTML 字段提取
+ * ============================================================================
+ *
+ * 职责：
+ *   - encryptPassword(password, publicKeyHex)：SM2 加密密码。
+ *     【关键】cryptoFramework 输出 ASN.1 DER 格式，必须经 derToRawSM2() 转为
+ *     裸格式 04||C1x||C1y||C3||C2 才能被清华 ID 系统接受。
+ *   - extractSm2PublicKey(html)：从登录表单 #sm2publicKey 元素提取公钥。
+ *   - extractCsrfToken / extractFirstAnchorHref / extractMsgNote / extractMetaRedirect /
+ *     extractFormAction：从认证 HTML 中提取各类字段。
+ *
+ * 参考：原项目 src/services/auth/sm2.ts、htmlParse.ts
+ * ============================================================================
+ */
 import { buffer, util } from '@kit.ArkTS';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 

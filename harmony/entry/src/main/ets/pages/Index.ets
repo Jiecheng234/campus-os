@@ -9,12 +9,26 @@ import { AIChatPage } from './ai/AIChatPage';
 import { LoginPage } from './LoginPage';
 import { LearningPage } from './LearningPage';
 import { CampusPage } from './CampusPage';
+import { SessionManager } from '../services/auth/SessionManager';
+import { LoginResult, LoginResultType } from '../services/auth/TsinghuaAuthService';
 
 @Entry
 @Component
 struct Index {
   @State currentIndex: number = 0;
   @State isLoggedIn: boolean = false;
+  @State isAutoLogging: boolean = true;
+
+  aboutToAppear(): void {
+    SessionManager.tryAutoLogin().then((result: LoginResult | undefined) => {
+      this.isAutoLogging = false;
+      if (result !== undefined && result.type === LoginResultType.SUCCESS) {
+        this.isLoggedIn = true;
+      }
+    }).catch((e: Object) => {
+      this.isAutoLogging = false;
+    });
+  }
   private tabTitles: string[] = ['首页', '学习', '课表', '校园', 'AI', '设置'];
   private tabIcons: Resource[] = [
     $r('app.media.home'), $r('app.media.learning'), $r('app.media.schedule'),
@@ -97,7 +111,21 @@ struct Index {
   }
 
   build() {
-    if (this.isLoggedIn) {
+    if (this.isAutoLogging) {
+      Column() {
+        LoadingProgress()
+          .width(48)
+          .color(Theme.primary)
+        Text('正在恢复登录…')
+          .fontSize(14)
+          .fontColor(Theme.textMuted)
+          .margin({ top: 16 })
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(Theme.background)
+    } else if (this.isLoggedIn) {
       this.MainTabs()
     } else {
       LoginPage({ onLoginSuccess: () => {
