@@ -199,6 +199,12 @@ GET  learnStudentHome                   学生首页
 - **快捷操作跨页导航**（`state/UiEvents.ets`，emitter 总线 `EVT_NAVIGATE`）：NavTarget{tab, campusSub, learningTab}；Index（切底部 Tab）/CampusPage（开子页）/LearningPage（切子标签）各自订阅，aboutToDisappear 反订阅。"查空教室"→校园·空闲教室子页，"添加 DDL"→学习·作业标签；"图书馆座位"未接入保留 toast。
 - HomePage 两处弃用 `promptAction.showToast` 改为 `getUIContext().getPromptAction()`（SettingsPage/LoginPage/LearningPage 的同类 WARN 暂未处理）。
 
+### 真实数据三缺陷修复：课表乱码 / GPA 0.00 / 资讯实体（2026-09-19 第三轮验证反馈）
+
+- **课表课程名乱码**（HttpClient.ets）：旧逻辑 `isGbkUrl(url)` 命中即强制 GBK，一票否决响应头 charset；而 webvpn 会把部分 zhjw 响应（如课表 `jxmh_out.do` JSONP）重编码为 UTF-8 → 中文全乱。改为对齐原项目 `transport.inferResponseCharset` 优先级：**响应头 charset 优先**（`charsetFromContentType` + `isGBKContentType`）；头无声明才按 URL 标记回退 GBK，且加严格 UTF-8 字节校验嗅探（`hasNonAsciiByte && !isValidUtf8` 才 GBK）——GBK 中文响应体几乎不可能整段通过校验。GBK 路径打 hilog（tag `HttpClient`）。
+- **GPA 0.00**（CampusDataService.ets）：原项目 `htmlSelect.childText(tr, N)` 按 cheerio **子节点序**取值——children 含标签间换行缩进**文本节点**，`childText(tr,3/5/7/9/11)` 实为第 2/3/4/5/6 个 td。我们旧版只数 td 且 `cells.length < 12` guard 把所有行滤光 → 空报表 GPA 0.00。重写 `parseGradeTableChildren/parseGradeRowChildren`（文本节点与 td 各占一席），守卫改 `children.length < 12`，并打 row0/row1 诊断日志（tag `LearnAct` `GRADES row0=[..]`）。顺带修 `Number('')=0` bug：绩点空列 → NaN（P/F 课不计学分绩）。
+- **资讯 `&ldquo;` 未解码**：`decodeHtmlEntities` 补 NAMED_HTML_ENTITIES 映射（ldquo/rdquo/mdash/ndash/hellip/middot/bull/times/copy/deg 等 20 项）；解码顺序=数值 → 命名（不含 amp）→ `&amp;` 最后（防 `&amp;ldquo;` 二次解码）；fetchNewsList 调用点去掉冗余外层 decodeNumericEntities。
+
 ### 其他待办
 
 - 成绩/资讯详情页（资讯详情需 WebView 渲染 info 门户 HTML）

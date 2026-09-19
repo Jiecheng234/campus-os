@@ -62,13 +62,43 @@ function formatDateTime(value: Object | null | undefined): string {
   return text;
 }
 
+/** 常用命名实体（资讯标题/来源里高频出现 &ldquo; &middot; 等中文排版实体） */
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  'nbsp': ' ',
+  'lt': '<',
+  'gt': '>',
+  'quot': '"',
+  'apos': "'",
+  'ldquo': '\u201C',
+  'rdquo': '\u201D',
+  'lsquo': '\u2018',
+  'rsquo': '\u2019',
+  'mdash': '\u2014',
+  'ndash': '\u2013',
+  'hellip': '\u2026',
+  'middot': '\u00B7',
+  'bull': '\u2022',
+  'times': '\u00D7',
+  'divide': '\u00F7',
+  'copy': '\u00A9',
+  'reg': '\u00AE',
+  'trade': '\u2122',
+  'prime': '\u2032',
+  'deg': '\u00B0',
+};
+
+/**
+ * HTML 实体解码：数值（&#xHH; / &#DD;）→ 命名实体 → &amp; 最后。
+ * &amp; 必须放最后，避免 "&amp;ldquo;" 这类已被转义的字面量被二次解码。
+ */
 function decodeHtmlEntities(value: string): string {
-  return value
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"');
+  let out: string = decodeNumericEntities(value);
+  out = out.replace(/&([a-zA-Z][a-zA-Z0-9]*);/g, (m: string, name: string): string => {
+    const hit: string | undefined = NAMED_HTML_ENTITIES[name.toLowerCase()];
+    return hit !== undefined ? hit : m;
+  });
+  out = out.replace(/&amp;/g, '&');
+  return out;
 }
 
 /** 去除 HTML 标签，保留文本与换行（用于通知/作业内容纯文本展示） */
@@ -102,11 +132,20 @@ function decodeNumericEntities(value: string): string {
 
 /** HTML 片段 → 纯文本（去标签 + 实体解码） */
 function htmlCellText(cellHtml: string): string {
-  return decodeHtmlEntities(decodeNumericEntities(cellHtml.replace(/<[^>]+>/g, ''))).trim();
+  return decodeHtmlEntities(cellHtml.replace(/<[^>]+>/g, '')).trim();
 }
 
-/** 解析 <table cellspacing=1> 的所有行（tr → td 文本数组），对齐原项目 grades.ts */
-function parseGradeTableRows(html: string): string[][] {
+/**
+ * 解析 <table cellspacing=1> 每个 <tr> 的**子节点序列**——严格对齐原项目
+ * htmlSelect.childText / thu-info-lib getCheerioText(element, index) 语义：
+ * cheerio 的 children 包含标签之间的文本节点（换行缩进）。
+ *
+ * 真实成绩表 HTML 的 tr 内容形如 "\n<td>..</td>\n<td>..</td>\n..."，
+ * children = [text, td, text, td, ...]，因此原项目取列 childText(tr, 3/5/7/9/11)
+ * 实际对应第 2/3/4/5/6 个 td（课程名/学分/等级/绩点/学期）。
+ * 之前只数 td 用 3/5/7/9/11 索引导致整列错位（绩点取到空列 → GPA 0.00）。
+ */
+function parseGradeTableChildren(html: string): string[][] {
   const rows: string[][] = [];
   const tableMatch: RegExpExecArray | null = /<table[^>]*cellspacing="1"[^>]*>([\s\S]*?)<\/table>/i.exec(html);
   const tableHtml: string = tableMatch !== null ? tableMatch[1] : '';
@@ -116,19 +155,28 @@ function parseGradeTableRows(html: string): string[][] {
   const trRe: RegExp = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   let trMatch: RegExpExecArray | null = trRe.exec(tableHtml);
   while (trMatch !== null) {
-    const cells: string[] = [];
-    const tdRe: RegExp = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    let tdMatch: RegExpExecArray | null = tdRe.exec(trMatch[1]);
-    while (tdMatch !== null) {
-      cells.push(htmlCellText(tdMatch[1]));
-      tdMatch = tdRe.exec(trMatch[1]);
-    }
-    if (cells.length > 0) {
-      rows.push(cells);
-    }
+    rows.push(parseGradeRowChildren(trMatch[1]));
     trMatch = trRe.exec(tableHtml);
   }
   return rows;
+}
+
+/** 解析 <tr> 内部子节点序列：标签间文本节点与 td/th 单元格文本各占一席（文本节点 trim 后多为空串，仅占位） */
+function parseGradeRowChildren(trHtml: string): string[] {
+  const children: string[] = [];
+  const tagRe: RegExp = /<(t[dh])[^>]*>([\s\S]*?)<\/\1>/gi;
+  let lastEnd: number = 0;
+  let m: RegExpExecArray | null = tagRe.exec(trHtml);
+  while (m !== null) {
+    if (m.index > lastEnd) {
+      // 相邻标签之间存在文本（换行缩进）→ cheerio 里是一个文本节点子项，占一个下标
+      children.push(htmlCellText(trHtml.substring(lastEnd, m.index)));
+    }
+    children.push(htmlCellText(m[2]));
+    lastEnd = m.index + m[0].length;
+    m = tagRe.exec(trHtml);
+  }
+  return children;
 }
 
 /** 解析 JSONP（形如 m([...])，取首个 [ 到末个 ]） */
@@ -585,7 +633,8 @@ export class CampusDataService {
   /**
    * 成绩单（教务 zhjw HTML 表格，对齐原项目 grades.ts fetchGradeReport）：
    * 漫游 yyfwid=B7EF0ADF... → GET cj.cjCjbAll.do?m=bks_cjdcx&cjdlx=zw&flag=di1 → 解析表格。
-   * 列序（bks，0 起）：3 课程名 / 5 学分 / 7 等级 / 9 绩点 / 11 学期。
+   * 列取值按 cheerio 子节点序（含标签间文本节点）：childText(tr, 3/5/7/9/11) =
+   * 第 2/3/4/5/6 个 td = 课程名/学分/等级/绩点/学期；首行为表头跳过（slice(1)）。
    */
   async fetchGrades(): Promise<GradeReport> {
     await this.ensureGradesRoam();
@@ -599,23 +648,30 @@ export class CampusDataService {
     if (resp.body.indexOf('<title>清华大学WebVPN</title>') >= 0) {
       throw new Error('WebVPN 会话失效，请重新登录');
     }
-    const allRows: string[][] = parseGradeTableRows(resp.body);
+    const allRows: string[][] = parseGradeTableChildren(resp.body);
+    if (allRows.length > 1) {
+      // 诊断日志：表头 + 首个数据行的子节点序列，用于核对列位
+      Log.i('LearnAct', 'GRADES row0=[%{public}s] row1=[%{public}s]',
+        allRows[0].join('|').substring(0, 120), allRows[1].join('|').substring(0, 180));
+    }
     const courses: CampusGrade[] = [];
     for (let i: number = 1; i < allRows.length; i++) {
-      const cells: string[] = allRows[i];
-      if (cells.length < 12) {
+      const children: string[] = allRows[i];
+      if (children.length < 12) {
         continue;
       }
-      const name: string = cells[3];
+      const name: string = children[3];
       if (name.length === 0) {
         continue;
       }
       const g: CampusGrade = new CampusGrade();
       g.name = name;
-      g.credit = Number(cells[5]) || 0;
-      g.grade = cells[7];
-      g.point = Number(cells[9]);
-      g.semester = cells[11];
+      g.credit = Number(children[5]) || 0;
+      g.grade = children[7];
+      // 绩点列为空 → NaN：P/F 课不计入学分绩（对齐原项目 computeGpa 的 isNaN 跳过语义）
+      const pointStr: string = children[9];
+      g.point = pointStr.trim().length > 0 ? Number(pointStr) : NaN;
+      g.semester = children[11];
       courses.push(g);
     }
     if (courses.length === 0 && resp.body.indexOf('table1') < 0) {
@@ -675,7 +731,7 @@ export class CampusDataService {
     }
     for (let i: number = 0; i < rows.length; i++) {
       const row: Record<string, Object> = rows[i] as Record<string, Object>;
-      const title: string = decodeNumericEntities(decodeHtmlEntities(String(row['bt'] ?? ''))).trim();
+      const title: string = decodeHtmlEntities(String(row['bt'] ?? '')).trim();
       if (title.length === 0) {
         continue;
       }
@@ -683,7 +739,7 @@ export class CampusDataService {
       item.id = String(row['xxid'] ?? '');
       item.title = title;
       item.date = String(row['time'] ?? '');
-      item.source = decodeNumericEntities(decodeHtmlEntities(String(row['dwmc_show'] ?? ''))).trim();
+      item.source = decodeHtmlEntities(String(row['dwmc_show'] ?? '')).trim();
       item.channel = NEWS_CHANNEL_LABELS[String(row['lmid'] ?? '')] ?? '通知';
       item.topped = String(row['yxzd'] ?? '').indexOf('1-') >= 0;
       result.push(item);

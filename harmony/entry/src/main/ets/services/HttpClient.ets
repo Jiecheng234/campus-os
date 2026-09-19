@@ -7,7 +7,8 @@
  *   - 手动 Cookie 管理（CookieManager）：RCP 原生 cookie 与跨域重定向处理不符合
  *     清华 SSO 链需求，故禁用 RCP autoRedirect + 自带 CookieManager 手动同步。
  *   - 手动重定向（manualRedirect）：3xx 时 follow Location，重写 method 为 GET、清空 body。
- *   - GBK 解码：按 content-type 检测（isGBKContentType），命中则 decodeGBK。
+ *   - GBK 解码：响应头 charset 优先；头无声明时按 URL 标记（isGbkUrl）回退 GBK，
+ *     并做严格 UTF-8 嗅探兜底（webvpn 会把部分 zhjw 响应重编码为 UTF-8）。
  *   - POST urlencoded：postForm 自动拼 Content-Type: application/x-www-form-urlencoded
  *     【关键】缺了这个头会导致清华 ID 登录失败（响应异常短）。
  *
@@ -92,6 +93,57 @@ function isGbkUrl(url: string): boolean {
     }
   }
   return false;
+}
+
+/** 从 Content-Type 解析已声明的 charset（无声明返回空串） */
+function charsetFromContentType(contentType: string): string {
+  const m: RegExpExecArray | null = /charset=([^;\s'"]+)/i.exec(contentType);
+  if (m !== null && m.length >= 2 && m[1].length > 0) {
+    return m[1].toLowerCase().replace(/['"]/g, '');
+  }
+  return '';
+}
+
+function hasNonAsciiByte(bytes: Uint8Array): boolean {
+  for (let i: number = 0; i < bytes.length; i++) {
+    if (bytes[i] >= 0x80) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 严格 UTF-8 字节级校验——GBK 中文响应体几乎不可能整段通过（对齐原项目 header 优先 + 标记回退策略的加固） */
+function isValidUtf8(bytes: Uint8Array): boolean {
+  let i: number = 0;
+  while (i < bytes.length) {
+    const b: number = bytes[i];
+    if (b < 0x80) {
+      i++;
+      continue;
+    }
+    let seqLen: number = 0;
+    if (b >= 0xC2 && b <= 0xDF) {
+      seqLen = 2;
+    } else if (b >= 0xE0 && b <= 0xEF) {
+      seqLen = 3;
+    } else if (b >= 0xF0 && b <= 0xF4) {
+      seqLen = 4;
+    } else {
+      return false;
+    }
+    if (i + seqLen > bytes.length) {
+      return false;
+    }
+    for (let j: number = 1; j < seqLen; j++) {
+      const c: number = bytes[i + j];
+      if (c < 0x80 || c > 0xBF) {
+        return false;
+      }
+    }
+    i += seqLen;
+  }
+  return true;
 }
 
 export class HttpClient {
@@ -219,21 +271,33 @@ export class HttpClient {
       if (typeof ctVal === 'string') { contentType = ctVal; }
       else if (Array.isArray(ctVal) && ctVal.length > 0) { contentType = ctVal[0]; }
 
-      if (isGBKContentType(contentType) || isGbkUrl(url)) {
-        try {
-          const buf: ArrayBuffer | undefined = resp.body;
-          if (buf !== undefined) {
-            const bytes: Uint8Array = new Uint8Array(buf);
-            httpResp.body = decodeGBK(bytes);
-          } else {
-            httpResp.body = resp.toString() ?? '';
-          }
-        } catch (e) {
-          httpResp.body = resp.toString() ?? '';
+      // 字符集判定（对齐原项目 transport.inferResponseCharset 的优先级）：
+      //   1) 响应头已声明 charset → 头优先（webvpn 会把部分 zhjw 响应重编码为 UTF-8，
+      //      例如课表 jxmh_out.do JSONP；此时再强制 GBK 就会把中文解成乱码）
+      //   2) 头无声明 → 按 URL 标记回退 GBK，但先做 UTF-8 嗅探：
+      //      响应体含非 ASCII 且整段通过严格 UTF-8 校验 → 实际是 UTF-8
+      let bodyText: string = resp.toString() ?? '';
+      const buf: ArrayBuffer | undefined = resp.body;
+      if (buf !== undefined) {
+        const bytes: Uint8Array = new Uint8Array(buf);
+        const declared: string = charsetFromContentType(contentType);
+        let useGbk: boolean = false;
+        if (declared.length > 0) {
+          useGbk = isGBKContentType(declared);
+        } else if (isGbkUrl(url)) {
+          useGbk = hasNonAsciiByte(bytes) && !isValidUtf8(bytes);
         }
-      } else {
-        httpResp.body = resp.toString() ?? '';
+        if (useGbk) {
+          try {
+            bodyText = decodeGBK(bytes);
+            hilog.info(0x0000, 'HttpClient', 'GBK decode ct=%{public}s len=%{public}d url=%{public}s',
+              contentType, bytes.length, url);
+          } catch (e) {
+            // 解码失败保留默认解码结果
+          }
+        }
       }
+      httpResp.body = bodyText;
       return httpResp;
     } catch (e) {
       const err: HttpError = new HttpError();
