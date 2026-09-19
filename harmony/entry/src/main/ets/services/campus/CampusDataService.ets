@@ -164,17 +164,21 @@ function parseGradeTableChildren(html: string): string[][] {
 /** 解析 <tr> 内部子节点序列：标签间文本节点与 td/th 单元格文本各占一席（文本节点 trim 后多为空串，仅占位） */
 function parseGradeRowChildren(trHtml: string): string[] {
   const children: string[] = [];
+  // 先剥离 HTML 注释块（真实表头有被注释掉的列，如 <!-- <td>考试时间</td>... -->）：
+  // cheerio 把整个注释当 1 个子节点（text 为空），若不剥离，注释内的 <td> 会被正则
+  // 误提取为伪单元格、未闭合的 "<!--" 残片会混入文本节点
+  const cleaned: string = trHtml.replace(/<!--[\s\S]*?-->/g, '');
   const tagRe: RegExp = /<(t[dh])[^>]*>([\s\S]*?)<\/\1>/gi;
   let lastEnd: number = 0;
-  let m: RegExpExecArray | null = tagRe.exec(trHtml);
+  let m: RegExpExecArray | null = tagRe.exec(cleaned);
   while (m !== null) {
     if (m.index > lastEnd) {
       // 相邻标签之间存在文本（换行缩进）→ cheerio 里是一个文本节点子项，占一个下标
-      children.push(htmlCellText(trHtml.substring(lastEnd, m.index)));
+      children.push(htmlCellText(cleaned.substring(lastEnd, m.index)));
     }
     children.push(htmlCellText(m[2]));
     lastEnd = m.index + m[0].length;
-    m = tagRe.exec(trHtml);
+    m = tagRe.exec(cleaned);
   }
   return children;
 }
@@ -520,8 +524,9 @@ export class CampusDataService {
       }
       const finalUrl: string = this.parseToWebVPN(roamingurl);
       const authResp: HttpResponse = await this.http.get(finalUrl);
+      // zhjw 页面以大量换行开头，trim 后再截取头部才有诊断价值
       Log.i('LearnAct', 'REG_AUTH code=%{public}d len=%{public}d head=%{public}s',
-        authResp.statusCode, authResp.body.length, authResp.body.substring(0, 80));
+        authResp.statusCode, authResp.body.length, authResp.body.trim().substring(0, 80));
       return true;
     } catch (e) {
       Log.i('LearnAct', 'REG_ROAM ex=%{public}s', e instanceof Error ? e.message : String(e));
@@ -641,7 +646,7 @@ export class CampusDataService {
     const url: string = SCHEDULE_BASE + '/cj.cjCjbAll.do?m=bks_cjdcx&cjdlx=zw&flag=di1';
     const resp: HttpResponse = await this.http.get(url);
     Log.i('LearnAct', 'GRADES code=%{public}d len=%{public}d head=%{public}s',
-      resp.statusCode, resp.body.length, resp.body.substring(0, 80));
+      resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
     if (resp.body.indexOf('time out用户登陆超时或访问内容不存在') >= 0) {
       throw new Error('教务系统会话超时，请重新同步');
     }
@@ -697,8 +702,9 @@ export class CampusDataService {
     report.totalCredit = totalCredit;
     report.allCredit = allCredit;
     report.gpa = totalCredit > 0 ? totalPoint / totalCredit : 0;
-    Log.i('LearnAct', 'GRADES courses=%{public}d gpa=%{public}f credit=%{public}f',
-      courses.length, report.gpa, report.allCredit);
+    // 注意：hilog 仅支持 %{public}d/%{public}s，浮点需先转字符串，否则打印成 "}f"
+    Log.i('LearnAct', 'GRADES courses=%{public}d gpa=%{public}s credit=%{public}s',
+      courses.length, report.gpa.toFixed(2), report.allCredit.toFixed(1));
     return report;
   }
 
