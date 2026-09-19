@@ -73,6 +73,27 @@ function resolveUrl(baseUrl: string, relative: string): string {
   return baseUrl + '/' + relative;
 }
 
+/**
+ * 这些 webvpn token 对应的清华子系统后端默认 GBK 编码（对齐原项目 GBK_WEBVPN_TOKENS）。
+ * 命中其中之一时即便响应头没声明 charset 也按 GBK 解码。
+ */
+const GBK_URL_MARKERS: string[] = [
+  'eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290', // zhjw 教务（成绩/课表/教室/培养方案/学籍）
+  'fdee49932a3526446d0187ab9040227bca90a6e14cc9',     // yhdf 电费充值
+  'eaff4b8b3f3b2653770bc7b88b5c2d320506b1aec738590a49ba', // cr_xk 选课系统
+  'a5a70f8834396657761d88e29d51367b6a00',             // gymbook 体育场馆预约
+  'zhjw.cic.tsinghua.edu.cn',                          // 直连教务系统
+];
+
+function isGbkUrl(url: string): boolean {
+  for (let i: number = 0; i < GBK_URL_MARKERS.length; i++) {
+    if (url.indexOf(GBK_URL_MARKERS[i]) >= 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export class HttpClient {
   private cookieManager: CookieManager;
   private timeoutMs: number = 60000;
@@ -198,7 +219,7 @@ export class HttpClient {
       if (typeof ctVal === 'string') { contentType = ctVal; }
       else if (Array.isArray(ctVal) && ctVal.length > 0) { contentType = ctVal[0]; }
 
-      if (isGBKContentType(contentType)) {
+      if (isGBKContentType(contentType) || isGbkUrl(url)) {
         try {
           const buf: ArrayBuffer | undefined = resp.body;
           if (buf !== undefined) {

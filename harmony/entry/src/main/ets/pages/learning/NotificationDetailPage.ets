@@ -47,6 +47,7 @@ export struct NotificationDetailPage {
               .lineHeight(26)
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(20)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)

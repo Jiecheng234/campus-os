@@ -46,6 +46,7 @@ export struct FileDetailPage {
             InfoRow({ label: '上传时间', value: this.item.uploadTime.length > 0 ? this.item.uploadTime : '—' })
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(16)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)
@@ -66,6 +67,7 @@ export struct FileDetailPage {
               .lineHeight(22)
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(16)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)
@@ -76,6 +78,7 @@ export struct FileDetailPage {
           Button('下载文件' + (this.item.size.length > 0 ? ' (' + this.item.size + ')' : ''))
             .type(ButtonType.Normal)
             .width('100%')
+            .constraintSize({ maxWidth: '100%' })
             .height(52)
             .fontSize(15)
             .fontWeight(FontWeight.Medium)

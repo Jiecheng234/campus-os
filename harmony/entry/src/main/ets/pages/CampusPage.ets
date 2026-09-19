@@ -10,6 +10,8 @@ import { MailPage } from './campus/MailPage';
 import { ReservationPage } from './campus/ReservationPage';
 import { NewsPage } from './campus/NewsPage';
 import { ProgramPage } from './campus/ProgramPage';
+import { BackDispatcher, BackOwner, BackHandler } from '../state/BackDispatcher';
+import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget } from '../state/UiEvents';
 
 class CampusEntry {
   iconRes: Resource = $r('app.media.campus');
@@ -57,7 +59,12 @@ struct EntryRow {
 
 @Component
 export struct CampusPage {
-  @State subScreen: string = '';
+  @State @Watch('onSubScreenChange') subScreen: string = '';
+  private backHandler: BackHandler = () => {
+    this.subScreen = '';
+    return true;
+  };
+  private navSub: NavigateSubscription = new NavigateSubscription();
   private entries: CampusEntry[] = [];
 
   private makeEntry(iconRes: Resource, title: string, subtitle: string, action: string): CampusEntry {
@@ -82,10 +89,30 @@ export struct CampusPage {
       this.makeEntry($r('app.media.mail'), '校园邮箱', '清华邮箱', 'mail'),
       this.makeEntry($r('app.media.campus'), '培养方案', '学分完成度', 'program'),
     ];
+
+    // 跨页导航（如首页"查空教室"）：切到校园 Tab 后直接打开子页
+    this.navSub = subscribeNavigate((target: NavTarget) => {
+      if (target.campusSub.length > 0) {
+        this.subScreen = target.campusSub;
+      }
+    });
   }
 
   handleEntryClick(entry: CampusEntry): void {
     this.subScreen = entry.action;
+  }
+
+  onSubScreenChange(): void {
+    if (this.subScreen !== '') {
+      BackDispatcher.push(BackOwner.CAMPUS, this.backHandler);
+    } else {
+      BackDispatcher.remove(this.backHandler);
+    }
+  }
+
+  aboutToDisappear(): void {
+    BackDispatcher.remove(this.backHandler);
+    unsubscribeNavigate(this.navSub);
   }
 
   build() {
@@ -125,11 +152,15 @@ export struct CampusPage {
               EntryRow({ entry: entry })
                 .onClick(() => { this.handleEntryClick(entry); })
               if (index < this.entries.length - 1) {
-                Divider().color(Theme.divider).margin({ left: 72 })
+                Divider().color(Theme.divider)
+                  .width('100%')
+                  .constraintSize({ maxWidth: '100%' })
+                  .margin({ left: 72 })
               }
             })
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .borderRadius(Radius.lg)
           .backgroundColor(Theme.surface)
           .border({ width: 1, color: Theme.borderSubtle })

@@ -1,5 +1,12 @@
-import { Theme, SafeTop } from '../Theme';
+/**
+ * NewsPage — 校园资讯（真实模式：info 门户新闻 JSON；演示模式：内置示例）
+ */
+import { Theme, SafeTop, Space, FontSize } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
+import { SessionManager } from '../../services/auth/SessionManager';
+import { CampusNews } from '../../services/campus/CampusDataService';
+import { AuthManager } from '../../state/AuthManager';
+import { StateManager } from '../../state/StateManager';
 
 class NewsItem {
   id: string = '';
@@ -12,33 +19,65 @@ class NewsItem {
 
 function getMockNews(): NewsItem[] {
   const list: NewsItem[] = [];
-  const n1: NewsItem = new NewsItem();
-  n1.id = '1'; n1.title = '清华大学2025届本科生毕业典礼举行'; n1.channel = '头条';
-  n1.summary = '7月6日上午，清华大学2025届本科生毕业典礼在东大操场举行。'; n1.publishTime = '7月6日'; n1.isNew = true;
-  list.push(n1);
-  const n2: NewsItem = new NewsItem();
-  n2.id = '2'; n2.title = '关于2025-2026学年秋季学期选课的通知'; n2.channel = '教务';
-  n2.summary = '2025-2026学年秋季学期选课将于8月15日9:00正式开始。'; n2.publishTime = '7月15日';
-  list.push(n2);
-  const n3: NewsItem = new NewsItem();
-  n3.id = '3'; n3.title = '图书馆暑期开放时间安排'; n3.channel = '校园服务';
-  n3.summary = '暑期期间各图书馆开放时间调整为8:00-18:00。'; n3.publishTime = '7月1日';
-  list.push(n3);
-  const n4: NewsItem = new NewsItem();
-  n4.id = '4'; n4.title = '校园一卡通升级通知'; n4.channel = '信息化';
-  n4.summary = '校园一卡通系统将于本周末进行升级维护。'; n4.publishTime = '7月20日';
-  list.push(n4);
-  const n5: NewsItem = new NewsItem();
-  n5.id = '5'; n5.title = '暑期社会实践出征仪式举行'; n5.channel = '学生活动';
-  n5.summary = '2025年暑期社会实践出征仪式近日在蒙民伟音乐厅举行。'; n5.publishTime = '7月18日';
-  list.push(n5);
+  const rows: string[][] = [
+    ['1', '清华大学2025届本科生毕业典礼举行', '7月6日上午，清华大学2025届本科生毕业典礼在东大操场举行。', '7月6日', '头条', '1'],
+    ['2', '关于2025-2026学年秋季学期选课的通知', '2025-2026学年秋季学期选课将于8月15日9:00正式开始。', '7月15日', '教务', ''],
+    ['3', '图书馆暑期开放时间安排', '暑期期间各图书馆开放时间调整为8:00-18:00。', '7月1日', '校园服务', ''],
+    ['4', '校园一卡通升级通知', '校园一卡通系统将于本周末进行升级维护。', '7月20日', '信息化', ''],
+    ['5', '暑期社会实践出征仪式举行', '2025年暑期社会实践出征仪式近日在蒙民伟音乐厅举行。', '7月18日', '学生活动', ''],
+  ];
+  for (let i: number = 0; i < rows.length; i++) {
+    const n: NewsItem = new NewsItem();
+    n.id = rows[i][0];
+    n.title = rows[i][1];
+    n.summary = rows[i][2];
+    n.publishTime = rows[i][3];
+    n.channel = rows[i][4];
+    n.isNew = rows[i][5].length > 0;
+    list.push(n);
+  }
   return list;
 }
 
 @Component
 export struct NewsPage {
   onBack: () => void = () => {};
-  private news: NewsItem[] = getMockNews();
+  @State news: NewsItem[] = getMockNews();
+  @State isDemo: boolean = true;
+  @State loading: boolean = false;
+  @State errorText: string = '';
+
+  aboutToAppear(): void {
+    this.isDemo = !(AuthManager.isLoggedIn() && !StateManager.isDemoMode());
+    if (!this.isDemo) {
+      this.loadNews();
+    } else {
+      this.news = getMockNews();
+    }
+  }
+
+  private async loadNews(): Promise<void> {
+    this.loading = true;
+    this.errorText = '';
+    try {
+      const list: CampusNews[] = await SessionManager.getCampusDataService().fetchNewsList(1, 20);
+      const items: NewsItem[] = [];
+      for (let i: number = 0; i < list.length; i++) {
+        const item: NewsItem = new NewsItem();
+        item.id = list[i].id;
+        item.title = list[i].title;
+        item.summary = list[i].source;
+        item.publishTime = list[i].date;
+        item.channel = list[i].channel;
+        item.isNew = list[i].topped;
+        items.push(item);
+      }
+      this.news = items;
+    } catch (e) {
+      this.errorText = e instanceof Error ? e.message : String(e);
+    }
+    this.loading = false;
+  }
 
   build() {
     Column() {
@@ -48,13 +87,46 @@ export struct NewsPage {
 
       Divider().color(Theme.divider)
 
+      if (this.isDemo) {
+        Text('演示数据 · 登录后显示真实资讯')
+          .fontSize(FontSize.caption)
+          .fontColor(Theme.textMuted)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: Space.sm, bottom: Space.sm })
+      } else if (this.loading || this.errorText.length > 0) {
+        Row({ space: Space.sm }) {
+          if (this.loading) {
+            LoadingProgress()
+              .width(16)
+              .height(16)
+              .color(Theme.primary)
+          }
+          Text(this.loading ? '加载中...' : this.errorText)
+            .fontSize(FontSize.caption)
+            .fontColor(this.errorText.length > 0 ? Theme.warning : Theme.textMuted)
+          if (!this.loading && this.errorText.length > 0) {
+            Text('重试')
+              .fontSize(FontSize.caption)
+              .fontColor(Theme.primary)
+              .padding({ left: Space.sm, right: Space.sm, top: 2, bottom: 2 })
+              .borderRadius(8)
+              .border({ width: 1, color: Theme.primary })
+              .onClick(() => { this.loadNews(); })
+          }
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .padding({ top: Space.sm, bottom: Space.sm })
+      }
+
       List() {
         ForEach(this.news, (item: NewsItem) => {
           ListItem() {
             Column() {
               Row() {
                 if (item.isNew) {
-                  Text('NEW')
+                  Text('置顶')
                     .fontSize(10)
                     .fontColor(Theme.warning)
                     .padding({ left: 5, right: 5, top: 1, bottom: 1 })
@@ -84,7 +156,7 @@ export struct NewsPage {
                 Text(item.summary)
                   .fontSize(13)
                   .fontColor(Theme.textMuted)
-                  .maxLines(2)
+                  .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .layoutWeight(1)
                 Text(item.publishTime)

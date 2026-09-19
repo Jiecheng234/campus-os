@@ -17,6 +17,8 @@ import { SessionManager } from '../services/auth/SessionManager';
 import { CampusCourse, CampusDataService, CampusHomework, CampusNotification, CampusFile } from '../services/campus/CampusDataService';
 import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
+import { BackDispatcher, BackOwner, BackHandler } from '../state/BackDispatcher';
+import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget } from '../state/UiEvents';
 
 @Component
 struct SegmentBar {
@@ -59,10 +61,9 @@ struct DDLCard {
   onCardClick: () => void = () => {};
 
   build() {
-    Row() {
+    Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Stretch }) {
       Column()
         .width(3)
-        .height('100%')
         .borderRadius(2)
         .backgroundColor(this.item.status === '即将截止' ? Theme.warning : Theme.primary)
 
@@ -83,6 +84,7 @@ struct DDLCard {
       Text(this.item.status)
         .fontSize(11)
         .fontColor(Theme.warning)
+        .alignSelf(ItemAlign.Center)
         .padding({ left: 8, right: 8, top: 3, bottom: 3 })
         .borderRadius(8)
         .backgroundColor('rgba(217,119,6,0.10)')
@@ -101,10 +103,9 @@ struct CourseCard {
   onCardClick: () => void = () => {};
 
   build() {
-    Row() {
+    Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Stretch }) {
       Column()
         .width(3)
-        .height('100%')
         .borderRadius(2)
         .backgroundColor(Theme.primary)
 
@@ -136,10 +137,9 @@ struct NotificationCard {
   onCardClick: () => void = () => {};
 
   build() {
-    Row() {
+    Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Stretch }) {
       Column()
         .width(3)
-        .height('100%')
         .borderRadius(2)
         .backgroundColor(this.item.isNew ? Theme.warning : Theme.divider)
 
@@ -161,6 +161,7 @@ struct NotificationCard {
         Text('NEW')
           .fontSize(11)
           .fontColor(Theme.warning)
+          .alignSelf(ItemAlign.Center)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(4)
           .backgroundColor('rgba(217,119,6,0.10)')
@@ -180,10 +181,9 @@ struct FileCard {
   onCardClick: () => void = () => {};
 
   build() {
-    Row() {
+    Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Stretch }) {
       Column()
         .width(3)
-        .height('100%')
         .borderRadius(2)
         .backgroundColor(this.item.isNew ? Theme.warning : Theme.divider)
 
@@ -205,6 +205,7 @@ struct FileCard {
         Text('NEW')
           .fontSize(11)
           .fontColor(Theme.warning)
+          .alignSelf(ItemAlign.Center)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(4)
           .backgroundColor('rgba(217,119,6,0.10)')
@@ -224,7 +225,11 @@ export struct LearningPage {
   @State showDialog: boolean = false;
   @State ddls: HomeworkItem[] = getHomeworkList();
   @State form: DeadlineForm = new DeadlineForm();
-  @State subScreen: string = '';
+  @State @Watch('onSubScreenChange') subScreen: string = '';
+  private backHandler: BackHandler = () => {
+    this.subScreen = '';
+    return true;
+  };
   // 列表显示（UI 模型）
   @State realCourses: CourseItem[] = [];
   @State realDdls: HomeworkItem[] = [];
@@ -242,9 +247,29 @@ export struct LearningPage {
   private realCampusNotifications: CampusNotification[] = [];
   private realCampusFiles: CampusFile[] = [];
   private tabs: string[] = ['课程', '作业', '通知', '文件'];
+  private navSub: NavigateSubscription = new NavigateSubscription();
 
   aboutToAppear(): void {
     this.loadRealCourses();
+    // 跨页导航（如首页"添加 DDL"）：切到学习 Tab 后切到指定子标签
+    this.navSub = subscribeNavigate((target: NavTarget) => {
+      if (target.learningTab.length > 0 && this.tabs.indexOf(target.learningTab) >= 0) {
+        this.activeTab = target.learningTab;
+      }
+    });
+  }
+
+  onSubScreenChange(): void {
+    if (this.subScreen !== '') {
+      BackDispatcher.push(BackOwner.LEARNING, this.backHandler);
+    } else {
+      BackDispatcher.remove(this.backHandler);
+    }
+  }
+
+  aboutToDisappear(): void {
+    BackDispatcher.remove(this.backHandler);
+    unsubscribeNavigate(this.navSub);
   }
 
   private isRealMode(): boolean {
@@ -390,6 +415,7 @@ export struct LearningPage {
           .padding({ left: 20, right: 16, top: 12, bottom: 8 })
 
           SegmentBar({ activeTab: $activeTab, tabs: this.tabs, counts: this.getTabCounts() })
+            .constraintSize({ maxWidth: '100%' })
             .margin({ left: 20, right: 20, bottom: 16 })
 
           Divider().color(Theme.divider)
@@ -402,11 +428,16 @@ export struct LearningPage {
                   this.subScreen = 'course';
                 } })
                 if (index < this.getDisplayCourses().length - 1) {
-                  Divider().color(Theme.divider).margin({ left: 15 })
+                  Divider()
+                    .color(Theme.divider)
+                    .width('100%')
+                    .constraintSize({ maxWidth: '100%' })
+                    .margin({ left: 15 })
                 }
               })
             }
             .width('100%')
+            .constraintSize({ maxWidth: '100%' })
             .padding(16)
             .borderRadius(Theme.cardRadius)
             .backgroundColor(Theme.surface)
@@ -420,7 +451,11 @@ export struct LearningPage {
                   this.subScreen = 'homework';
                 } })
                 if (index < this.getDisplayHomework().length - 1) {
-                  Divider().color(Theme.divider).margin({ left: 15 })
+                  Divider()
+                    .color(Theme.divider)
+                    .width('100%')
+                    .constraintSize({ maxWidth: '100%' })
+                    .margin({ left: 15 })
                 }
               })
               if (this.getDisplayHomework().length === 0) {
@@ -431,6 +466,7 @@ export struct LearningPage {
               }
             }
             .width('100%')
+            .constraintSize({ maxWidth: '100%' })
             .padding(16)
             .borderRadius(Theme.cardRadius)
             .backgroundColor(Theme.surface)
@@ -452,6 +488,7 @@ export struct LearningPage {
               }
             }
             .width('100%')
+            .constraintSize({ maxWidth: '100%' })
             .padding(16)
             .borderRadius(Theme.cardRadius)
             .backgroundColor(Theme.surface)
@@ -473,6 +510,7 @@ export struct LearningPage {
               }
             }
             .width('100%')
+            .constraintSize({ maxWidth: '100%' })
             .padding(16)
             .borderRadius(Theme.cardRadius)
             .backgroundColor(Theme.surface)

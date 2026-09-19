@@ -31,6 +31,10 @@ export const LEARN_CURRENT_SEMESTER: string = `${LEARN_BASE}/b/kc/zhjw_v_code_xn
 export const LEARN_COURSE_LIST: string = `${LEARN_BASE}/b/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId`;
 
 export function wrapWebVPNUrl(targetUrl: string): string {
+  // 已是 oauth lbredirect 形式：直接返回（对齐原项目）
+  if (targetUrl.indexOf('oauth.tsinghua.edu.cn') >= 0) {
+    return targetUrl;
+  }
   const re: RegExp = new RegExp('^(https?):\\/\\/([^\\/:?#]+)(?::(\\d+))?(\\/[^?#]*)?(\\?[^#]*)?(#.*)?$');
   const match = re.exec(targetUrl);
   if (match === null) {
@@ -43,7 +47,10 @@ export function wrapWebVPNUrl(targetUrl: string): string {
   const search: string = match[5] || '';
   const hash: string = match[6] || '';
   const uri: string = path + search + hash;
-  return `${OAUTH_LBREDIRECT_PREFIX}?scheme=${scheme}&host=${host}&port=${port}&uri=${encodeURIComponent(uri)}`;
+  // raw 拼接，与原项目 / thu-info-lib getWebVPNUrl 一致：uri 不做 encode
+  // （encodeURIComponent 会把 uri 内的 ?/&/= 编码，lbredirect 转发到子系统时 URI 被破坏，
+  //  导致 info 门户会话建立失败 → infoUserData / cookieSync / 教务漫游全 403）
+  return `${OAUTH_LBREDIRECT_PREFIX}?scheme=${scheme}&host=${host}&port=${port}&uri=${uri}`;
 }
 
 export const SUBSYSTEM_INFO: string = 'info';

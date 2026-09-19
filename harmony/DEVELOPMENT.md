@@ -120,6 +120,9 @@ GET  learnStudentHome                   学生首页
 | `fetchFiles` | GET `kjxxbByWlkcidAndSizeForStudent` | `object` 可能是数组或 `{resultsList}`，需兼容 |
 | `fetchHomeworkDetail` | GET `viewCj` 页 HTML 解析 | 作业要求（`div.c55`）+ 附件（`div.list.fujian`），平衡 div 提取 |
 | `fetchScheduleEvents` | `jxmh_out.do?m=bks_jxrl_all` JSONP | 教务 zhjw 域，需先教务激活（见 §7 问题） |
+| `fetchSemesterInfo` | `getCurrentAndNextSemester result.kssj` | 学期首日（周数计算），有缓存 |
+| `fetchGrades` | `cj.cjCjbAll.do?m=bks_cjdcx` HTML 表格 | 漫游 yyfwid 与课表不同；GPA 跳过 P/F（point=NaN） |
+| `fetchNewsList` | info 门户 `/b/info/xxfb_fg/xnzx/template/more` JSON | `object.dataList`；webvpn csrf；置顶= `yxzd` 含 `1-` |
 
 **learn API 通用规则**：URL 用 `withCsrf(url, csrf)` 拼 `_csrf`；`aoData` 是 `[{"name":"wlkcid","value":"课程id"}]` 的 JSON 字符串，POST urlencoded 提交。
 
@@ -159,7 +162,7 @@ GET  learnStudentHome                   学生首页
 
 ## 7. 已知问题与待办
 
-### 课表（zhjw 教务域）激活 403 —— 调查中
+### 课表（zhjw 教务域）激活 403 —— 已定位根因，待验证（2026-09-19 修复）
 
 **现象**：课表 `fetchScheduleEvents` 返回 HTML 登录页（`idxBracket=-1`，非 JSONP），`events=0`。
 
@@ -167,19 +170,40 @@ GET  learnStudentHome                   学生首页
 - 主登录 + learn 激活均成功（`LEARN_CSRF ok`）
 - 教务漫游 `ROAMING_URL` 返回 403；`cookieSync` 返回空（无 XSRF-TOKEN）；`infoUserData` 也返回 403
 
-**根因判断**：**info 门户后端会话未真正建立**。尽管 `roamIdPolicy(INFO_PORTAL_YYFWID)` 的 lbredirect 返回 200（`ROAM_LB len=1467 has_sm2=false`），但 `infoUserData` 403 表明 info 会话无效。教务漫游（`roamDefault`）与 cookieSync 都依赖 info 门户会话。
+**根因（对比原项目逐行核对确认，共 3 处差异）**：
+1. **`wrapWebVPNUrl` 过度编码**：HarmonyOS 版对 `uri` 做了 `encodeURIComponent`，而原项目（`tsinghuaAuth.ts:903`，照搬 thu-info-lib `getWebVPNUrl`）刻意**不编码**且对 `oauth.tsinghua.edu.cn` URL 早返回。编码后 lbredirect 转发的 URI 被破坏 → `roamIdPolicy(INFO_PORTAL_YYFWID)` 建立的 info 门户会话无效 → infoUserData / cookieSync / 教务漫游全 403。
+2. **XSRF-TOKEN 提取源错误**：原项目从 cookieSync **响应体**正则提取（`/XSRF-TOKEN=([^;]+);/`，`transport.ts:294`），HarmonyOS 版误从 Set-Cookie 头/cookie 管理器提取 → 拿不到。
+3. **infoUserData 探针缺 `_csrf`**：原项目 `verifyInfoSession` 带 `?_csrf=`，HarmonyOS 版不带 → 必然 403（假阴性）。
 
-**下一步**：
-1. 检查 `roamIdPolicy` 的 lbredirect 响应完整内容（`ROAM_LB_FULL`，已加日志）——1467 字节可能是 meta refresh 跳转页，需进一步 follow。
-2. 对比原项目 `verifyInfoSession`（`infoUserData` 校验 `object.ryh === 学号`）确认 info 会话建立的确切步骤。
-3. 确认 WebVPN cookie 是否正确写入（`syncCookiesViaXhr` 与 RCP 的 cookie 处理差异）。
+**修复**（2026-09-19）：
+- `WebvpnConstants.ets wrapWebVPNUrl`：去掉 `encodeURIComponent`，加 oauth 早返回
+- `CampusDataService.getWebvpnCsrf`：改为解析 cookieSync 响应体（cookie 管理器作回退）；新增 `verifyInfoSession`（带 `_csrf`，校验 `object.ryh === 学号`）
+- `HttpClient`：增加 `GBK_URL_MARKERS` 按 URL 强制 GBK 解码（对齐原项目 `GBK_WEBVPN_TOKENS`，zhjw 不声明 charset）
+- `fetchScheduleEvents`：JSONP 无 `[` 时重置 `registrarRoamEnsured`（会话自愈）
+
+**验证（已通过，2026-09-19）**：用户实测同步消息"已同步 7 门课程 · 待办 1 · 未读 1"无课表警告（周六空课表正确显示"今日无课程安排"），统计 pill 显示 0/1/1 —— zhjw 教务域链路已打通。
+- 顺带修复：`MetricPill.value` 未加 `@Prop` 装饰器，父组件 `@State` 更新不传导（子组件普通成员只初始化一次）——统计恒为 0 的根因。
+- `scheduleStatus`（ok/error）区分"课表拉取失败"与"今日真的无课"。
+
+### 课表页/成绩/资讯真实数据接入（2026-09-19）
+
+- **SchedulePage**：真实周课表 —— `fetchSemesterInfo()`（learn `getCurrentAndNextSemester result.kssj` 学期首日）算学期周数；`fetchScheduleEvents(周一, 周日)` 拉整周；事件按 `kssj` 起始时间映射 6 大节（08:00/09:50/13:30/15:20/17:05/19:20，`periodIndexFor` 分桶）；‹ › ±12 周导航，点中间回本周；演示模式保留内置示例。
+- **GradesPage**：`fetchGrades()` —— 漫游 yyfwid `B7EF0ADF9406335AD7905B30CD7B49B1`（与课表不同）→ GET `cj.cjCjbAll.do?m=bks_cjdcx&cjdlx=zw&flag=di1`（zhjw token URL 自动 GBK 解码）→ 正则解析 `<table cellspacing=1>`（bks 列序 3/5/7/9/11 = 课名/学分/等级/绩点/学期）→ GPA 计算：point 为 NaN（P/F）不计学分绩，`allCredit` 含 P/F（对齐原项目 `grades.ts computeGpa`）。失败可重试。
+- **NewsPage**：`fetchNewsList(page, length)` —— info 门户 `/b/info/xxfb_fg/xnzx/template/more?oType=xs&lydw=&_csrf=..&lmid=all`，解析 `object.dataList`（bt/time/dwmc_show/lmid/yxzd），置顶（yxzd 含 `1-`）显示"置顶"标签，栏目标签取 `NEWS_CHANNEL_LABELS`。失败可重试。
+- 漫游重构：`roamByYyfwid(yyfwid)` 通用化，`ensureRegistrarRoam`/`ensureGradesRoam` 分别缓存。
+
+### 首页天气 + 快捷操作真实跳转（2026-09-19）
+
+- **WeatherService**（`services/campus/WeatherService.ets`）：Open-Meteo 公共 API（免登录免 key，坐标清华园 39.9593,116.2985），`fetchHomeWeather()` 带 30 分钟模块级缓存；`describeWeatherCode` WMO 码→中文；`buildWeatherSubtitle` 生成"海淀 23° · 晴 · 今日 18/30°（· 建议带伞）"。rcp 直连，与 webvpn 无关。
+- **ScreenHeader.subtitle 加 `@Prop`**：与 MetricPill 同款问题（未装饰成员不随父 @State 更新）——首页天气与课表页周导航副标题由此跟随刷新。
+- **快捷操作跨页导航**（`state/UiEvents.ets`，emitter 总线 `EVT_NAVIGATE`）：NavTarget{tab, campusSub, learningTab}；Index（切底部 Tab）/CampusPage（开子页）/LearningPage（切子标签）各自订阅，aboutToDisappear 反订阅。"查空教室"→校园·空闲教室子页，"添加 DDL"→学习·作业标签；"图书馆座位"未接入保留 toast。
+- HomePage 两处弃用 `promptAction.showToast` 改为 `getUIContext().getPromptAction()`（SettingsPage/LoginPage/LearningPage 的同类 WARN 暂未处理）。
 
 ### 其他待办
 
-- 课表页 SchedulePage 接入真实课表（当前 Mock，待教务域打通）
-- 成绩（GradesPage）真实数据
+- 成绩/资讯详情页（资讯详情需 WebView 渲染 info 门户 HTML）
+- 宿舍电费/校园卡/校园网/场馆预约等子页真实数据（各自独立 webvpn 域，需单独漫游调试）
 - 修复 #3 密码明文存储（`SecureStorage` 当前仅 URL-encode，应改用 Asset Store Kit 或加密）
-- 课表详情/周视图网格完善
 
 ---
 

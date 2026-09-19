@@ -93,6 +93,7 @@ export struct NetworkPage {
               .margin({ top: 14 })
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(20)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)
@@ -151,6 +152,7 @@ export struct NetworkPage {
             })
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(16)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)

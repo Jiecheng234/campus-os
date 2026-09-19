@@ -107,6 +107,7 @@ export struct ProgramPage {
             .margin({ top: 8 })
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(20)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)
@@ -157,6 +158,7 @@ export struct ProgramPage {
               })
             }
             .width('100%')
+            .constraintSize({ maxWidth: '100%' })
             .padding(16)
             .borderRadius(Theme.cardRadius)
             .backgroundColor(Theme.surface)

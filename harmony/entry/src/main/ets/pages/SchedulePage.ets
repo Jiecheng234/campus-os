@@ -1,61 +1,187 @@
 /**
  * SchedulePage — 课表页（周网格 + 周选择器）
+ * 真实模式：zhjw 周课表（Monday–Sunday JSONP），‹ › 切周、点中间回本周；
+ * 演示模式：内置示例课程。
  */
 import { Theme, SafeTop, Space, Radius, FontSize } from './Theme';
 import { ScreenHeader } from '../components/Ui';
+import { SessionManager } from '../services/auth/SessionManager';
+import { CampusDataService, ScheduleEvent } from '../services/campus/CampusDataService';
+import { AuthManager } from '../state/AuthManager';
+import { StateManager } from '../state/StateManager';
+import { Log } from '../utils/Logger';
 
-class ScheduleCourse {
+class ScheduleCell {
   day: number = 0;
   period: number = 0;
   title: string = '';
   location: string = '';
-  span: number = 1;
 }
 
 const WEEKDAYS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
-const PERIODS: string[] = ['08:00', '10:10', '13:30', '15:20', '19:20'];
+/** 大节起始时间（清华：1-2节 08:00 / 3-4节 09:50 / 5-6节 13:30 / 7-8节 15:20 / 9-10节 17:05 / 11-12节 19:20） */
+const PERIODS: string[] = ['08:00', '09:50', '13:30', '15:20', '17:05', '19:20'];
+const MAX_WEEK_OFFSET: number = 12;
 
-function getMockCourses(): ScheduleCourse[] {
-  const courses: ScheduleCourse[] = [];
-  const c1: ScheduleCourse = new ScheduleCourse();
-  c1.day = 0; c1.period = 0; c1.title = '高等数学'; c1.location = '六教6A118';
-  courses.push(c1);
-
-  const c2: ScheduleCourse = new ScheduleCourse();
-  c2.day = 1; c2.period = 1; c2.title = '大学物理'; c2.location = '四教4302';
-  courses.push(c2);
-
-  const c3: ScheduleCourse = new ScheduleCourse();
-  c3.day = 0; c3.period = 2; c3.title = '线性代数'; c3.location = '六教6A215';
-  courses.push(c3);
-
-  const c4: ScheduleCourse = new ScheduleCourse();
-  c4.day = 2; c4.period = 0; c4.title = '英语阅读'; c4.location = '五教5102';
-  courses.push(c4);
-
-  const c5: ScheduleCourse = new ScheduleCourse();
-  c5.day = 3; c5.period = 3; c5.title = '实验课'; c5.location = '物理楼B1';
-  courses.push(c5);
-
-  const c6: ScheduleCourse = new ScheduleCourse();
-  c6.day = 0; c6.period = 3; c6.title = '体育课'; c6.location = '东操';
-  courses.push(c6);
-  return courses;
+function getMockCells(): ScheduleCell[] {
+  const cells: ScheduleCell[] = [];
+  const defs: number[][] = [
+    [0, 0], [0, 2], [0, 3],
+    [1, 1],
+    [2, 0],
+    [3, 3],
+    [5, 4],
+  ];
+  const titles: string[] = ['高等数学', '线性代数', '体育课', '大学物理', '英语阅读', '实验课', '新生研讨'];
+  const locations: string[] = ['六教6A118', '六教6A215', '东操', '四教4302', '五教5102', '物理楼B1', '三教1301'];
+  for (let i: number = 0; i < defs.length; i++) {
+    const c: ScheduleCell = new ScheduleCell();
+    c.day = defs[i][0];
+    c.period = defs[i][1];
+    c.title = titles[i];
+    c.location = locations[i];
+    cells.push(c);
+  }
+  return cells;
 }
 
-function findCourse(courses: ScheduleCourse[], day: number, period: number): ScheduleCourse | null {
-  for (const c of courses) {
-    if (c.day === day && c.period === period) {
-      return c;
+function findCell(cells: ScheduleCell[], day: number, period: number): ScheduleCell | null {
+  for (let i: number = 0; i < cells.length; i++) {
+    if (cells[i].day === day && cells[i].period === period) {
+      return cells[i];
     }
   }
   return null;
 }
 
+/** 事件开始时间（HH:mm）→ 大节序 0-5 */
+function periodIndexFor(start: string): number {
+  const parts: string[] = start.split(':');
+  if (parts.length < 2) {
+    return 0;
+  }
+  const t: number = Number(parts[0]) * 60 + Number(parts[1]);
+  if (isNaN(t)) {
+    return 0;
+  }
+  if (t < 585) { return 0; }
+  if (t < 780) { return 1; }
+  if (t < 910) { return 2; }
+  if (t < 1020) { return 3; }
+  if (t < 1140) { return 4; }
+  return 5;
+}
+
+function mondayOf(date: Date): Date {
+  const d: Date = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const wd: number = d.getDay();
+  d.setDate(d.getDate() + (wd === 0 ? -6 : 1 - wd));
+  return d;
+}
+
+function addDays(date: Date, days: number): Date {
+  const d: Date = new Date(date.getTime());
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function pad2(n: number): string {
+  return n < 10 ? '0' + String(n) : String(n);
+}
+
+function ymdCompact(d: Date): string {
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+}
+
+function monthDay(d: Date): string {
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
 @Component
 export struct SchedulePage {
-  @State currentWeek: number = 18;
-  private courses: ScheduleCourse[] = getMockCourses();
+  @State weekOffset: number = 0;
+  @State weekNumber: number = 0;
+  @State rangeLabel: string = '';
+  @State cells: ScheduleCell[] = [];
+  @State loading: boolean = false;
+  @State hint: string = '';
+
+  aboutToAppear(): void {
+    if (AuthManager.isLoggedIn() && !StateManager.isDemoMode()) {
+      this.loadWeek(0);
+      return;
+    }
+    const monday: Date = mondayOf(new Date());
+    this.cells = getMockCells();
+    this.rangeLabel = monthDay(monday) + ' – ' + monthDay(addDays(monday, 6));
+    this.hint = '演示数据 · 登录后显示真实课表';
+  }
+
+  /** 加载指定周（相对本周偏移）的课表 */
+  private async loadWeek(offset: number): Promise<void> {
+    this.weekOffset = offset;
+    this.loading = true;
+    this.hint = '';
+    const monday: Date = addDays(mondayOf(new Date()), offset * 7);
+    const sunday: Date = addDays(monday, 6);
+    this.rangeLabel = monthDay(monday) + ' – ' + monthDay(sunday);
+
+    const service: CampusDataService = SessionManager.getCampusDataService();
+    const firstDay: string = await service.fetchSemesterInfo();
+    if (firstDay.length >= 10) {
+      const start: Date = new Date(firstDay.substring(0, 10) + 'T00:00:00');
+      const weeks: number = Math.floor((monday.getTime() - start.getTime()) / 604800000) + 1;
+      this.weekNumber = weeks > 0 ? weeks : 0;
+    } else {
+      this.weekNumber = 0;
+    }
+
+    try {
+      const events: ScheduleEvent[] = await service.fetchScheduleEvents(ymdCompact(monday), ymdCompact(sunday));
+      if (service.scheduleStatus !== 'ok') {
+        this.cells = [];
+        this.hint = '课表拉取失败（教务会话未打通）';
+      } else {
+        this.cells = this.mapEventsToCells(events);
+        this.hint = this.cells.length === 0 ? '本周无课程安排' : '';
+      }
+    } catch (e) {
+      this.cells = [];
+      this.hint = '课表拉取失败';
+      Log.i('SchedAct', 'loadWeek ex=%{public}s', e instanceof Error ? e.message : String(e));
+    }
+    this.loading = false;
+  }
+
+  /** zhjw 事件 → 网格单元（同格多课取最早开始的一门） */
+  private mapEventsToCells(events: ScheduleEvent[]): ScheduleCell[] {
+    const sorted: ScheduleEvent[] = events.slice(0).sort((a: ScheduleEvent, b: ScheduleEvent): number => {
+      return a.startTime.localeCompare(b.startTime);
+    });
+    const cells: ScheduleCell[] = [];
+    for (let i: number = 0; i < sorted.length; i++) {
+      const ev: ScheduleEvent = sorted[i];
+      if (ev.date.length < 10) {
+        continue;
+      }
+      const d: Date = new Date(ev.date.substring(0, 10) + 'T00:00:00');
+      if (isNaN(d.getTime())) {
+        continue;
+      }
+      const dayIdx: number = (d.getDay() + 6) % 7;
+      const periodIdx: number = periodIndexFor(ev.startTime);
+      if (findCell(cells, dayIdx, periodIdx) !== null) {
+        continue;
+      }
+      const cell: ScheduleCell = new ScheduleCell();
+      cell.day = dayIdx;
+      cell.period = periodIdx;
+      cell.title = ev.title;
+      cell.location = ev.location;
+      cells.push(cell);
+    }
+    return cells;
+  }
 
   build() {
     Column() {
@@ -63,12 +189,18 @@ export struct SchedulePage {
 
       // 头部
       Column() {
-        ScreenHeader({ eyebrow: 'SCHEDULE', title: '课表', subtitle: `第 ${this.currentWeek} 周 · 2026年7月` })
+        ScreenHeader({
+          eyebrow: 'SCHEDULE',
+          title: '课表',
+          subtitle: this.rangeLabel.length > 0
+            ? (this.weekNumber > 0 ? `${this.rangeLabel} · 第 ${this.weekNumber} 周` : this.rangeLabel)
+            : '每周课程安排',
+        })
       }
       .width('100%')
       .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.sm })
 
-      // 周选择器（36×36 白底方块 ‹ › + 周标签）
+      // 周选择器（36×36 白底方块 ‹ › + 周标签，点中间回本周）
       Row() {
         Text('‹')
           .fontSize(20)
@@ -80,22 +212,27 @@ export struct SchedulePage {
           .backgroundColor(Theme.surface)
           .border({ width: 1, color: Theme.borderSubtle })
           .onClick(() => {
-            if (this.currentWeek > 1) {
-              this.currentWeek--;
+            if (!this.loading && this.weekOffset > -MAX_WEEK_OFFSET) {
+              this.loadWeek(this.weekOffset - 1);
             }
           })
 
         Column() {
-          Text(`第 ${this.currentWeek} 周`)
+          Text(this.weekNumber > 0 ? `第 ${this.weekNumber} 周` : (this.weekOffset === 0 ? '本周' : '非本学期周次'))
             .fontSize(FontSize.h3)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
-          Text('2026年7月')
+          Text(this.rangeLabel)
             .fontSize(FontSize.micro)
             .fontColor(Theme.textMuted)
         }
         .alignItems(HorizontalAlign.Center)
         .layoutWeight(1)
+        .onClick(() => {
+          if (!this.loading && this.weekOffset !== 0) {
+            this.loadWeek(0);
+          }
+        })
 
         Text('›')
           .fontSize(20)
@@ -107,11 +244,31 @@ export struct SchedulePage {
           .backgroundColor(Theme.surface)
           .border({ width: 1, color: Theme.borderSubtle })
           .onClick(() => {
-            this.currentWeek++;
+            if (!this.loading && this.weekOffset < MAX_WEEK_OFFSET) {
+              this.loadWeek(this.weekOffset + 1);
+            }
           })
       }
       .width('100%')
       .padding({ left: Space.lg, right: Space.lg, top: Space.sm, bottom: Space.sm })
+
+      // 加载/空态提示行
+      if (this.loading || this.hint.length > 0) {
+        Row({ space: Space.sm }) {
+          if (this.loading) {
+            LoadingProgress()
+              .width(16)
+              .height(16)
+              .color(Theme.primary)
+          }
+          Text(this.loading ? '加载中...' : this.hint)
+            .fontSize(FontSize.caption)
+            .fontColor(Theme.textMuted)
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .padding({ top: Space.xs, bottom: Space.xs })
+      }
 
       // 分割线
       Divider()
@@ -152,13 +309,13 @@ export struct SchedulePage {
               // 每天一列
               ForEach(WEEKDAYS, (dayName: string, dayIdx: number) => {
                 Column() {
-                  if (findCourse(this.courses, dayIdx, periodIdx) !== null) {
+                  if (findCell(this.cells, dayIdx, periodIdx) !== null) {
                     Column() {
-                      Text(findCourse(this.courses, dayIdx, periodIdx)!.title)
+                      Text(findCell(this.cells, dayIdx, periodIdx)!.title)
                         .fontSize(10)
                         .fontColor(Theme.primaryDark)
                         .maxLines(1)
-                      Text(findCourse(this.courses, dayIdx, periodIdx)!.location)
+                      Text(findCell(this.cells, dayIdx, periodIdx)!.location)
                         .fontSize(9)
                         .fontColor(Theme.primary)
                         .maxLines(1)

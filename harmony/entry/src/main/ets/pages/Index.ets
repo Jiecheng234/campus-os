@@ -11,6 +11,8 @@ import { LearningPage } from './LearningPage';
 import { CampusPage } from './CampusPage';
 import { SessionManager } from '../services/auth/SessionManager';
 import { LoginResult, LoginResultType } from '../services/auth/TsinghuaAuthService';
+import { BackDispatcher, BackOwner } from '../state/BackDispatcher';
+import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget } from '../state/UiEvents';
 
 @Entry
 @Component
@@ -18,8 +20,15 @@ struct Index {
   @State currentIndex: number = 0;
   @State isLoggedIn: boolean = false;
   @State isAutoLogging: boolean = true;
+  private navSub: NavigateSubscription = new NavigateSubscription();
 
   aboutToAppear(): void {
+    // 首页快捷操作等处的跨页导航：切到底部指定 Tab
+    this.navSub = subscribeNavigate((target: NavTarget) => {
+      if (target.tab >= 0 && target.tab <= 5) {
+        this.currentIndex = target.tab;
+      }
+    });
     SessionManager.tryAutoLogin().then((result: LoginResult | undefined) => {
       this.isAutoLogging = false;
       if (result !== undefined && result.type === LoginResultType.SUCCESS) {
@@ -29,6 +38,38 @@ struct Index {
       this.isAutoLogging = false;
     });
   }
+
+  aboutToDisappear(): void {
+    unsubscribeNavigate(this.navSub);
+  }
+
+  onBackPress(): boolean {
+    if (BackDispatcher.dispatch(this.activeBackOwner())) {
+      return true;
+    }
+    const now: number = Date.now();
+    if (now - this.lastBackAt < 2000) {
+      return false;
+    }
+    this.lastBackAt = now;
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: '再按一次退出应用', duration: 1500 });
+    } catch (e) {
+      /* ignore */
+    }
+    return true;
+  }
+
+  private activeBackOwner(): string {
+    if (this.currentIndex === 1) {
+      return BackOwner.LEARNING;
+    }
+    if (this.currentIndex === 3) {
+      return BackOwner.CAMPUS;
+    }
+    return '';
+  }
+  private lastBackAt: number = 0;
   private tabTitles: string[] = ['首页', '学习', '课表', '校园', 'AI', '设置'];
   private tabIcons: Resource[] = [
     $r('app.media.home'), $r('app.media.learning'), $r('app.media.schedule'),

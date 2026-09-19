@@ -14,7 +14,8 @@ function emptyContent() {}
 export struct ScreenHeader {
   eyebrow: string = '';
   title: string = '';
-  subtitle: string = '';
+  /** @Prop：父组件 @State 更新时副标题需跟随刷新（天气/周范围等动态副标题） */
+  @Prop subtitle: string = '';
   @BuilderParam right: () => void = emptyContent;
 
   build() {
@@ -145,11 +146,10 @@ export struct ListCard {
   }
 
   build() {
-    Row() {
+    Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Stretch }) {
       if (this.accent !== CardAccent.None) {
         Column()
           .width(2)
-          .height('100%')
           .backgroundColor(this.accentColor())
       }
       Column() {
@@ -254,10 +254,9 @@ export struct StateBlock {
   }
 
   build() {
-    Row() {
+    Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Stretch }) {
       Column()
         .width(4)
-        .height('100%')
         .backgroundColor(this.accentColor())
       Column({ space: Space.xs }) {
         if (this.title.length > 0) {
@@ -296,7 +295,8 @@ export struct StateBlock {
 // ────────────────────────────────
 @Component
 export struct MetricPill {
-  value: string = '';
+  /** @Prop：父组件 @State 变化时同步刷新（普通成员只初始化一次，不会更新） */
+  @Prop value: string = '';
   label: string = '';
   tone: BadgeTone = BadgeTone.Default;
 

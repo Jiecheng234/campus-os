@@ -47,6 +47,7 @@ export struct ReservationPage {
               .fontColor(Theme.textMuted)
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(16)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)
@@ -85,6 +86,7 @@ export struct ReservationPage {
               .fontColor(Theme.textMuted)
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(16)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)
@@ -123,6 +125,7 @@ export struct ReservationPage {
               .fontColor(Theme.textMuted)
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(16)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)

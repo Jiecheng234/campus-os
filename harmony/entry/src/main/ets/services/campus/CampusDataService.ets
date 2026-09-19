@@ -10,6 +10,8 @@
  *   - fetchFiles            课件文件（GET；object 可能是数组或 {resultsList}）
  *   - fetchHomeworkDetail   作业详情（GET viewCj 页 HTML 解析作业要求/附件）
  *   - fetchScheduleEvents   课表（教务 zhjw JSONP，需先 ensureRegistrarRoam 教务激活）
+ *   - fetchGrades           成绩（教务 zhjw HTML 表格，漫游 yyfwid 与课表不同）
+ *   - fetchNewsList         校园资讯（info 门户 JSON，object.dataList）
  *
  * 【learn API 通用规则】：
  *   - URL 用 withCsrf(url, csrf) 拼 _csrf 参数
@@ -85,6 +87,48 @@ function stripHtml(html: string): string {
 function withCsrf(url: string, csrf: string): string {
   const sep: string = url.indexOf('?') >= 0 ? '&' : '?';
   return url + sep + '_csrf=' + encodeURIComponent(csrf);
+}
+
+/** 数值 HTML 实体（&#xHH; / &#DD;）解码（对齐原项目 news.ts decodeText） */
+function decodeNumericEntities(value: string): string {
+  let out: string = value.replace(/&#x([0-9a-fA-F]+);/g, (m: string, hex: string): string => {
+    return String.fromCharCode(parseInt(hex, 16));
+  });
+  out = out.replace(/&#(\d+);/g, (m: string, dec: string): string => {
+    return String.fromCharCode(parseInt(dec, 10));
+  });
+  return out;
+}
+
+/** HTML 片段 → 纯文本（去标签 + 实体解码） */
+function htmlCellText(cellHtml: string): string {
+  return decodeHtmlEntities(decodeNumericEntities(cellHtml.replace(/<[^>]+>/g, ''))).trim();
+}
+
+/** 解析 <table cellspacing=1> 的所有行（tr → td 文本数组），对齐原项目 grades.ts */
+function parseGradeTableRows(html: string): string[][] {
+  const rows: string[][] = [];
+  const tableMatch: RegExpExecArray | null = /<table[^>]*cellspacing="1"[^>]*>([\s\S]*?)<\/table>/i.exec(html);
+  const tableHtml: string = tableMatch !== null ? tableMatch[1] : '';
+  if (tableHtml.length === 0) {
+    return rows;
+  }
+  const trRe: RegExp = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let trMatch: RegExpExecArray | null = trRe.exec(tableHtml);
+  while (trMatch !== null) {
+    const cells: string[] = [];
+    const tdRe: RegExp = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+    let tdMatch: RegExpExecArray | null = tdRe.exec(trMatch[1]);
+    while (tdMatch !== null) {
+      cells.push(htmlCellText(tdMatch[1]));
+      tdMatch = tdRe.exec(trMatch[1]);
+    }
+    if (cells.length > 0) {
+      rows.push(cells);
+    }
+    trMatch = trRe.exec(tableHtml);
+  }
+  return rows;
 }
 
 /** 解析 JSONP（形如 m([...])，取首个 [ 到末个 ]） */
@@ -178,6 +222,45 @@ export class ScheduleEvent {
   endTime: string = '';
 }
 
+/** 成绩课程（教务 zhjw cj.cjCjbAll.do） */
+export class CampusGrade {
+  name: string = '';
+  credit: number = 0;
+  grade: string = '';
+  point: number = 0;
+  semester: string = '';
+}
+
+/** 成绩单汇总（GPA 计算对齐原项目 computeGpa：point 为 NaN 的 P/F 课不计学分绩） */
+export class GradeReport {
+  courses: CampusGrade[] = [];
+  gpa: number = 0;
+  totalCredit: number = 0;
+  allCredit: number = 0;
+}
+
+/** 校园资讯条目（info 门户新闻 JSON） */
+export class CampusNews {
+  id: string = '';
+  title: string = '';
+  date: string = '';
+  source: string = '';
+  channel: string = '';
+  topped: boolean = false;
+}
+
+/** 资讯栏目标签（对齐原项目 CHANNEL_LABELS 子集） */
+const NEWS_CHANNEL_LABELS: Record<string, string> = {
+  'LM_BGTG': '办公通知',
+  'LM_ZYGG': '重要公告',
+  'LM_JWGG': '教务通知',
+  'LM_KYTZ': '科研通知',
+  'LM_XSBGGG': '学生工作通知',
+  'LM_TTGGG': '图书馆信息',
+  'LM_BYJYXX': '就业通知',
+  'LM_JYZPXX': '招聘信息',
+};
+
 export class CampusDataService {
   private http: HttpClient;
   private csrfToken: string = '';
@@ -185,7 +268,12 @@ export class CampusDataService {
   public trace: string = '';
   public currentSemester: string = '';
   private registrarRoamEnsured: boolean = false;
+  private gradesRoamEnsured: boolean = false;
   private webvpnCsrf: string = '';
+  /** 课表拉取状态：'unknown' 未拉过 / 'ok' JSONP 正常（可能为空）/ 'error' 拿到非 JSONP（会话失效等） */
+  public scheduleStatus: string = 'unknown';
+  /** 当前学期首日（YYYY-MM-DD，learn getCurrentAndNextSemester result.kssj），周数计算用 */
+  public semesterFirstDay: string = '';
 
   constructor(http: HttpClient) {
     this.http = http;
@@ -203,43 +291,63 @@ export class CampusDataService {
     return '';
   }
 
-  /** WebVPN 的 XSRF-TOKEN（从 cookieSync 接口提取，用于 webvpn 漫游，与 learn csrf 不同） */
+  /** WebVPN 的 XSRF-TOKEN（用于 webvpn 漫游，与 learn csrf 不同） */
   async getWebvpnCsrf(): Promise<string> {
     if (this.webvpnCsrf.length > 0) {
       return this.webvpnCsrf;
     }
     try {
-      // 先访问 infoUserData 确认/建立 info 后端会话（原项目 verifyInfoSession）
-      const INFO_TOKEN: string = '77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de';
-      const userDataUrl: string = 'https://webvpn.tsinghua.edu.cn/https/' + INFO_TOKEN + '/b/info/gxfw_fg/common/grjbxx';
-      const udResp: HttpResponse = await this.http.get(userDataUrl);
-      Log.i('LearnAct', 'INFO_USERDATA code=%{public}d body=%{public}s', udResp.statusCode, udResp.body.substring(0, 150));
-
+      // 与原项目 transport.getCsrfToken 一致：cookieSync 接口在响应体里回显
+      // webvpn 后端 jar 中的 info 域 cookies，从 body 提取 XSRF-TOKEN
       const url: string = 'https://webvpn.tsinghua.edu.cn/wengine-vpn/cookie?method=get&host=info.tsinghua.edu.cn&scheme=https&path=/f/info/gxfw_fg/common/index';
       const resp: HttpResponse = await this.http.get(url);
-      // 打印 cookieSync 的原始 Set-Cookie，定位 XSRF-TOKEN
-      const sc: string[] = this.http.lastSetCookies;
-      let scStr: string = '';
-      for (let i: number = 0; i < sc.length; i++) {
-        scStr = scStr + '[' + sc[i].substring(0, 60) + '] ';
-      }
-      Log.i('LearnAct', 'WEBVPN_CSRF code=%{public}d setcookies=%{public}s', resp.statusCode, scStr);
-      const infoCookies: string = this.http.getCookieManager().getCookieHeader('https://info.tsinghua.edu.cn/');
-      const webvpnCookies: string = this.http.getCookieManager().getCookieHeader('https://webvpn.tsinghua.edu.cn/');
-      let m = /XSRF-TOKEN=([^;]+)/.exec(infoCookies);
-      if (m === null || m.length < 2) {
-        m = /XSRF-TOKEN=([^;]+)/.exec(webvpnCookies);
-      }
-      if (m !== null && m.length >= 2) {
+      Log.i('LearnAct', 'WEBVPN_COOKIESYNC code=%{public}d len=%{public}d body=%{public}s',
+        resp.statusCode, resp.body.length, resp.body.substring(0, 150));
+      const m = /XSRF-TOKEN=([^;]+);/.exec(resp.body + ';');
+      if (m !== null && m.length >= 2 && m[1].length > 0) {
         this.webvpnCsrf = m[1];
         Log.i('LearnAct', 'WEBVPN_CSRF ok len=%{public}d', this.webvpnCsrf.length);
+        return this.webvpnCsrf;
+      }
+      // 回退：本地 cookie 管理器（info / webvpn 域）
+      const infoCookies: string = this.http.getCookieManager().getCookieHeader('https://info.tsinghua.edu.cn/');
+      const webvpnCookies: string = this.http.getCookieManager().getCookieHeader('https://webvpn.tsinghua.edu.cn/');
+      let m2 = /XSRF-TOKEN=([^;]+)/.exec(infoCookies);
+      if (m2 === null || m2.length < 2 || m2[1].length === 0) {
+        m2 = /XSRF-TOKEN=([^;]+)/.exec(webvpnCookies);
+      }
+      if (m2 !== null && m2.length >= 2 && m2[1].length > 0) {
+        this.webvpnCsrf = m2[1];
+        Log.i('LearnAct', 'WEBVPN_CSRF fallback ok len=%{public}d', this.webvpnCsrf.length);
       } else {
-        Log.i('LearnAct', 'WEBVPN_CSRF no_token infoLen=%{public}d', infoCookies.length);
+        Log.i('LearnAct', 'WEBVPN_CSRF no_token bodyLen=%{public}d infoCookieLen=%{public}d',
+          resp.body.length, infoCookies.length);
       }
     } catch (e) {
       Log.i('LearnAct', 'WEBVPN_CSRF ex=%{public}s', e instanceof Error ? e.message : String(e));
     }
     return this.webvpnCsrf;
+  }
+
+  /** 校验 info 门户会话（原项目 verifyInfoSession：infoUserData?_csrf= 检查 object.ryh） */
+  async verifyInfoSession(expectedUserId: string): Promise<boolean> {
+    const csrf: string = await this.getWebvpnCsrf();
+    if (csrf.length === 0) {
+      return false;
+    }
+    try {
+      const INFO_TOKEN: string = '77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de';
+      const userDataUrl: string = 'https://webvpn.tsinghua.edu.cn/https/' + INFO_TOKEN
+        + '/b/info/gxfw_fg/common/grjbxx?_csrf=' + encodeURIComponent(csrf);
+      const udResp: HttpResponse = await this.http.get(userDataUrl);
+      Log.i('LearnAct', 'INFO_USERDATA code=%{public}d body=%{public}s', udResp.statusCode, udResp.body.substring(0, 150));
+      const json: Record<string, Object> = JSON.parse(udResp.body) as Record<string, Object>;
+      const objField = json['object'] as Record<string, Object>;
+      return objField !== undefined && objField !== null && String(objField['ryh'] ?? '') === expectedUserId;
+    } catch (e) {
+      Log.i('LearnAct', 'INFO_USERDATA ex=%{public}s', e instanceof Error ? e.message : String(e));
+      return false;
+    }
   }
 
   async fetchCourses(): Promise<CampusCourse[]> {
@@ -268,6 +376,7 @@ export class CampusDataService {
         return [];
       }
       this.currentSemester = String(resultObj['xnxqmc'] ?? '');
+      this.semesterFirstDay = String(resultObj['kssj'] ?? '').substring(0, 10);
 
       // 2. 用真实学期 ID 获取课程列表（正确路径含 /wlxt/）
       const listUrl: string = LEARN_BASE + '/b/wlxt/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId/'
@@ -308,32 +417,67 @@ export class CampusDataService {
     if (this.registrarRoamEnsured) {
       return;
     }
+    const ok: boolean = await this.roamByYyfwid('287C0C6D90ABB364CD5FDF1495199962');
+    if (ok) {
+      this.registrarRoamEnsured = true;
+    }
+  }
+
+  /** 成绩域激活（原项目 BKS_REPORT_YYFWID，与课表漫游是不同 yyfwid） */
+  private async ensureGradesRoam(): Promise<void> {
+    if (this.gradesRoamEnsured) {
+      return;
+    }
+    const ok: boolean = await this.roamByYyfwid('B7EF0ADF9406335AD7905B30CD7B49B1');
+    if (ok) {
+      this.gradesRoamEnsured = true;
+    }
+  }
+
+  /** 信息门户 onlineAppRedirect 漫游到指定 yyfwid 子系统（通用化原项目 roamDefault） */
+  private async roamByYyfwid(yyfwid: string): Promise<boolean> {
     const csrf: string = await this.getWebvpnCsrf();
     if (csrf.length === 0) {
-      return;
+      Log.i('LearnAct', 'REG_ROAM skip: no webvpn csrf');
+      return false;
     }
     try {
       const INFO_TOKEN: string = '77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de';
       const roamUrl: string = 'https://webvpn.tsinghua.edu.cn/https/' + INFO_TOKEN
-        + '/b/yyfw/vyyfwxx/info/portal_fg/common/onlineAppRedirect?yyfwid=287C0C6D90ABB364CD5FDF1495199962&_csrf='
+        + '/b/yyfw/vyyfwxx/info/portal_fg/common/onlineAppRedirect?yyfwid=' + yyfwid + '&_csrf='
         + encodeURIComponent(csrf) + '&machine=p';
       const resp: HttpResponse = await this.http.get(roamUrl);
       Log.i('LearnAct', 'REG_ROAM code=%{public}d body=%{public}s', resp.statusCode, resp.body.substring(0, 150));
-      const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
+      let json: Record<string, Object>;
+      try {
+        json = JSON.parse(resp.body) as Record<string, Object>;
+      } catch (e) {
+        Log.i('LearnAct', 'REG_ROAM non_json head=%{public}s', resp.body.substring(0, 120));
+        return false;
+      }
+      const resultStr: string = String(json['result'] ?? '');
+      if (resultStr.length > 0 && resultStr !== 'success') {
+        Log.i('LearnAct', 'REG_ROAM fail result=%{public}s msg=%{public}s', resultStr, String(json['msg'] ?? ''));
+        return false;
+      }
       const objField = json['object'] as Record<string, Object>;
       if (objField === undefined || objField === null) {
-        return;
+        Log.i('LearnAct', 'REG_ROAM no_object keys=%{public}s', Object.keys(json).join(','));
+        return false;
       }
       const roamingurl: string = String(objField['roamingurl'] ?? '').replace(/&amp;/g, '&');
       if (roamingurl.length === 0) {
-        return;
+        Log.i('LearnAct', 'REG_ROAM no_roamingurl');
+        return false;
       }
       const finalUrl: string = this.parseToWebVPN(roamingurl);
       const authResp: HttpResponse = await this.http.get(finalUrl);
-      Log.i('LearnAct', 'REG_AUTH code=%{public}d len=%{public}d', authResp.statusCode, authResp.body.length);
-      this.registrarRoamEnsured = true;
+      Log.i('LearnAct', 'REG_AUTH code=%{public}d len=%{public}d head=%{public}s',
+        authResp.statusCode, authResp.body.length, authResp.body.substring(0, 80));
+      return true;
     } catch (e) {
       Log.i('LearnAct', 'REG_ROAM ex=%{public}s', e instanceof Error ? e.message : String(e));
+      return false;
     }
   }
 
@@ -380,6 +524,13 @@ export class CampusDataService {
       }
       Log.i('LearnAct', 'SCHEDULE code=%{public}d len=%{public}d idxBracket=%{public}d hex=%{public}s',
         resp.statusCode, resp.body.length, resp.body.indexOf('['), hexHead);
+      if (resp.body.indexOf('[') < 0) {
+        // 无 JSONP 数据：多半是会话失效拿到登录/错误页，重置漫游缓存下次重新激活
+        this.registrarRoamEnsured = false;
+        this.scheduleStatus = 'error';
+      } else {
+        this.scheduleStatus = 'ok';
+      }
       const rows: Object[] = parseJsonpArray(resp.body);
       const events: ScheduleEvent[] = [];
       for (let i: number = 0; i < rows.length; i++) {
@@ -397,8 +548,148 @@ export class CampusDataService {
       return events;
     } catch (e) {
       Log.i('LearnAct', 'SCHEDULE ex=%{public}s', e instanceof Error ? e.message : String(e));
+      this.scheduleStatus = 'error';
       return [];
     }
+  }
+
+  /** 获取当前学期首日（YYYY-MM-DD；已缓存直接返回；失败返回空串） */
+  async fetchSemesterInfo(): Promise<string> {
+    if (this.semesterFirstDay.length > 0) {
+      return this.semesterFirstDay;
+    }
+    try {
+      const csrf: string = await this.getCsrfToken();
+      if (csrf.length === 0) {
+        return '';
+      }
+      const semesterUrl: string = withCsrf(
+        LEARN_BASE + '/b/kc/zhjw_v_code_xnxq/getCurrentAndNextSemester', csrf);
+      const resp: HttpResponse = await this.http.get(semesterUrl);
+      const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
+      const resultObj = json['result'] as Record<string, Object>;
+      if (resultObj === undefined || resultObj === null) {
+        return '';
+      }
+      this.semesterFirstDay = String(resultObj['kssj'] ?? '').substring(0, 10);
+      this.currentSemester = String(resultObj['xnxqmc'] ?? '');
+      Log.i('LearnAct', 'SEMESTER_INFO firstDay=%{public}d name=%{public}s',
+        this.semesterFirstDay.length, this.currentSemester);
+      return this.semesterFirstDay;
+    } catch (e) {
+      Log.i('LearnAct', 'SEMESTER_INFO ex=%{public}s', e instanceof Error ? e.message : String(e));
+      return '';
+    }
+  }
+
+  /**
+   * 成绩单（教务 zhjw HTML 表格，对齐原项目 grades.ts fetchGradeReport）：
+   * 漫游 yyfwid=B7EF0ADF... → GET cj.cjCjbAll.do?m=bks_cjdcx&cjdlx=zw&flag=di1 → 解析表格。
+   * 列序（bks，0 起）：3 课程名 / 5 学分 / 7 等级 / 9 绩点 / 11 学期。
+   */
+  async fetchGrades(): Promise<GradeReport> {
+    await this.ensureGradesRoam();
+    const url: string = SCHEDULE_BASE + '/cj.cjCjbAll.do?m=bks_cjdcx&cjdlx=zw&flag=di1';
+    const resp: HttpResponse = await this.http.get(url);
+    Log.i('LearnAct', 'GRADES code=%{public}d len=%{public}d head=%{public}s',
+      resp.statusCode, resp.body.length, resp.body.substring(0, 80));
+    if (resp.body.indexOf('time out用户登陆超时或访问内容不存在') >= 0) {
+      throw new Error('教务系统会话超时，请重新同步');
+    }
+    if (resp.body.indexOf('<title>清华大学WebVPN</title>') >= 0) {
+      throw new Error('WebVPN 会话失效，请重新登录');
+    }
+    const allRows: string[][] = parseGradeTableRows(resp.body);
+    const courses: CampusGrade[] = [];
+    for (let i: number = 1; i < allRows.length; i++) {
+      const cells: string[] = allRows[i];
+      if (cells.length < 12) {
+        continue;
+      }
+      const name: string = cells[3];
+      if (name.length === 0) {
+        continue;
+      }
+      const g: CampusGrade = new CampusGrade();
+      g.name = name;
+      g.credit = Number(cells[5]) || 0;
+      g.grade = cells[7];
+      g.point = Number(cells[9]);
+      g.semester = cells[11];
+      courses.push(g);
+    }
+    if (courses.length === 0 && resp.body.indexOf('table1') < 0) {
+      throw new Error('未解析到成绩数据');
+    }
+    const report: GradeReport = new GradeReport();
+    let totalCredit: number = 0;
+    let totalPoint: number = 0;
+    let allCredit: number = 0;
+    for (let i: number = 0; i < courses.length; i++) {
+      const c: CampusGrade = courses[i];
+      if (c.credit <= 0) {
+        continue;
+      }
+      allCredit += c.credit;
+      if (isNaN(c.point)) {
+        continue;
+      }
+      totalCredit += c.credit;
+      totalPoint += c.credit * c.point;
+    }
+    report.courses = courses;
+    report.totalCredit = totalCredit;
+    report.allCredit = allCredit;
+    report.gpa = totalCredit > 0 ? totalPoint / totalCredit : 0;
+    Log.i('LearnAct', 'GRADES courses=%{public}d gpa=%{public}f credit=%{public}f',
+      courses.length, report.gpa, report.allCredit);
+    return report;
+  }
+
+  /**
+   * 校园资讯列表（info 门户 JSON，对齐原项目 news.ts getNewsList）：
+   * GET /b/info/xxfb_fg/xnzx/template/more?oType=xs&lydw=&_csrf=..&lmid=all&currentPage=..&length=..
+   */
+  async fetchNewsList(page: number, length: number): Promise<CampusNews[]> {
+    const csrf: string = await this.getWebvpnCsrf();
+    if (csrf.length === 0) {
+      throw new Error('info 门户会话未建立');
+    }
+    const INFO_TOKEN: string = '77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de';
+    const base: string = 'https://webvpn.tsinghua.edu.cn/https/' + INFO_TOKEN;
+    const url: string = base + '/b/info/xxfb_fg/xnzx/template/more?oType=xs&lydw='
+      + '&_csrf=' + encodeURIComponent(csrf)
+      + '&lmid=all&currentPage=' + String(page) + '&length=' + String(length);
+    const resp: HttpResponse = await this.http.get(url);
+    Log.i('LearnAct', 'NEWS code=%{public}d len=%{public}d head=%{public}s',
+      resp.statusCode, resp.body.length, resp.body.substring(0, 100));
+    const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
+    const objField = json['object'] as Record<string, Object>;
+    if (objField === undefined || objField === null) {
+      throw new Error('资讯响应格式异常');
+    }
+    const rows = objField['dataList'] as Object[];
+    const result: CampusNews[] = [];
+    if (rows === undefined || rows === null) {
+      return result;
+    }
+    for (let i: number = 0; i < rows.length; i++) {
+      const row: Record<string, Object> = rows[i] as Record<string, Object>;
+      const title: string = decodeNumericEntities(decodeHtmlEntities(String(row['bt'] ?? ''))).trim();
+      if (title.length === 0) {
+        continue;
+      }
+      const item: CampusNews = new CampusNews();
+      item.id = String(row['xxid'] ?? '');
+      item.title = title;
+      item.date = String(row['time'] ?? '');
+      item.source = decodeNumericEntities(decodeHtmlEntities(String(row['dwmc_show'] ?? ''))).trim();
+      item.channel = NEWS_CHANNEL_LABELS[String(row['lmid'] ?? '')] ?? '通知';
+      item.topped = String(row['yxzd'] ?? '').indexOf('1-') >= 0;
+      result.push(item);
+    }
+    Log.i('LearnAct', 'NEWS items=%{public}d', result.length);
+    return result;
   }
 
   /** 作业：对每门课遍历 未交(Wj)/已交未批改(Yjwg)/已批改(Ypg)，POST aoData */

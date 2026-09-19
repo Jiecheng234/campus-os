@@ -16,6 +16,12 @@ export class BriefingMetrics {
 export class QuickAction {
   label: string = '';
   icon: string = '';
+  /** 目标底部 Tab（-1 = 未接入，保留 toast 提示） */
+  targetTab: number = -1;
+  /** 校园 Tab 下钻子页键（classroom/grades/news...），空则不下钻 */
+  campusSub: string = '';
+  /** 学习 Tab 子标签（课程/作业/通知/文件），空则不切换 */
+  learningTab: string = '';
 }
 
 export function getTodayCourses(): CourseItem[] {
@@ -53,6 +59,8 @@ export function getQuickActions(): QuickAction[] {
   const a1: QuickAction = new QuickAction();
   a1.icon = '🏫';
   a1.label = '查空教室';
+  a1.targetTab = 3;
+  a1.campusSub = 'classroom';
   actions.push(a1);
 
   const a2: QuickAction = new QuickAction();
@@ -63,6 +71,8 @@ export function getQuickActions(): QuickAction[] {
   const a3: QuickAction = new QuickAction();
   a3.icon = '📝';
   a3.label = '添加 DDL';
+  a3.targetTab = 1;
+  a3.learningTab = '作业';
   actions.push(a3);
   return actions;
 }

@@ -98,9 +98,15 @@ export struct SettingsPage {
             isOn: $demoMode,
             onToggle: (v: boolean) => { StateManager.settings.demoMode = v; }
           })
-          Divider().color(Theme.divider).margin({ left: Space.md })
+          Divider().color(Theme.divider)
+            .width('100%')
+            .constraintSize({ maxWidth: '100%' })
+            .margin({ left: Space.md })
           SettingSwitch({ label: '信任此设备', isOn: $trustDevice })
-          Divider().color(Theme.divider).margin({ left: Space.md })
+          Divider().color(Theme.divider)
+            .width('100%')
+            .constraintSize({ maxWidth: '100%' })
+            .margin({ left: Space.md })
           SettingRow({
             label: '语言',
             value: this.currentLang,
@@ -108,6 +114,7 @@ export struct SettingsPage {
           })
         }
         .width('100%')
+        .constraintSize({ maxWidth: '100%' })
         .borderRadius(Radius.lg)
         .backgroundColor(Theme.surface)
         .border({ width: 1, color: Theme.borderSubtle })
@@ -123,13 +130,19 @@ export struct SettingsPage {
             value: '已保存偏好',
             onItemClick: () => { promptAction.showToast({ message: 'AI 记忆 — 功能开发中', duration: 2000 }); }
           })
-          Divider().color(Theme.divider).margin({ left: Space.md })
+          Divider().color(Theme.divider)
+            .width('100%')
+            .constraintSize({ maxWidth: '100%' })
+            .margin({ left: Space.md })
           SettingRow({
             label: '操作记录',
             value: '查看最近操作',
             onItemClick: () => { promptAction.showToast({ message: '操作记录 — 功能开发中', duration: 2000 }); }
           })
-          Divider().color(Theme.divider).margin({ left: Space.md })
+          Divider().color(Theme.divider)
+            .width('100%')
+            .constraintSize({ maxWidth: '100%' })
+            .margin({ left: Space.md })
           SettingRow({
             label: '智能监控',
             value: '管理提醒监控项',
@@ -137,6 +150,7 @@ export struct SettingsPage {
           })
         }
         .width('100%')
+        .constraintSize({ maxWidth: '100%' })
         .borderRadius(Radius.lg)
         .backgroundColor(Theme.surface)
         .border({ width: 1, color: Theme.borderSubtle })
@@ -148,6 +162,7 @@ export struct SettingsPage {
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.error)
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .textAlign(TextAlign.Center)
           .padding(Space.md)
           .borderRadius(Radius.lg)

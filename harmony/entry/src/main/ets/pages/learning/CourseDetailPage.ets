@@ -56,6 +56,7 @@ export struct CourseDetailPage {
             .width('100%')
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(16)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)

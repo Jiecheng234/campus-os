@@ -1,35 +1,38 @@
 /**
- * GradesPage — 成绩查询
+ * GradesPage — 成绩查询（真实模式：教务 zhjw 成绩单 + GPA；演示模式：内置示例）
  */
-import { Theme, SafeTop } from './Theme';
+import { Theme, SafeTop, Space, FontSize } from './Theme';
 import { DetailHeader } from '../components/Ui';
+import { SessionManager } from '../services/auth/SessionManager';
+import { CampusGrade, GradeReport } from '../services/campus/CampusDataService';
+import { AuthManager } from '../state/AuthManager';
+import { StateManager } from '../state/StateManager';
 
 class GradeItem {
   name: string = '';
   credits: number = 0;
   grade: string = '';
+  semester: string = '';
 }
 
 function getMockGrades(): GradeItem[] {
   const list: GradeItem[] = [];
-  const g1: GradeItem = new GradeItem();
-  g1.name = '高等数学(1)'; g1.credits = 4; g1.grade = 'A';
-  list.push(g1);
-  const g2: GradeItem = new GradeItem();
-  g2.name = '大学物理B(2)'; g2.credits = 4; g2.grade = 'A-';
-  list.push(g2);
-  const g3: GradeItem = new GradeItem();
-  g3.name = '线性代数'; g3.credits = 3; g3.grade = 'B+';
-  list.push(g3);
-  const g4: GradeItem = new GradeItem();
-  g4.name = '英语阅读(4)'; g4.credits = 2; g4.grade = 'B';
-  list.push(g4);
-  const g5: GradeItem = new GradeItem();
-  g5.name = '物理实验A(1)'; g5.credits = 1; g5.grade = 'A';
-  list.push(g5);
-  const g6: GradeItem = new GradeItem();
-  g6.name = '体育(3)'; g6.credits = 1; g6.grade = 'A-';
-  list.push(g6);
+  const rows: string[][] = [
+    ['高等数学(1)', '4', 'A', ''],
+    ['大学物理B(2)', '4', 'A-', ''],
+    ['线性代数', '3', 'B+', ''],
+    ['英语阅读(4)', '2', 'B', ''],
+    ['物理实验A(1)', '1', 'A', ''],
+    ['体育(3)', '1', 'A-', ''],
+  ];
+  for (let i: number = 0; i < rows.length; i++) {
+    const g: GradeItem = new GradeItem();
+    g.name = rows[i][0];
+    g.credits = Number(rows[i][1]);
+    g.grade = rows[i][2];
+    g.semester = rows[i][3];
+    list.push(g);
+  }
   return list;
 }
 
@@ -49,7 +52,44 @@ function gradeColor(grade: string): string {
 @Component
 export struct GradesPage {
   onBack: () => void = () => {};
-  private grades: GradeItem[] = getMockGrades();
+  @State grades: GradeItem[] = getMockGrades();
+  @State gpaText: string = '3.72';
+  @State subtitleText: string = '2025—2026 春季学期 · 演示数据';
+  @State loading: boolean = false;
+  @State errorText: string = '';
+  private isReal: boolean = false;
+
+  aboutToAppear(): void {
+    this.isReal = AuthManager.isLoggedIn() && !StateManager.isDemoMode();
+    if (this.isReal) {
+      this.loadGrades();
+    }
+  }
+
+  private async loadGrades(): Promise<void> {
+    this.loading = true;
+    this.errorText = '';
+    try {
+      const report: GradeReport = await SessionManager.getCampusDataService().fetchGrades();
+      const items: GradeItem[] = [];
+      // 倒序：最新学期在前
+      for (let i: number = report.courses.length - 1; i >= 0; i--) {
+        const c: CampusGrade = report.courses[i];
+        const item: GradeItem = new GradeItem();
+        item.name = c.name;
+        item.credits = c.credit;
+        item.grade = c.grade;
+        item.semester = c.semester;
+        items.push(item);
+      }
+      this.grades = items;
+      this.gpaText = report.gpa.toFixed(2);
+      this.subtitleText = `已修 ${report.allCredit} 学分（计入绩点 ${report.totalCredit}）· 共 ${items.length} 门`;
+    } catch (e) {
+      this.errorText = e instanceof Error ? e.message : String(e);
+    }
+    this.loading = false;
+  }
 
   build() {
     Column() {
@@ -59,16 +99,49 @@ export struct GradesPage {
 
       Divider().color(Theme.divider)
 
-      // 学期信息 + GPA
+      // GPA 汇总
       Column() {
-        Text('2025—2026 春季学期')
+        Text(this.subtitleText)
           .fontSize(13)
           .fontColor(Theme.textMuted)
-        Text('GPA: 3.72')
-          .fontSize(28)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Theme.primary)
-          .margin({ top: 4 })
+          .textAlign(TextAlign.Center)
+        Row({ space: Space.sm }) {
+          Text('GPA')
+            .fontSize(14)
+            .fontColor(Theme.textMuted)
+          Text(this.gpaText)
+            .fontSize(28)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Theme.primary)
+          if (this.loading) {
+            LoadingProgress()
+              .width(18)
+              .height(18)
+              .color(Theme.primary)
+              .margin({ left: Space.xs })
+          }
+        }
+        .margin({ top: 4 })
+
+        if (this.errorText.length > 0) {
+          Column({ space: Space.sm }) {
+            Text(this.errorText)
+              .fontSize(FontSize.caption)
+              .fontColor(Theme.warning)
+              .textAlign(TextAlign.Center)
+            Text('重试')
+              .fontSize(FontSize.caption)
+              .fontColor(Theme.primary)
+              .padding({
+                left: Space.md, right: Space.md,
+                top: Space.xs, bottom: Space.xs,
+              })
+              .borderRadius(8)
+              .border({ width: 1, color: Theme.primary })
+              .onClick(() => { this.loadGrades(); })
+          }
+          .margin({ top: Space.sm })
+        }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
@@ -84,7 +157,9 @@ export struct GradesPage {
                   .fontSize(15)
                   .fontWeight(FontWeight.Medium)
                   .fontColor(Theme.text)
-                Text(`${item.credits} 学分`)
+                Text(item.semester.length > 0
+                  ? `${item.credits} 学分 · ${item.semester}`
+                  : `${item.credits} 学分`)
                   .fontSize(12)
                   .fontColor(Theme.textMuted)
                   .margin({ top: 2 })
@@ -92,7 +167,7 @@ export struct GradesPage {
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
 
-              Text(item.grade)
+              Text(item.grade.length > 0 ? item.grade : '-')
                 .fontSize(18)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(gradeColor(item.grade))

@@ -79,6 +79,7 @@ export struct DormitoryPage {
               .backgroundColor(Theme.primary)
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(16)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)
@@ -120,6 +121,7 @@ export struct DormitoryPage {
               .backgroundColor('rgba(22,163,74,0.10)')
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .padding(16)
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)
@@ -142,6 +144,7 @@ export struct DormitoryPage {
             .onClick(() => {})
           }
           .width('100%')
+          .constraintSize({ maxWidth: '100%' })
           .borderRadius(Theme.cardRadius)
           .backgroundColor(Theme.surface)
           .border({ width: 1, color: Theme.borderSubtle })
