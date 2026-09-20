@@ -38,6 +38,17 @@ const SCHEDULE_BASE: string = 'https://webvpn.tsinghua.edu.cn/http/77726476706e6
 /** info 门户 webvpn 前缀（新闻列表/详情等，对齐原项目 ENDPOINTS.newsRedirectBase） */
 const INFO_BASE: string = 'https://webvpn.tsinghua.edu.cn/https/77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de';
 
+/** 宿舍电费 webvpn token（对齐原项目 ELE_TOKEN，GBK 后端） */
+const ELE_TOKEN: string = '77726476706e69737468656265737421fdee49932a3526446d0187ab9040227bca90a6e14cc9';
+/** 电费余额详情页（只读） */
+const ELE_REMAINDER_URL: string = 'https://webvpn.tsinghua.edu.cn/http/' + ELE_TOKEN + '/Netweb_List/Netweb_Home_electricity_Detail.aspx';
+/** 充值着陆页（含房间信息隐藏 input，只读解析房间信息用） */
+const ELE_RECHARGE_URL: string = 'https://webvpn.tsinghua.edu.cn/http/' + ELE_TOKEN + '/netweb_user/recharge_ele.aspx';
+/** 缴费记录 */
+const ELE_PAY_RECORD_URL: string = 'https://webvpn.tsinghua.edu.cn/http/' + ELE_TOKEN + '/Netweb_List/netweb_ele_pay_record.aspx';
+/** 电费子系统 id-roam payload（对齐原项目 SUBSYSTEM_YYFWID.dormElectricity） */
+const ELE_YYFWID: string = '0a993de7e533cd43a594459abdcab27d/1';
+
 function pad2(n: number): string {
   return n < 10 ? '0' + String(n) : String(n);
 }
@@ -561,6 +572,182 @@ function classifyClassroomCell(tdAttr: string): ClassroomStatus {
   return ClassroomStatus.AVAILABLE;
 }
 
+/** 体测成绩单项（label-value 行） */
+export class PETestItem {
+  label: string = '';
+  value: string = '';
+}
+
+/** 体测漫游应用 ID 与成绩 JSON 接口（对齐原项目 PETEST_YYFWID / PHYSICAL_EXAM_URL） */
+const PETEST_YYFWID: string = '8BF4F9A706589060488B6B6179E462E5';
+const PETEST_URL: string = SCHEDULE_BASE + '/tyjx.tyjx_tc_xscjb.do?m=jsonCj';
+
+function peNum(json: Record<string, Object>, key: string): number {
+  const v: Object | undefined = json[key];
+  if (v === undefined || v === null) {
+    return 0;
+  }
+  return Number(v) || 0;
+}
+
+function peStr(json: Record<string, Object>, key: string): string {
+  return String(json[key] ?? '');
+}
+
+/** 与 thu-info-lib 一致的参考成绩计算 */
+function calcPEReference(json: Record<string, Object>): number {
+  return peNum(json, 'fhltzfs') * 0.15
+    + peNum(json, 'wsmpfs') * 0.2
+    + peNum(json, 'zwtqqfs') * 0.1
+    + peNum(json, 'ldtyfs') * 0.1
+    + peNum(json, 'ytxsfs') * 0.1
+    + peNum(json, 'yqmpfs') * 0.2
+    + peNum(json, 'ywqzfs') * 0.1
+    + peNum(json, 'bbmpfs') * 0.2
+    + peNum(json, 'sgtzfs') * 0.15;
+}
+
+function pushPEItem(rows: PETestItem[], label: string, value: string): void {
+  const it: PETestItem = new PETestItem();
+  it.label = label;
+  it.value = value;
+  rows.push(it);
+}
+
+/**
+ * 解析体测成绩 JSON（对齐原项目 fetchPEResult）：
+ * success 为 false → 占位状态行；否则 27 项过滤空值/'null'/'undefined'。
+ */
+function parsePEResult(text: string): PETestItem[] {
+  const json: Record<string, Object> = JSON.parse(text) as Record<string, Object>;
+  const successVal: Object | undefined = json['success'];
+  if (successVal !== undefined && successVal !== null && String(successVal) === 'false') {
+    const rows: PETestItem[] = [];
+    pushPEItem(rows, '状态', '暂无可查成绩');
+    return rows;
+  }
+  const rows: PETestItem[] = [];
+  pushPEItem(rows, '是否免测', peStr(json, 'sfmc'));
+  pushPEItem(rows, '免测原因', peStr(json, 'mcyy'));
+  pushPEItem(rows, '总分', peStr(json, 'zf'));
+  pushPEItem(rows, '标准分', peStr(json, 'bzf'));
+  pushPEItem(rows, '附加分', peStr(json, 'fjf'));
+  pushPEItem(rows, '长跑附加分', peStr(json, 'cpfjf'));
+  pushPEItem(rows, '参考成绩（自动结算）', calcPEReference(json).toFixed(2));
+  pushPEItem(rows, '身高', peStr(json, 'sg'));
+  pushPEItem(rows, '体重', peStr(json, 'tz'));
+  pushPEItem(rows, '身高体重分数', peStr(json, 'sgtzfs'));
+  pushPEItem(rows, '肺活量', peStr(json, 'fhl'));
+  pushPEItem(rows, '肺活量分数', peStr(json, 'fhltzfs'));
+  pushPEItem(rows, '800M 跑', peStr(json, 'bbmp'));
+  pushPEItem(rows, '800M 跑分数', peStr(json, 'bbmpfs'));
+  pushPEItem(rows, '1000M 跑', peStr(json, 'yqmp'));
+  pushPEItem(rows, '1000M 跑分数', peStr(json, 'yqmpfs'));
+  pushPEItem(rows, '50M 跑', peStr(json, 'wsmp'));
+  pushPEItem(rows, '50M 跑分数', peStr(json, 'wsmpfs'));
+  pushPEItem(rows, '立定跳远', peStr(json, 'ldty'));
+  pushPEItem(rows, '立定跳远分数', peStr(json, 'ldtyfs'));
+  pushPEItem(rows, '坐位体前屈', peStr(json, 'zwtqq'));
+  pushPEItem(rows, '坐位体前屈分数', peStr(json, 'zwtqqfs'));
+  pushPEItem(rows, '仰卧起坐', peStr(json, 'ywqz'));
+  pushPEItem(rows, '仰卧起坐分数', peStr(json, 'ywqzfs'));
+  pushPEItem(rows, '引体向上', peStr(json, 'ytxs'));
+  pushPEItem(rows, '引体向上分数', peStr(json, 'ytxsfs'));
+  pushPEItem(rows, '体育课成绩', peStr(json, 'tykcj'));
+  const filtered: PETestItem[] = [];
+  for (let i: number = 0; i < rows.length; i++) {
+    const v: string = rows[i].value;
+    if (v.length > 0 && v !== 'null' && v !== 'undefined') {
+      filtered.push(rows[i]);
+    }
+  }
+  return filtered;
+}
+
+// =============================================================
+// 宿舍电费（对齐原项目 electricity.ts 只读查询）
+// =============================================================
+
+/** 电费余额（度） */
+export class EleRemainder {
+  remainder: number = 0;
+  /** 更新时间 */
+  updateTime: string = '';
+}
+
+/** 电费户房间信息（充值着陆页隐藏 input） */
+export class EleRoomInfo {
+  userName: string = '';
+  building: string = '';
+  room: string = '';
+  studentId: string = '';
+}
+
+/** 电费页未登录时落回 net_Default 登录控件（对齐原项目 isLoginPage） */
+function isEleLoginPage(html: string): boolean {
+  return html.indexOf('net_Default_LoginCtrl1_txtUserName') >= 0;
+}
+
+/** 按 id 提取元素文本（ASP.NET Label 渲染为 <span id="...">text</span>） */
+function extractElementTextById(html: string, id: string): string {
+  const re: RegExp = new RegExp('<[a-zA-Z][^>]*\\bid=(?:"' + id + '"|\'' + id + '\')[^>]*>([^<]*)', 'i');
+  const m = re.exec(html);
+  if (m === null || m.length < 2) {
+    return '';
+  }
+  return decodeHtmlEntities(m[1]).replace(/\u00a0/g, ' ').trim();
+}
+
+/** 按 name 提取 input 的 value（对齐原项目 inputValue） */
+function extractInputValue(html: string, name: string): string {
+  const tagRe: RegExp = new RegExp('<input[^>]*name=(?:"' + name + '"|\'' + name + '\')[^>]*>', 'i');
+  const tag = tagRe.exec(html);
+  if (tag === null) {
+    return '';
+  }
+  const valRe: RegExp = /value=(?:"([^"]*)"|'([^']*)')/i;
+  const vm = valRe.exec(tag[0]);
+  if (vm === null) {
+    return '';
+  }
+  return decodeHtmlEntities(vm[1] !== undefined ? vm[1] : vm[2]);
+}
+
+/** 缴费记录列名（对齐原项目 RECORD_COLUMNS） */
+const ELE_RECORD_COLUMNS: string[] = ['充值时间', '充值', '充值前', '充值后', '操作员', '备注'];
+
+/**
+ * 解析缴费记录 .myTable（对齐原项目：全部 tr 计数，≤2 行 → 空，否则去头尾行）。
+ * td 文本压缩空白并解码实体。
+ */
+function parseElePayRecords(html: string): string[][] {
+  const rows: string[][] = [];
+  const tableRe: RegExp = /<table[^>]*class=(?:"[^"]*myTable[^"]*"|'[^']*myTable[^']*')[^>]*>([\s\S]*?)<\/table>/gi;
+  let tm = tableRe.exec(html);
+  while (tm !== null) {
+    const inner: string = tm[1];
+    const trRe: RegExp = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let trm = trRe.exec(inner);
+    while (trm !== null) {
+      const cells: string[] = [];
+      const tdRe: RegExp = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+      let tdm = tdRe.exec(trm[1]);
+      while (tdm !== null) {
+        const text: string = decodeHtmlEntities(tdm[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+        cells.push(text);
+        tdm = tdRe.exec(trm[1]);
+      }
+      rows.push(cells);
+      trm = trRe.exec(inner);
+    }
+    tm = tableRe.exec(html);
+  }
+  if (rows.length <= 2) {
+    return [];
+  }
+  return rows.slice(1, rows.length - 1);
+}
+
 /** 资讯栏目标签（对齐原项目 CHANNEL_LABELS 子集） */
 const NEWS_CHANNEL_LABELS: Record<string, string> = {
   'LM_BGTG': '办公通知',
@@ -581,6 +768,8 @@ export class CampusDataService {
   public currentSemester: string = '';
   private registrarRoamEnsured: boolean = false;
   private gradesRoamEnsured: boolean = false;
+  /** 电费子系统会话是否已通过 id-roam 建立 */
+  private eleSessionEnsured: boolean = false;
   private webvpnCsrf: string = '';
   /** 课表拉取状态：'unknown' 未拉过 / 'ok' JSONP 正常（可能为空）/ 'error' 拿到非 JSONP（会话失效等） */
   public scheduleStatus: string = 'unknown';
@@ -1445,5 +1634,122 @@ export class CampusDataService {
       week, resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
     this.ensureNotZhjwTimeout(resp.body);
     return resp.body;
+  }
+
+  /**
+   * 体测成绩：漫游 + 拉取包在 withSessionRecovery 内（会话失效自动恢复），解析在外。
+   */
+  async fetchPEResult(): Promise<PETestItem[]> {
+    const auth: TsinghuaAuthService = SessionManager.getAuthService();
+    const text: string = await auth.withSessionRecovery((): Promise<string> => {
+      return this.doFetchPEResultText();
+    }, async (): Promise<void> => {
+      await this.roamByYyfwid(PETEST_YYFWID);
+    }, 'campus-petest');
+    return parsePEResult(text);
+  }
+
+  private async doFetchPEResultText(): Promise<string> {
+    await this.roamByYyfwid(PETEST_YYFWID);
+    const resp: HttpResponse = await this.http.get(PETEST_URL);
+    Log.i('LearnAct', 'PETEST code=%{public}d len=%{public}d head=%{public}s',
+      resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
+    this.ensureNotZhjwTimeout(resp.body);
+    return resp.body;
+  }
+
+  // ============================================================
+  // 宿舍电费（对齐原项目 electricity.ts 只读查询；充值链不迁移）
+  // ============================================================
+
+  /** 建立电费子系统会话（id-roam '0a993.../1'）；force=true 时强制重漫游 */
+  private async ensureEleSession(force: boolean): Promise<void> {
+    if (this.eleSessionEnsured && !force) {
+      return;
+    }
+    const auth: TsinghuaAuthService = SessionManager.getAuthService();
+    await auth.roamIdSubsystem(ELE_YYFWID);
+    this.eleSessionEnsured = true;
+  }
+
+  /**
+   * 电费余额（核心数据）。会话建立在外层；漫游+拉取包在 withSessionRecovery 内，
+   * 失败时重置 eleSessionEnsured 并强制重漫游（对齐原项目 withEleRetry）。
+   */
+  async getEleRemainder(): Promise<EleRemainder> {
+    await this.ensureEleSession(false);
+    const auth: TsinghuaAuthService = SessionManager.getAuthService();
+    return auth.withSessionRecovery((): Promise<EleRemainder> => {
+      return this.doGetEleRemainder();
+    }, async (): Promise<void> => {
+      this.eleSessionEnsured = false;
+      await this.ensureEleSession(true);
+    }, 'ele-remainder');
+  }
+
+  private async doGetEleRemainder(): Promise<EleRemainder> {
+    const resp: HttpResponse = await this.http.get(ELE_REMAINDER_URL);
+    Log.i('LearnAct', 'ELE_DETAIL code=%{public}d len=%{public}d head=%{public}s',
+      resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
+    if (isEleLoginPage(resp.body)) {
+      throw new Error('电费会话失效');
+    }
+    const remainderText: string = extractElementTextById(resp.body, 'Netweb_Home_electricity_DetailCtrl1_lblele');
+    if (remainderText.length === 0) {
+      throw new Error('未解析到电费余额');
+    }
+    const result: EleRemainder = new EleRemainder();
+    result.remainder = Number(remainderText);
+    result.updateTime = extractElementTextById(resp.body, 'Netweb_Home_electricity_DetailCtrl1_lbltime');
+    return result;
+  }
+
+  /** 房间信息（充值着陆页隐藏 input：户名/楼号/房间/学号） */
+  async getEleRoomInfo(): Promise<EleRoomInfo> {
+    await this.ensureEleSession(false);
+    const auth: TsinghuaAuthService = SessionManager.getAuthService();
+    return auth.withSessionRecovery((): Promise<EleRoomInfo> => {
+      return this.doGetEleRoomInfo();
+    }, async (): Promise<void> => {
+      this.eleSessionEnsured = false;
+      await this.ensureEleSession(true);
+    }, 'ele-room');
+  }
+
+  private async doGetEleRoomInfo(): Promise<EleRoomInfo> {
+    const resp: HttpResponse = await this.http.get(ELE_RECHARGE_URL);
+    Log.i('LearnAct', 'ELE_ROOM code=%{public}d len=%{public}d head=%{public}s',
+      resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
+    if (isEleLoginPage(resp.body)) {
+      throw new Error('电费会话失效');
+    }
+    const info: EleRoomInfo = new EleRoomInfo();
+    info.userName = extractInputValue(resp.body, 'username');
+    info.building = extractInputValue(resp.body, 'louhao');
+    info.room = extractInputValue(resp.body, 'room');
+    info.studentId = extractInputValue(resp.body, 'student_id');
+    return info;
+  }
+
+  /** 缴费记录（每行 6 列：充值时间/充值/充值前/充值后/操作员/备注） */
+  async getElePayRecords(): Promise<string[][]> {
+    await this.ensureEleSession(false);
+    const auth: TsinghuaAuthService = SessionManager.getAuthService();
+    return auth.withSessionRecovery((): Promise<string[][]> => {
+      return this.doGetElePayRecords();
+    }, async (): Promise<void> => {
+      this.eleSessionEnsured = false;
+      await this.ensureEleSession(true);
+    }, 'ele-records');
+  }
+
+  private async doGetElePayRecords(): Promise<string[][]> {
+    const resp: HttpResponse = await this.http.get(ELE_PAY_RECORD_URL);
+    Log.i('LearnAct', 'ELE_RECORD code=%{public}d len=%{public}d head=%{public}s',
+      resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
+    if (isEleLoginPage(resp.body)) {
+      throw new Error('电费会话失效');
+    }
+    return parseElePayRecords(resp.body);
   }
 }

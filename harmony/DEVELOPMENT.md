@@ -205,10 +205,21 @@ GET  learnStudentHome                   学生首页
 - **GPA 0.00**（CampusDataService.ets）：原项目 `htmlSelect.childText(tr, N)` 按 cheerio **子节点序**取值——children 含标签间换行缩进**文本节点**，`childText(tr,3/5/7/9/11)` 实为第 2/3/4/5/6 个 td。我们旧版只数 td 且 `cells.length < 12` guard 把所有行滤光 → 空报表 GPA 0.00。重写 `parseGradeTableChildren/parseGradeRowChildren`（文本节点与 td 各占一席），守卫改 `children.length < 12`，并打 row0/row1 诊断日志（tag `LearnAct` `GRADES row0=[..]`）。顺带修 `Number('')=0` bug：绩点空列 → NaN（P/F 课不计学分绩）。
 - **资讯 `&ldquo;` 未解码**：`decodeHtmlEntities` 补 NAMED_HTML_ENTITIES 映射（ldquo/rdquo/mdash/ndash/hellip/middot/bull/times/copy/deg 等 20 项）；解码顺序=数值 → 命名（不含 amp）→ `&amp;` 最后（防 `&amp;ldquo;` 二次解码）；fetchNewsList 调用点去掉冗余外层 decodeNumericEntities。
 
+### 校园服务真实数据接入（2026-09-20，六项分步推进）
+
+- **资讯详情**：info 门户 `/b/info/xxfb_fg/xnzx/template/detail?_csrf=..&xxid=..`，正文 HTML 经 `stripScriptBlocks/fixNewsAssets` 清洗后 ArkWeb `loadData` 渲染（raw + utf-8 + baseUrl + 第 5 参 historyUrl，缺省 401）；附件列表可复制链接。
+- **成绩学期分组**（GradesPage）：按学期分组渲染，分组头显示该组 GPA（Σcredit×point/Σcredit，P/F 计学分不计绩点），整体 GPA 沿用服务器 `report.gpa`。
+- **空闲教室**（ClassroomPage）：zhjw `jxmh_out.do` 教室状态查询，超时标记（`time out用户登陆超时…`）检测 + `withSessionRecovery` 会话自愈；楼名搜索 `gb2312PercentEncode`（`util.TextDecoder.create('gbk')` 运行时暴力构建反查表）；固定 6 大节/天。
+- **体测成绩**（PETestPage）：zhjw `tyjx.tyjx_tc_xscjb.do?m=jsonCj` 解析 27 项 + 参考成绩加权公式。⚠️ 已知问题：该端点实测返回 JSONP 括号包裹 `({'success':'false'})`，原 RN 版行为一致（同样失败），暂按上游行为保留，页面错误态可重试。
+- **宿舍电费**（DormitoryPage）：id-roam 电费子系统（yyfwid `0a993…/1`，`TsinghuaAuthService.roamIdSubsystem` 复用登录链 `roamIdPolicy`）→ webvpn 只读页 `Netweb_Home_electricity_Detail.aspx`：剩余电量（lblele）+ 房间信息（input value 提取）+ 缴费记录（myTable 正则）。登录页检测会话失效自动重漫游；余额核心 await，房间/记录失败不阻塞（对齐原项目 allSettled）。充值链不迁移，按钮 toast 提示走网页。用户实测余额/房间/记录正常。
+- **UI 边界修复**：宿舍页卡片 `width('100%')` + 左右 margin 导致右缘溢出，补 `constraintSize({ maxWidth: '100%' })`（对齐 HomePage 模式）。
+
 ### 其他待办
 
-- 成绩/资讯详情页（资讯详情需 WebView 渲染 info 门户 HTML）
-- 宿舍电费/校园卡/校园网/场馆预约等子页真实数据（各自独立 webvpn 域，需单独漫游调试）
+- 校园卡真实数据（下一项：card.tsinghua.edu.cn 直连域，AES-ECB 解密 + `postJson` + card roam，对齐原项目 campusCard.ts）
+- 校园网/场馆预约等子页真实数据（各自独立 webvpn 域，需单独漫游调试）
+- 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
+- 资讯详情页视觉打磨（六项数据接入全部完成后）
 - 修复 #3 密码明文存储（`SecureStorage` 当前仅 URL-encode，应改用 Asset Store Kit 或加密）
 
 ---

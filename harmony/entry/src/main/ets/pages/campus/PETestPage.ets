@@ -1,111 +1,271 @@
-import { Theme, SafeTop } from '../Theme';
+/**
+ * PETestPage — 体测成绩（真实模式：教务 zhjw 体测 JSON；演示模式：内置示例）
+ * 拆成"总览 / 单项成绩"两组展示（对齐原项目 PEtestScreen summaryKeys 拆分）。
+ */
+import { Theme, SafeTop, Space } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
+import { SessionManager } from '../../services/auth/SessionManager';
+import { CampusDataService, PETestItem } from '../../services/campus/CampusDataService';
+import { AuthManager } from '../../state/AuthManager';
+import { StateManager } from '../../state/StateManager';
 
-class PETestResult {
-  name: string = '';
-  score: number = 0;
-  grade: string = '';
-  standard: string = '';
-  date: string = '';
+/** 总览组标签（对齐原项目 summaryKeys） */
+const SUMMARY_LABELS: string[] = [
+  '是否免测', '免测原因', '总分', '标准分', '附加分', '长跑附加分', '参考成绩（自动结算）', '体育课成绩',
+];
+
+function isSummaryLabel(label: string): boolean {
+  for (let i: number = 0; i < SUMMARY_LABELS.length; i++) {
+    if (SUMMARY_LABELS[i] === label) {
+      return true;
+    }
+  }
+  return false;
 }
 
-function getMockPETest(): PETestResult[] {
-  const list: PETestResult[] = [];
-  const r1: PETestResult = new PETestResult();
-  r1.name = '50米跑'; r1.score = 78; r1.grade = '良好'; r1.standard = '≥70'; r1.date = '2025-11-15';
-  list.push(r1);
-  const r2: PETestResult = new PETestResult();
-  r2.name = '1000米跑'; r2.score = 85; r2.grade = '优秀'; r2.standard = '≥80'; r2.date = '2025-11-15';
-  list.push(r2);
-  const r3: PETestResult = new PETestResult();
-  r3.name = '立定跳远'; r3.score = 72; r3.grade = '良好'; r3.standard = '≥70'; r3.date = '2025-11-15';
-  list.push(r3);
-  const r4: PETestResult = new PETestResult();
-  r4.name = '引体向上'; r4.score = 65; r4.grade = '及格'; r4.standard = '≥60'; r4.date = '2025-11-15';
-  list.push(r4);
-  const r5: PETestResult = new PETestResult();
-  r5.name = '坐位体前屈'; r5.score = 90; r5.grade = '优秀'; r5.standard = '≥80'; r5.date = '2025-11-15';
-  list.push(r5);
-  const r6: PETestResult = new PETestResult();
-  r6.name = '肺活量'; r6.score = 82; r6.grade = '优秀'; r6.standard = '≥80'; r6.date = '2025-11-15';
-  list.push(r6);
+/** 总分/参考成绩做主色强调（对齐原项目 isNumericScore） */
+function isAccentLabel(label: string): boolean {
+  return label === '总分' || label === '参考成绩（自动结算）';
+}
+
+function getMockPETest(): PETestItem[] {
+  const rows: string[][] = [
+    ['是否免测', '否'],
+    ['总分', '472'],
+    ['标准分', '468'],
+    ['附加分', '4'],
+    ['参考成绩（自动结算）', '82.60'],
+    ['体育课成绩', '92'],
+    ['身高', '178'],
+    ['体重', '68'],
+    ['身高体重分数', '78'],
+    ['肺活量', '4350'],
+    ['肺活量分数', '82'],
+    ['1000M 跑', "3'45\""],
+    ['1000M 跑分数', '85'],
+    ['50M 跑', '7.1'],
+    ['50M 跑分数', '78'],
+    ['立定跳远', '2.45'],
+    ['立定跳远分数', '72'],
+    ['引体向上', '12'],
+    ['引体向上分数', '65'],
+    ['坐位体前屈', '14.2'],
+    ['坐位体前屈分数', '90'],
+  ];
+  const list: PETestItem[] = [];
+  for (let i: number = 0; i < rows.length; i++) {
+    const it: PETestItem = new PETestItem();
+    it.label = rows[i][0];
+    it.value = rows[i][1];
+    list.push(it);
+  }
   return list;
-}
-
-function gradeColor(grade: string): string {
-  if (grade === '优秀') { return '#16A34A'; }
-  if (grade === '良好') { return '#CA8A04'; }
-  if (grade === '及格') { return '#D97706'; }
-  return '#DC2626';
 }
 
 @Component
 export struct PETestPage {
   onBack: () => void = () => {};
-  private results: PETestResult[] = getMockPETest();
-  private totalScore: number = 472;
-  private totalGrade: string = '良好';
+  @State items: PETestItem[] = [];
+  @State summary: PETestItem[] = [];
+  @State details: PETestItem[] = [];
+  @State loading: boolean = false;
+  @State errorText: string = '';
+  private isReal: boolean = false;
+
+  aboutToAppear(): void {
+    this.isReal = AuthManager.isLoggedIn() && !StateManager.isDemoMode();
+    if (this.isReal) {
+      this.load();
+    } else {
+      this.applyItems(getMockPETest());
+    }
+  }
+
+  private applyItems(items: PETestItem[]): void {
+    this.items = items;
+    const summary: PETestItem[] = [];
+    const details: PETestItem[] = [];
+    for (let i: number = 0; i < items.length; i++) {
+      if (isSummaryLabel(items[i].label)) {
+        summary.push(items[i]);
+      } else {
+        details.push(items[i]);
+      }
+    }
+    this.summary = summary;
+    this.details = details;
+  }
+
+  private async load(): Promise<void> {
+    if (this.loading) {
+      return;
+    }
+    this.loading = true;
+    this.errorText = '';
+    try {
+      const service: CampusDataService = SessionManager.getCampusDataService();
+      const rows: PETestItem[] = await service.fetchPEResult();
+      this.applyItems(rows);
+    } catch (e) {
+      this.errorText = e instanceof Error ? e.message : String(e);
+      this.applyItems([]);
+    }
+    this.loading = false;
+  }
+
+  private refresh(): void {
+    if (this.isReal) {
+      this.load();
+    } else {
+      this.applyItems(getMockPETest());
+    }
+  }
+
+  @Builder RightAction() {
+    if (this.loading) {
+      LoadingProgress()
+        .width(20)
+        .height(20)
+        .color(Theme.primary)
+    } else {
+      Text('刷新')
+        .fontSize(14)
+        .fontColor(Theme.primary)
+        .padding({ left: 12, right: 4, top: 8, bottom: 8 })
+        .onClick(() => { this.refresh(); })
+    }
+  }
+
+  @Builder SectionHeader(title: string) {
+    Text(title)
+      .fontSize(13)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(Theme.textSecondary)
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 16, bottom: 8 })
+  }
+
+  @Builder ItemRow(item: PETestItem) {
+    Row() {
+      Text(item.label)
+        .fontSize(14)
+        .fontColor(Theme.textSecondary)
+        .layoutWeight(1)
+      if (isAccentLabel(item.label)) {
+        Text(item.value)
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Theme.primary)
+      } else {
+        Text(item.value)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Theme.text)
+      }
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+  }
 
   build() {
     Column() {
       SafeTop()
 
-      DetailHeader({ title: '体测成绩', onBack: () => { this.onBack(); } })
+      DetailHeader({
+        title: '体测成绩',
+        onBack: () => { this.onBack(); },
+        right: (): void => { this.RightAction(); },
+      })
 
       Divider().color(Theme.divider)
 
-      Column() {
-        Text('2025-2026 学年度')
-          .fontSize(13)
+      if (!this.isReal) {
+        Text('演示数据 · 登录后显示真实成绩')
+          .fontSize(12)
           .fontColor(Theme.textMuted)
-        Text(`${this.totalScore} 分  ·  ${this.totalGrade}`)
-          .fontSize(24)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(gradeColor(this.totalGrade))
-          .margin({ top: 4 })
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 8, bottom: 0 })
       }
-      .width('100%')
-      .alignItems(HorizontalAlign.Center)
-      .padding({ top: 24, bottom: 20 })
 
-      List() {
-        ForEach(this.results, (item: PETestResult) => {
-          ListItem() {
-            Row() {
-              Column() {
-                Text(item.name)
-                  .fontSize(15)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor(Theme.text)
-                Text(item.date)
-                  .fontSize(12)
-                  .fontColor(Theme.textMuted)
-                  .margin({ top: 2 })
-              }
-              .alignItems(HorizontalAlign.Start)
-              .layoutWeight(1)
-
-              Column() {
-                Text(String(item.score))
-                  .fontSize(18)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(gradeColor(item.grade))
-                Text(item.grade)
-                  .fontSize(11)
-                  .fontColor(gradeColor(item.grade))
-              }
-              .alignItems(HorizontalAlign.End)
-              .margin({ right: 4 })
+      if (this.loading && this.items.length === 0) {
+        Column({ space: Space.sm }) {
+          LoadingProgress()
+            .width(32)
+            .height(32)
+            .color(Theme.primary)
+          Text('正在加载体测成绩...')
+            .fontSize(13)
+            .fontColor(Theme.textMuted)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+      } else if (this.errorText.length > 0) {
+        Column({ space: Space.sm }) {
+          Text('体测成绩加载失败')
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Theme.text)
+          Text(this.errorText)
+            .fontSize(13)
+            .fontColor(Theme.textMuted)
+            .textAlign(TextAlign.Center)
+          Text('重试')
+            .fontSize(13)
+            .fontColor(Theme.primary)
+            .padding({ left: Space.md, right: Space.md, top: Space.xs, bottom: Space.xs })
+            .borderRadius(8)
+            .border({ width: 1, color: Theme.primary })
+            .onClick(() => { this.load(); })
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .padding({ left: Space.lg, right: Space.lg })
+      } else if (this.items.length === 0) {
+        Column({ space: Space.sm }) {
+          Text('暂无体测数据')
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Theme.text)
+          Text('教务系统暂未返回体测记录，可以稍后刷新。')
+            .fontSize(13)
+            .fontColor(Theme.textMuted)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else {
+        List() {
+          if (this.summary.length > 0) {
+            ListItemGroup({ header: this.SectionHeader('总览') }) {
+              ForEach(this.summary, (item: PETestItem) => {
+                ListItem() {
+                  this.ItemRow(item)
+                }
+              }, (item: PETestItem) => item.label)
             }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 14, bottom: 14 })
-            .alignItems(VerticalAlign.Center)
+            .divider({ strokeWidth: 0.5, color: Theme.divider })
           }
-        })
+          if (this.details.length > 0) {
+            ListItemGroup({ header: this.SectionHeader('单项成绩') }) {
+              ForEach(this.details, (item: PETestItem) => {
+                ListItem() {
+                  this.ItemRow(item)
+                }
+              }, (item: PETestItem) => item.label)
+            }
+            .divider({ strokeWidth: 0.5, color: Theme.divider })
+          }
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
       }
-      .width('100%')
-      .layoutWeight(1)
-      .divider({ strokeWidth: 0.5, color: Theme.divider })
     }
     .width('100%')
     .height('100%')

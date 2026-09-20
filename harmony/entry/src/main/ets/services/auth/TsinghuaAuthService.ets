@@ -448,6 +448,16 @@ export class TsinghuaAuthService {
   }
 
   /**
+   * 子系统 id-roam（对齐原项目 roam("id", payload)：宿舍电费等子系统）。
+   * 取凭证 → roamIdPolicy（GET ID 表单 + SM2 → POST id_login_check → follow lbredirect）；
+   * 凭证缺失时抛"未登录"。
+   */
+  async roamIdSubsystem(payload: string): Promise<void> {
+    const creds: CampusCredentials = await this.getRoamCredentials();
+    await this.roamIdPolicy(creds, payload);
+  }
+
+  /**
    * 两层会话兜底（原项目 withSessionRecovery，语义逐行对齐）：
    *   1. 直跑 operation
    *   2. 失败 → onReroam（默认重新漫游 info 门户）→ 重跑 operation
