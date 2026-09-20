@@ -75,6 +75,8 @@ export class TsinghuaAuthService {
   private csrfToken: string = '';
   private trace: string[] = [];
   private cachedCredentials: CampusCredentials | undefined = undefined;
+  /** 同一时刻只允许一个完整重登录 Promise 在跑（withSessionRecovery 兜底层用） */
+  private reloginInflight: Promise<void> | undefined = undefined;
   private twoFactorHandler: TwoFactorHandler | undefined = undefined;
   private twoFactorMethod: string = 'mobile';
   private http: HttpClient;
@@ -301,11 +303,17 @@ export class TsinghuaAuthService {
         'i_captcha': '',
       };
       response = await this.http.postForm(ID_LOGIN_URL, fd).then((r: HttpResponse) => r.body);
-      if (response.indexOf('登录成功') >= 0) {
+      // roam 阶段 2FA 重现（对齐原项目 RoamTwoFactorError）：直接抛错，
+      // 交由 withSessionRecovery 完整重登录兜底（login 内 saveFinger 已信任设备，
+      // 正常情况下重登录后不会再触发 2FA）
+      if (response.indexOf(TWO_FACTOR_MARK) >= 0) {
+        throw new Error('roam: 2FA reappeared');
+      }
+      if (response.indexOf(LOGIN_SUCCESS_MARK) >= 0) {
         break;
       }
     }
-    if (response.indexOf('登录成功') < 0) {
+    if (response.indexOf(LOGIN_SUCCESS_MARK) < 0) {
       throw new Error('roam: login failed');
     }
     const callbackHref: string = extractFirstAnchorHref(response);
@@ -418,6 +426,108 @@ export class TsinghuaAuthService {
       return;
     }
     throw new Error('learn: no _csrf in student home;len=' + homeHtml.length);
+  }
+
+  // ============================================================
+  // 会话恢复兜底（对齐原项目 withSessionRecovery + ensureFullReLogin）
+  // ============================================================
+
+  /**
+   * 取可用于漫游/重登录的凭证：优先内存缓存，其次 SecureStorage hydrate。
+   * 都没有则抛"未登录"（调用方决定如何向用户呈现）。
+   */
+  async getRoamCredentials(): Promise<CampusCredentials> {
+    if (this.cachedCredentials !== undefined) {
+      return this.cachedCredentials;
+    }
+    const ok: boolean = await this.hydrateCredentials();
+    if (ok && this.cachedCredentials !== undefined) {
+      return this.cachedCredentials;
+    }
+    throw new Error('未登录，无法访问校园服务');
+  }
+
+  /**
+   * 两层会话兜底（原项目 withSessionRecovery，语义逐行对齐）：
+   *   1. 直跑 operation
+   *   2. 失败 → onReroam（默认重新漫游 info 门户）→ 重跑 operation
+   *   3. 还失败 → 完整重新 login()（清 cookies / 走完整 OAuth 链）→ onReroam → 重跑 operation
+   *   4. 全失败 → 抛第一次的 originalError
+   *
+   * @param onReroam 恢复阶段的子系统 roam；不传则默认重新漫游 info 门户
+   * @param label    trace 标签（如 'campus-news'）
+   */
+  async withSessionRecovery<T>(operation: () => Promise<T>, onReroam?: () => Promise<void>, label: string = 'op'): Promise<T> {
+    let firstError: Error | undefined = undefined;
+    try {
+      return await operation();
+    } catch (e) {
+      firstError = e instanceof Error ? e : new Error(String(e));
+      this.addTrace(label + '-fail-1: ' + firstError.message.substring(0, 40));
+    }
+
+    const creds: CampusCredentials = new CampusCredentials();
+    try {
+      const hydrated: CampusCredentials = await this.getRoamCredentials();
+      creds.studentId = hydrated.studentId;
+      creds.password = hydrated.password;
+      creds.fingerprint = hydrated.fingerprint;
+    } catch (e) {
+      throw firstError;
+    }
+
+    const reroam: () => Promise<void> = onReroam !== undefined
+      ? onReroam
+      : async (): Promise<void> => {
+          await this.roamIdPolicy(creds, INFO_PORTAL_YYFWID);
+        };
+
+    // Layer 1: 重新激活子系统 session
+    try {
+      await reroam();
+      this.addTrace(label + '-reroam');
+      return await operation();
+    } catch (e) {
+      this.addTrace(label + '-fail-2: ' + (e instanceof Error ? e.message.substring(0, 40) : String(e)));
+    }
+
+    // Layer 2: 完整重登录 → 重新 roam → 重试
+    try {
+      await this.ensureFullReLogin(creds);
+      this.addTrace(label + '-relogin');
+      await reroam();
+      this.addTrace(label + '-reroam-2');
+      return await operation();
+    } catch (e) {
+      this.addTrace(label + '-fail-3: ' + (e instanceof Error ? e.message.substring(0, 40) : String(e)));
+      throw firstError;
+    }
+  }
+
+  /** 完整重登录；同一时刻只允许一个并发的 login Promise，避免多个操作同时失败时挤兑 */
+  private async ensureFullReLogin(credentials: CampusCredentials): Promise<void> {
+    if (this.reloginInflight !== undefined) {
+      try {
+        await this.reloginInflight;
+        return;
+      } catch (e) {
+        this.reloginInflight = undefined;
+      }
+    }
+    const inflight: Promise<void> = this.doFullReLogin(credentials);
+    this.reloginInflight = inflight;
+    await inflight;
+  }
+
+  private async doFullReLogin(credentials: CampusCredentials): Promise<void> {
+    try {
+      const result: LoginResult = await this.login(credentials);
+      if (result.type !== LoginResultType.SUCCESS) {
+        throw new Error('完整重登录失败：' + result.message);
+      }
+    } finally {
+      this.reloginInflight = undefined;
+    }
   }
 
   async send2FACode(method: string): Promise<boolean> {

@@ -39,11 +39,17 @@ export class BackDispatcher {
     }
   }
 
-  /** 分发给指定归属的栈顶处理器；返回是否已消费 */
+  /**
+   * 分发给指定归属的处理器（栈顶优先）；返回是否已消费。
+   * 链式回退：栈顶处理器返回 false（未消费）时继续尝试更早注册的处理器，
+   * 支持"详情视图 → 子页 → 集线页"逐级返回。
+   */
   static dispatch(owner: string): boolean {
     for (let i: number = BackDispatcher.entries.length - 1; i >= 0; i--) {
       if (BackDispatcher.entries[i].owner === owner) {
-        return BackDispatcher.entries[i].handler();
+        if (BackDispatcher.entries[i].handler()) {
+          return true;
+        }
       }
     }
     return false;

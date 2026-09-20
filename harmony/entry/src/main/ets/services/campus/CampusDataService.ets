@@ -27,11 +27,15 @@
  */
 import { HttpClient, HttpResponse } from '../HttpClient';
 import { SessionManager } from '../auth/SessionManager';
+import { TsinghuaAuthService } from '../auth/TsinghuaAuthService';
 import { Log } from '../../utils/Logger';
 import { decodeBase64 } from '../../utils/CryptoUtils';
+import { webview } from '@kit.ArkWeb';
 
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
 const SCHEDULE_BASE: string = 'https://webvpn.tsinghua.edu.cn/http/77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290';
+/** info 门户 webvpn 前缀（新闻列表/详情等，对齐原项目 ENDPOINTS.newsRedirectBase） */
+const INFO_BASE: string = 'https://webvpn.tsinghua.edu.cn/https/77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de';
 
 function pad2(n: number): string {
   return n < 10 ? '0' + String(n) : String(n);
@@ -133,6 +137,56 @@ function decodeNumericEntities(value: string): string {
 /** HTML 片段 → 纯文本（去标签 + 实体解码） */
 function htmlCellText(cellHtml: string): string {
   return decodeHtmlEntities(cellHtml.replace(/<[^>]+>/g, '')).trim();
+}
+
+/**
+ * 新闻详情 URL 归一（对齐原项目 news.ts buildNewsDetailUrl）：
+ * info.tsinghua.edu.cn 直链 → 替换为 webvpn info 前缀；
+ * 其他 http(s) 链接原样返回；相对路径拼到 info 前缀下。
+ */
+function buildNewsDetailUrl(url: string): string {
+  const value: string = decodeHtmlEntities(url).trim();
+  if (value.startsWith('http://info.tsinghua.edu.cn')) {
+    return value.replace('http://info.tsinghua.edu.cn', INFO_BASE);
+  }
+  if (value.startsWith('https://info.tsinghua.edu.cn')) {
+    return value.replace('https://info.tsinghua.edu.cn', INFO_BASE);
+  }
+  if (value.startsWith('http')) {
+    return value;
+  }
+  return INFO_BASE + (value.startsWith('/') ? '' : '/') + value;
+}
+
+/**
+ * 新闻详情文本解码（严格对齐原项目 news.ts decodeText）：
+ * 数值实体 → &nbsp; → &amp; → &lt; → &gt; → &quot; → &#39;。
+ * 注意 &amp; 在 &lt; 之前解码——info 门户 nr 字段是实体转义后的 HTML，
+ * 需完整还原成真实标签后再交给 WebView 渲染。
+ */
+function decodeNewsText(value: string): string {
+  let out: string = decodeNumericEntities(value);
+  out = out.replace(/&nbsp;/g, ' ');
+  out = out.replace(/&amp;/g, '&');
+  out = out.replace(/&lt;/g, '<');
+  out = out.replace(/&gt;/g, '>');
+  out = out.replace(/&quot;/g, '"');
+  out = out.replace(/&#39;/g, "'");
+  return out.trim();
+}
+
+/** 新闻正文相对资源路径重写为 webvpn 绝对地址（对齐原项目 fixNewsAssets） */
+function fixNewsAssets(html: string): string {
+  let out: string = html.replace(/src=(["'])\/b\/ckeditor\/downloadFiles/g,
+    (m: string, q: string): string => 'src=' + q + INFO_BASE + '/b/ckeditor/downloadFiles');
+  out = out.replace(/href=(["'])\/b\/info\/wj\/download/g,
+    (m: string, q: string): string => 'href=' + q + INFO_BASE + '/b/info/wj/download');
+  return out;
+}
+
+/** 剥离 script 块（富文本渲染安全兜底，CSP 之外的二道防线） */
+function stripScriptBlocks(html: string): string {
+  return html.replace(/<script[\s\S]*?<\/script>/gi, '');
 }
 
 /**
@@ -295,10 +349,22 @@ export class GradeReport {
 export class CampusNews {
   id: string = '';
   title: string = '';
+  /** 详情页 URL（列表行 url 字段，实体解码后；空 URL 的行会被过滤，对齐原项目 normalizeRows） */
+  url: string = '';
   date: string = '';
   source: string = '';
   channel: string = '';
   topped: boolean = false;
+}
+
+/** 新闻详情（info 门户 xxDto；无 xxid 时回退解析页面 HTML） */
+export class CampusNewsDetail {
+  title: string = '新闻详情';
+  /** 纯文本正文（去标签 + 实体解码，WebView 不可用时的回退展示） */
+  content: string = '';
+  /** 富文本正文 HTML（对齐原项目 NewsDetail.content，供 Web 组件渲染） */
+  contentHtml: string = '';
+  attachments: string[] = [];
 }
 
 /** 资讯栏目标签（对齐原项目 CHANNEL_LABELS 子集） */
@@ -738,12 +804,15 @@ export class CampusDataService {
     for (let i: number = 0; i < rows.length; i++) {
       const row: Record<string, Object> = rows[i] as Record<string, Object>;
       const title: string = decodeHtmlEntities(String(row['bt'] ?? '')).trim();
-      if (title.length === 0) {
+      const url: string = decodeHtmlEntities(String(row['url'] ?? '')).trim();
+      // 对齐原项目 normalizeRows：标题或 URL 为空的行直接丢弃
+      if (title.length === 0 || url.length === 0) {
         continue;
       }
       const item: CampusNews = new CampusNews();
       item.id = String(row['xxid'] ?? '');
       item.title = title;
+      item.url = url;
       item.date = String(row['time'] ?? '');
       item.source = decodeHtmlEntities(String(row['dwmc_show'] ?? '')).trim();
       item.channel = NEWS_CHANNEL_LABELS[String(row['lmid'] ?? '')] ?? '通知';
@@ -752,6 +821,140 @@ export class CampusDataService {
     }
     Log.i('LearnAct', 'NEWS items=%{public}d', result.length);
     return result;
+  }
+
+  /**
+   * 新闻详情（对齐原项目 news.ts getNewsDetail）：
+   * GET 详情页 → 提取 var xxid → 有 xxid 走 xxDto JSON（标题/正文/附件），
+   * 无 xxid 或 xxDto 缺失时回退解析页面 HTML（title/h1-h3 + body 文本）。
+   * 整体包在 withSessionRecovery 内（info 门户会话失效自动恢复）。
+   */
+  async fetchNewsDetail(url: string): Promise<CampusNewsDetail> {
+    const auth: TsinghuaAuthService = SessionManager.getAuthService();
+    return auth.withSessionRecovery((): Promise<CampusNewsDetail> => {
+      return this.doFetchNewsDetail(url);
+    }, undefined, 'campus-news');
+  }
+
+  private async doFetchNewsDetail(url: string): Promise<CampusNewsDetail> {
+    const resp: HttpResponse = await this.http.get(buildNewsDetailUrl(url));
+    const html: string = resp.body;
+    Log.i('LearnAct', 'NEWS_DETAIL page code=%{public}d len=%{public}d', resp.statusCode, html.length);
+
+    const xxidMatch = /var\s+xxid\s*=\s*["'](.*?)["']/.exec(html);
+    const xxid: string = xxidMatch !== null && xxidMatch.length >= 2 ? xxidMatch[1] : '';
+    if (xxid.length === 0) {
+      return this.adaptNewsHtml(html);
+    }
+
+    const csrf: string = await this.getWebvpnCsrf();
+    if (csrf.length === 0) {
+      throw new Error('info 门户会话未建立');
+    }
+    const detailUrl: string = INFO_BASE + '/b/info/xxfb_fg/xnzx/template/detail?_csrf='
+      + encodeURIComponent(csrf) + '&xxid=' + encodeURIComponent(xxid) + '&preview=';
+    const detailResp: HttpResponse = await this.http.get(detailUrl);
+    let xxDto: Record<string, Object> | undefined = undefined;
+    try {
+      const json: Record<string, Object> = JSON.parse(detailResp.body) as Record<string, Object>;
+      const objField = json['object'] as Record<string, Object>;
+      if (objField !== undefined && objField !== null) {
+        const dto = objField['xxDto'] as Record<string, Object>;
+        if (dto !== undefined && dto !== null) {
+          xxDto = dto;
+        }
+      }
+    } catch (e) {
+      xxDto = undefined;
+    }
+    if (xxDto === undefined) {
+      return this.adaptNewsHtml(html);
+    }
+
+    // decodeNewsText 解双重转义（&amp;mdash; → &mdash;），decodeHtmlEntities 补命名实体（&mdash; 等）
+    const title: string = decodeHtmlEntities(decodeNewsText(String(xxDto['bt'] ?? '')));
+    const attachments: string[] = [];
+    // nr 是实体转义后的 HTML（&lt;div&gt;...）：必须先 decodeNewsText 还原成真实标签，
+    // 否则去标签后残留字面 "<div class=...>" 文本（这正是首版正文显示 HTML 源码的原因）
+    let contentHtml: string = '<div>' + fixNewsAssets(decodeNewsText(String(xxDto['nr'] ?? '')));
+    const files = xxDto['fjs_template'] as Object[];
+    if (files !== undefined && files !== null) {
+      for (let i: number = 0; i < files.length; i++) {
+        const file = files[i] as Record<string, Object>;
+        const wjid: string = String(file['wjid'] ?? '');
+        if (wjid.length === 0) {
+          continue;
+        }
+        const wjmc: string = decodeHtmlEntities(decodeNewsText(String(file['wjmc'] ?? '')));
+        const name: string = wjmc.length > 0 ? wjmc : '附件';
+        attachments.push(name);
+        contentHtml = contentHtml + '<p><a href="' + INFO_BASE + '/b/info/wj/download/'
+          + encodeURIComponent(wjid) + '?_csrf=' + encodeURIComponent(csrf) + '">附件：' + name + '</a></p>';
+      }
+    }
+    contentHtml = stripScriptBlocks(contentHtml + '</div>');
+
+    const detail: CampusNewsDetail = new CampusNewsDetail();
+    detail.title = title.length > 0 ? title : '新闻详情';
+    detail.contentHtml = contentHtml;
+    detail.content = stripHtml(contentHtml);
+    detail.attachments = attachments;
+    Log.i('LearnAct', 'NEWS_DETAIL title_len=%{public}d content_len=%{public}d html_len=%{public}d attach=%{public}d',
+      detail.title.length, detail.content.length, contentHtml.length, attachments.length);
+    return detail;
+  }
+
+  /** 无 xxid 时的回退：直接解析详情页 HTML（对齐原项目 adaptNewsHtml，正文仍以 HTML 渲染） */
+  private adaptNewsHtml(html: string): CampusNewsDetail {
+    const detail: CampusNewsDetail = new CampusNewsDetail();
+    let title: string = '';
+    const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+    if (titleMatch !== null && titleMatch.length >= 2) {
+      title = htmlCellText(titleMatch[1]);
+    }
+    if (title.length === 0) {
+      const hMatch = /<h[123][^>]*>([\s\S]*?)<\/h[123]>/i.exec(html);
+      if (hMatch !== null && hMatch.length >= 2) {
+        title = htmlCellText(hMatch[1]);
+      }
+    }
+    detail.title = title.length > 0 ? title : '新闻详情';
+    let bodyHtml: string = html;
+    const bodyMatch = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
+    if (bodyMatch !== null && bodyMatch.length >= 2) {
+      bodyHtml = bodyMatch[1];
+    }
+    bodyHtml = stripScriptBlocks(fixNewsAssets(bodyHtml));
+    detail.contentHtml = bodyHtml;
+    detail.content = stripHtml(bodyHtml);
+    detail.attachments = [];
+    Log.i('LearnAct', 'NEWS_DETAIL fallback title_len=%{public}d content_len=%{public}d',
+      detail.title.length, detail.content.length);
+    return detail;
+  }
+
+  /**
+   * 将 HttpClient 会话 Cookie 同步到 ArkWeb Cookie 存储——
+   * 详情正文中的图片/附件走 webvpn 域，无会话 Cookie 会 403（对齐 RN 版 sharedCookiesEnabled）。
+   * getCookieHeader 按域匹配（不按 path），一次即可取全 webvpn 域 Cookie。
+   */
+  syncWebvpnCookiesForWebView(): void {
+    try {
+      const header: string = this.http.getCookieManager().getCookieHeader('https://webvpn.tsinghua.edu.cn/');
+      if (header.length === 0) {
+        return;
+      }
+      const pairs: string[] = header.split(';');
+      for (let i: number = 0; i < pairs.length; i++) {
+        const pair: string = pairs[i].trim();
+        if (pair.length > 0) {
+          webview.WebCookieManager.configCookieSync('https://webvpn.tsinghua.edu.cn/', pair);
+        }
+      }
+      Log.i('LearnAct', 'NEWS_DETAIL cookie_sync pairs=%{public}d', pairs.length);
+    } catch (e) {
+      Log.i('LearnAct', 'NEWS_DETAIL cookie_sync fail');
+    }
   }
 
   /** 作业：对每门课遍历 未交(Wj)/已交未批改(Yjwg)/已批改(Ypg)，POST aoData */
