@@ -30,6 +30,7 @@ import { SessionManager } from '../auth/SessionManager';
 import { TsinghuaAuthService } from '../auth/TsinghuaAuthService';
 import { Log } from '../../utils/Logger';
 import { decodeBase64 } from '../../utils/CryptoUtils';
+import { gb2312PercentEncode } from '../../utils/EncodingUtils';
 import { webview } from '@kit.ArkWeb';
 
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
@@ -365,6 +366,199 @@ export class CampusNewsDetail {
   /** 富文本正文 HTML（对齐原项目 NewsDetail.content，供 Web 组件渲染） */
   contentHtml: string = '';
   attachments: string[] = [];
+}
+
+// ============================================================
+// 教室查询（对齐原项目 classroom.ts；zhjw 域，漫游 yyfwid 与课表/成绩不同）
+// ============================================================
+
+/** 教室状态数值枚举（与上游 thu-info-lib 一致：0..5） */
+export enum ClassroomStatus {
+  TEACHING = 0,
+  EXAM = 1,
+  BORROWED = 2,
+  DISABLED = 3,
+  RESERVED_FOR_COMPAT = 4,
+  AVAILABLE = 5,
+}
+
+/** 教学楼入口（searchName 保留 href 原值，通常为 GBK percent-encoded，如 %C1%F9%BD%CC） */
+export class ClassroomBuilding {
+  name: string = '';
+  weekNumber: number = 0;
+  searchName: string = '';
+}
+
+/** 一间教室的一周状态：status 长度 42 = 7 天 × 6 节（自周一起按行展开） */
+export class ClassroomStateRow {
+  name: string = '';
+  status: ClassroomStatus[] = [];
+}
+
+export class ClassroomStateResult {
+  validWeekNumbers: number[] = [];
+  currentWeekNumber: number = 0;
+  /** 当前周周一→周日 7 个日期串（不含括号） */
+  datesOfCurrentWeek: string[] = [];
+  classroomStates: ClassroomStateRow[] = [];
+}
+
+export class ClassroomPeriod {
+  period: number = 0;
+  label: string = '';
+  timeRange: string = '';
+}
+
+/** 每天 6 个大节（与上游 status 数组 7×6 约定绑定，勿改数量） */
+export const CLASSROOM_PERIODS: ClassroomPeriod[] = [
+  { period: 1, label: '第1节', timeRange: '08:00-09:35' },
+  { period: 2, label: '第2节', timeRange: '09:50-12:15' },
+  { period: 3, label: '第3节', timeRange: '13:30-15:05' },
+  { period: 4, label: '第4节', timeRange: '15:20-16:55' },
+  { period: 5, label: '第5节', timeRange: '17:10-18:45' },
+  { period: 6, label: '第6节', timeRange: '19:20-21:45' },
+];
+
+const CLASSROOM_YYFWID: string = '40470BB47E0849E9EF717983490BC964';
+const CLASSROOM_LIST_URL: string =
+  SCHEDULE_BASE + '/portal3rd.do?url=/portal3rd.do&m=jasJy_Xs_Js_index';
+const CLASSROOM_STATE_PREFIX: string = SCHEDULE_BASE + '/pk.classroomctrl.do?m=qyClassroomState&classroom=';
+
+/**
+ * 解析教学楼列表（上游 $(".w30 a[href^=/http/]")，正则化实现）：
+ * anchor 全扫 + href 以 /http/ 开头 + classroom=/weeknumber= 参数决定入选。
+ */
+function parseClassroomList(html: string): ClassroomBuilding[] {
+  const result: ClassroomBuilding[] = [];
+  const anchorRe = /<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null = anchorRe.exec(html);
+  while (m !== null) {
+    const hrefRaw: string = m[1];
+    if (hrefRaw.startsWith('/http/')) {
+      // href 中 & 可能以 &amp; 出现，先解实体再取参
+      const href: string = decodeHtmlEntities(hrefRaw);
+      const paramMatch = /classroom=([^&]+)&weeknumber=(\d+)/.exec(href);
+      const name: string = decodeHtmlEntities(m[2].replace(/<[^>]+>/g, '')).trim();
+      if (paramMatch !== null && name.length > 0) {
+        const searchName: string = paramMatch[1];
+        const week: number = Number(paramMatch[2]);
+        if (searchName.length > 0 && !isNaN(week)) {
+          const b: ClassroomBuilding = new ClassroomBuilding();
+          b.name = name;
+          b.weekNumber = week;
+          b.searchName = searchName;
+          result.push(b);
+        }
+      }
+    }
+    m = anchorRe.exec(html);
+  }
+  if (result.length === 0) {
+    throw new Error('未能从教务系统解析到教学楼列表');
+  }
+  return result;
+}
+
+/** 解析教室状态页（周次下拉 / 本周日期 / scrollContent 状态表） */
+function parseClassroomState(html: string, weekHint: number): ClassroomStateResult {
+  const result: ClassroomStateResult = new ClassroomStateResult();
+  result.currentWeekNumber = weekHint;
+
+  // 可选周次：<select id="weeknumber"> 的 option value
+  const selectMatch = /<select[^>]*id="weeknumber"[^>]*>([\s\S]*?)<\/select>/i.exec(html);
+  if (selectMatch !== null) {
+    const optionRe = /<option[^>]*value="(\d+)"/gi;
+    let om: RegExpExecArray | null = optionRe.exec(selectMatch[1]);
+    while (om !== null) {
+      const v: number = Number(om[1]);
+      if (!isNaN(v)) {
+        result.validWeekNumbers.push(v);
+      }
+      om = optionRe.exec(selectMatch[1]);
+    }
+  }
+
+  // 本周日期：前 7 个 colspan=6 单元格，形如 "周一(12-04)"，取括号内
+  const colspanRe = /<t[dh]\b[^>]*\bcolspan=(?:"6"|6)(?![0-9])[^>]*>([\s\S]*?)<\/t[dh]>/gi;
+  let cm: RegExpExecArray | null = colspanRe.exec(html);
+  while (cm !== null && result.datesOfCurrentWeek.length < 7) {
+    const text: string = decodeHtmlEntities(cm[1].replace(/<[^>]+>/g, ''));
+    const dm = /\((.+?)\)/.exec(text);
+    result.datesOfCurrentWeek.push(dm !== null ? dm[1] : '');
+    cm = colspanRe.exec(html);
+  }
+
+  // 状态表：#scrollContent 内逐行（首 td=教室名，其余 td=状态格）
+  const scrollIdx: number = html.indexOf('id="scrollContent"');
+  if (scrollIdx < 0) {
+    throw new Error('未能解析到教室数据（HTML 中无 scrollContent 区块）');
+  }
+  const block: string = html.substring(scrollIdx);
+  const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let tm: RegExpExecArray | null = trRe.exec(block);
+  while (tm !== null) {
+    const row: ClassroomStateRow | null = parseClassroomStateRow(tm[1]);
+    if (row !== null) {
+      result.classroomStates.push(row);
+    }
+    tm = trRe.exec(block);
+  }
+  return result;
+}
+
+/** 单行解析：名取首个 td 文本（"6A101:60(人)"）；状态按 td class 映射枚举 */
+function parseClassroomStateRow(rowHtml: string): ClassroomStateRow | null {
+  const tdRe = /<td\b([^>]*)>([\s\S]*?)<\/td>/gi;
+  const attrs: string[] = [];
+  const bodies: string[] = [];
+  let tm: RegExpExecArray | null = tdRe.exec(rowHtml);
+  while (tm !== null) {
+    attrs.push(tm[1]);
+    bodies.push(tm[2]);
+    tm = tdRe.exec(rowHtml);
+  }
+  if (bodies.length === 0) {
+    return null;
+  }
+  const name: string = decodeHtmlEntities(bodies[0].replace(/<[^>]+>/g, '')).trim();
+  if (name.length === 0) {
+    return null;
+  }
+  const status: ClassroomStatus[] = [];
+  for (let i: number = 1; i < attrs.length; i++) {
+    status.push(classifyClassroomCell(attrs[i]));
+  }
+  if (status.length === 0) {
+    return null;
+  }
+  const row: ClassroomStateRow = new ClassroomStateRow();
+  row.name = name;
+  row.status = status;
+  return row;
+}
+
+/** class 含 onteaching/onexam/onborrowed/ondisabled 之一 → 对应枚举，否则空闲 */
+function classifyClassroomCell(tdAttr: string): ClassroomStatus {
+  const clsMatch = /class\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tdAttr);
+  if (clsMatch !== null) {
+    const cls: string = clsMatch[1] !== undefined ? clsMatch[1] : clsMatch[2];
+    const tokens: string[] = cls.split(/\s+/);
+    for (let i: number = 0; i < tokens.length; i++) {
+      if (tokens[i] === 'onteaching') {
+        return ClassroomStatus.TEACHING;
+      }
+      if (tokens[i] === 'onexam') {
+        return ClassroomStatus.EXAM;
+      }
+      if (tokens[i] === 'onborrowed') {
+        return ClassroomStatus.BORROWED;
+      }
+      if (tokens[i] === 'ondisabled') {
+        return ClassroomStatus.DISABLED;
+      }
+    }
+  }
+  return ClassroomStatus.AVAILABLE;
 }
 
 /** 资讯栏目标签（对齐原项目 CHANNEL_LABELS 子集） */
@@ -1188,5 +1382,68 @@ export class CampusDataService {
     const aEnd: number = fragment.indexOf('</a>', gt);
     if (aEnd < 0) { return ''; }
     return stripHtml(fragment.substring(gt + 1, aEnd)).trim();
+  }
+
+  // ============================================================
+  // 教室查询（zhjw 空教室；对齐原项目 classroom.ts）
+  // ============================================================
+
+  /** zhjw 会话守卫：系统超时页 / WebVPN 登录页兜底识别 */
+  private ensureNotZhjwTimeout(body: string): void {
+    if (body.indexOf('time out用户登陆超时或访问内容不存在') >= 0) {
+      throw new Error('教务系统会话超时，请重新同步');
+    }
+    if (body.indexOf('<title>清华大学WebVPN</title>') >= 0) {
+      throw new Error('WebVPN 会话失效，请重新登录');
+    }
+  }
+
+  /**
+   * 教学楼列表：漫游 + 拉取包在 withSessionRecovery 内（会话失效自动恢复），
+   * 解析在兜底之外（解析错误不是会话错误）。
+   */
+  async fetchClassroomList(): Promise<ClassroomBuilding[]> {
+    const auth: TsinghuaAuthService = SessionManager.getAuthService();
+    const html: string = await auth.withSessionRecovery((): Promise<string> => {
+      return this.doFetchClassroomListHtml();
+    }, async (): Promise<void> => {
+      await this.roamByYyfwid(CLASSROOM_YYFWID);
+    }, 'campus-classroom-list');
+    return parseClassroomList(html);
+  }
+
+  private async doFetchClassroomListHtml(): Promise<string> {
+    await this.roamByYyfwid(CLASSROOM_YYFWID);
+    const resp: HttpResponse = await this.http.get(CLASSROOM_LIST_URL);
+    Log.i('LearnAct', 'CLASSROOM_LIST code=%{public}d len=%{public}d head=%{public}s',
+      resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
+    this.ensureNotZhjwTimeout(resp.body);
+    return resp.body;
+  }
+
+  /**
+   * 教室状态（searchName 须为列表 href 原值：raw 中文 "六教" 或已编码 "%C1%F9%BD%CC"）。
+   * gb2312PercentEncode 只对汉字做 GBK percent-encode、其余穿透，两种形态都得到合法 URL。
+   */
+  async fetchClassroomState(searchName: string, week: number): Promise<ClassroomStateResult> {
+    const auth: TsinghuaAuthService = SessionManager.getAuthService();
+    const html: string = await auth.withSessionRecovery((): Promise<string> => {
+      return this.doFetchClassroomStateHtml(searchName, week);
+    }, async (): Promise<void> => {
+      await this.roamByYyfwid(CLASSROOM_YYFWID);
+    }, 'campus-classroom-state');
+    return parseClassroomState(html, week);
+  }
+
+  private async doFetchClassroomStateHtml(searchName: string, week: number): Promise<string> {
+    // 每次状态查询都重新漫游 zhjw 子系统：与上游 roamingWrapper 等价，
+    // 避免 UI 停留较久后切换周次遇到"用户登陆超时"
+    await this.roamByYyfwid(CLASSROOM_YYFWID);
+    const url: string = CLASSROOM_STATE_PREFIX + gb2312PercentEncode(searchName) + '&weeknumber=' + week;
+    const resp: HttpResponse = await this.http.get(url);
+    Log.i('LearnAct', 'CLASSROOM_STATE week=%{public}d code=%{public}d len=%{public}d head=%{public}s',
+      week, resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
+    this.ensureNotZhjwTimeout(resp.body);
+    return resp.body;
   }
 }
