@@ -373,13 +373,14 @@ export struct FinancePage {
 
           // 去充值（充值链不迁移，提示走支付宝/网页）
           Button('去充值')
-            .width('90%')
+            .width('100%')
+            .constraintSize({ maxWidth: '100%' })
             .height(44)
             .fontSize(15)
             .fontColor(Theme.textInvert)
             .backgroundColor(Theme.primary)
             .borderRadius(Theme.cardRadius)
-            .margin({ top: 20, bottom: 24 })
+            .margin({ left: 16, right: 16, top: 20, bottom: 24 })
             .onClick(() => {
               this.getUIContext().getPromptAction().showToast({
                 message: '充值请通过支付宝或网页版校园卡系统操作',

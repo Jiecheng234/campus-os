@@ -274,13 +274,14 @@ export struct DormitoryPage {
 
           // 去充值（充值链不迁移，提示走网页）
           Button('去充值')
-            .width('90%')
+            .width('100%')
+            .constraintSize({ maxWidth: '100%' })
             .height(44)
             .fontSize(15)
             .fontColor(Theme.textInvert)
             .backgroundColor(Theme.primary)
             .borderRadius(Theme.cardRadius)
-            .margin({ top: 20 })
+            .margin({ left: 16, right: 16, top: 20 })
             .onClick(() => {
               this.getUIContext().getPromptAction().showToast({
                 message: '充值请通过网页版电费系统操作',
