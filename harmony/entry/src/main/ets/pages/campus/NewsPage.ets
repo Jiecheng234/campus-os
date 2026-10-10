@@ -43,6 +43,15 @@ function getMockNews(): NewsItem[] {
   return list;
 }
 
+/** 标题/元信息注入 HTML 前转义（正文 contentHtml 为服务端 HTML，不转义） */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 @Component
 export struct NewsPage {
   onBack: () => void = () => {};
@@ -117,11 +126,14 @@ export struct NewsPage {
     }
     if (item.url.length === 0) {
       this.detail = new CampusNewsDetail();
+      // 列表项标题兜底（对齐原项目 detail?.title || news.name）：标题立即可见
+      this.detail.title = item.title;
       this.detailError = '该资讯缺少详情链接';
       return;
     }
     this.detailLoading = true;
     this.detail = new CampusNewsDetail();
+    this.detail.title = item.title;
     try {
       this.detail = await SessionManager.getCampusDataService().fetchNewsDetail(item.url);
     } catch (e) {
@@ -136,149 +148,172 @@ export struct NewsPage {
   }
 
   /**
-   * 富文本正文 → 完整 HTML 文档（对齐原项目 utils/html wrapAsDocument 亮色基线）：
-   * viewport + CSP（禁脚本、图片放行）+ 移动端中文排版。
+   * 详情完整 HTML 文档（对齐原项目 CampusNewsDetailScreen 版式）：
+   * 标题 h2 + 元信息行（栏目徽标/来源/日期）+ 白卡正文，整体随内容滚动；
+   * viewport + CSP（禁脚本、图片放行）+ 移动端中文排版，配色对齐 Theme token。
    */
   private buildDetailDocument(): string {
-    const body: string = this.detail.contentHtml;
+    let bodyHtml: string = this.detail.contentHtml;
+    if (bodyHtml.length === 0 && this.detail.content.length > 0) {
+      // 演示/纯文本回退：换行转 <br>
+      bodyHtml = '<p>' + escapeHtml(this.detail.content).replace(/\n/g, '<br/>') + '</p>';
+    }
+    if (bodyHtml.length === 0) {
+      bodyHtml = '<p class="empty">暂无内容</p>';
+    }
+    let metaHtml: string = '';
+    if (this.currentNews !== undefined) {
+      const badge: string = this.currentNews.channel.length > 0
+        ? '<span class="badge">' + escapeHtml(this.currentNews.channel) + '</span>'
+        : '';
+      const source: string = this.currentNews.summary.length > 0
+        ? escapeHtml(this.currentNews.summary) : '清华信息门户';
+      metaHtml = '<div class="meta">' + badge
+        + '<span>' + source + '</span>'
+        + '<span>' + escapeHtml(this.currentNews.publishTime) + '</span>'
+        + '</div>';
+    }
     return '<!DOCTYPE html><html lang="zh-cmn-Hans"><head>'
       + '<meta charset="utf-8"/>'
       + '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>'
       + '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src * data:; upgrade-insecure-requests"/>'
       + '<style>'
-      + 'html,body{margin:0;padding:16px;background:rgb(255,255,255);color:rgb(26,26,46);'
+      + 'html,body{margin:0;padding:0 16px 32px;background:#FAFAFB;color:#0A0A0B;'
       + 'font-family:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;'
       + 'font-size:15px;line-height:1.7;word-break:break-word;-webkit-text-size-adjust:100%;}'
+      + '.title{font-size:20px;font-weight:700;line-height:28px;margin:16px 0 0;}'
+      + '.meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0 16px;'
+      + 'font-size:11px;color:#8E8E93;}'
+      + '.badge{background:#F2F2F4;border-radius:4px;padding:2px 6px;flex-shrink:0;}'
+      + '.card{background:#FFFFFF;border-radius:20px;border:1px solid rgba(10,10,11,0.08);'
+      + 'padding:16px;overflow:hidden;}'
       + 'img,video{max-width:100%;height:auto;border-radius:8px;margin:8px 0;}'
-      + 'a{color:rgb(124,92,250);}'
+      + 'a{color:#7C5CFA;}'
       + 'table{border-collapse:collapse;max-width:100%;margin:12px 0;}'
-      + 'table,th,td{border:1px solid rgb(226,232,240);}'
+      + 'table,th,td{border:1px solid #E2E2E5;}'
       + 'th,td{padding:6px 10px;}'
-      + 'pre,code{background:rgb(241,245,249);padding:2px 6px;border-radius:4px;}'
+      + 'pre,code{background:#F2F2F4;padding:2px 6px;border-radius:4px;}'
       + 'pre{padding:12px;overflow-x:auto;}'
       + 'p{margin:0 0 0.8em;}p:first-child{margin-top:0;}p:last-child{margin-bottom:0;}'
+      + '.empty{color:#8E8E93;}'
       + '[style*="line-height"]{line-height:1.7 !important;}'
-      + '</style></head><body>' + body + '</body></html>';
+      + '</style></head><body>'
+      + '<div class="title">' + escapeHtml(this.detail.title) + '</div>'
+      + metaHtml
+      + '<div class="card">' + bodyHtml + '</div>'
+      + '</body></html>';
+  }
+
+  /** 详情标题 + 元信息（加载中/失败态原生展示；加载完成后由 HTML 文档内同款样式接管） */
+  @Builder DetailTitleBlock() {
+    Text(this.detail.title)
+      .fontSize(FontSize.h2)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(Theme.text)
+      .lineHeight(28)
+      .width('100%')
+      .padding({ left: Space.md, right: Space.md, top: Space.md })
+    Row({ space: Space.sm }) {
+      if (this.currentNews !== undefined && this.currentNews.channel.length > 0) {
+        Text(this.currentNews.channel)
+          .fontSize(11)
+          .fontColor(Theme.textMuted)
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .borderRadius(4)
+          .backgroundColor(Theme.surfaceAlt)
+      }
+      if (this.currentNews !== undefined) {
+        Text(this.currentNews.summary.length > 0 ? this.currentNews.summary : '清华信息门户')
+          .fontSize(FontSize.micro)
+          .fontColor(Theme.textMuted)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Text(this.currentNews.publishTime)
+          .fontSize(FontSize.micro)
+          .fontColor(Theme.textMuted)
+      }
+    }
+    .width('100%')
+    .padding({ left: Space.md, right: Space.md })
+    .margin({ top: Space.sm, bottom: Space.md })
   }
 
   @Builder DetailView() {
     DetailHeader({ title: '新闻详情', onBack: () => { this.closeDetail(); } })
     Divider().color(Theme.divider)
     if (this.detailLoading) {
-      Column({ space: Space.sm }) {
-        LoadingProgress()
-          .width(28)
-          .height(28)
-          .color(Theme.primary)
-        Text('加载中...')
-          .fontSize(FontSize.caption)
-          .fontColor(Theme.textMuted)
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .justifyContent(FlexAlign.Center)
-    } else if (this.detailError.length > 0) {
-      Column({ space: Space.md }) {
-        Text(this.detailError)
-          .fontSize(FontSize.body)
-          .fontColor(Theme.error)
-          .textAlign(TextAlign.Center)
-          .padding({ left: Space.lg, right: Space.lg })
-        Text('重试')
-          .fontSize(FontSize.label)
-          .fontColor(Theme.primary)
-          .padding({ left: Space.md, right: Space.md, top: 6, bottom: 6 })
-          .borderRadius(8)
-          .border({ width: 1, color: Theme.primary })
-          .onClick(() => {
-            if (this.currentNews !== undefined) {
-              this.openDetail(this.currentNews);
-            }
-          })
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .justifyContent(FlexAlign.Center)
-    } else {
+      // 标题即时可见（列表标题兜底），正文区内联加载（对齐原项目 InlineLoader 语义）
       Column() {
-        Text(this.detail.title)
-          .fontSize(FontSize.h2)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Theme.text)
-          .width('100%')
-          .padding({ left: Space.md, right: Space.md, top: Space.md })
-        if (this.currentNews !== undefined) {
-          Text(this.currentNews.channel + ' · ' + this.currentNews.summary + ' · ' + this.currentNews.publishTime)
-            .fontSize(FontSize.micro)
+        this.DetailTitleBlock()
+        Column({ space: Space.sm }) {
+          LoadingProgress()
+            .width(24)
+            .height(24)
+            .color(Theme.primary)
+          Text('正在加载正文...')
+            .fontSize(FontSize.caption)
             .fontColor(Theme.textMuted)
-            .width('100%')
-            .padding({ left: Space.md, right: Space.md })
-            .margin({ top: Space.sm, bottom: Space.md })
-        } else {
-          Column().height(Space.md)
         }
-        if (this.detail.contentHtml.length > 0) {
-          // 富文本正文：Web 组件渲染（对齐原项目 HtmlContent/WebView 方案），
-          // 同步 webvpn 会话 Cookie 后加载，图片/附件才可鉴权访问
-          Web({ src: '', controller: this.webController })
-            .onControllerAttached(() => {
-              try {
-                SessionManager.getCampusDataService().syncWebvpnCookiesForWebView();
-                // 实测约束：http baseUrl 下 data 为原始 HTML 直通渲染（'base64' 编码不会
-                // 被解码，会整段显示成 base64 文本）；historyUrl 必传，缺省触发 401
-                this.webController.loadData(
-                  this.buildDetailDocument(), 'text/html', 'utf-8',
-                  'https://webvpn.tsinghua.edu.cn/', 'https://webvpn.tsinghua.edu.cn/');
-              } catch (e) {
-                Log.e('LearnAct', 'NEWS_WEB loadData failed: %{public}s',
-                  e instanceof Error ? e.message : String(e));
-              }
-            })
-            .javaScriptAccess(false)
-            .zoomAccess(false)
-            .fileAccess(false)
-            .darkMode(WebDarkMode.Off)
-            .width('100%')
-            .layoutWeight(1)
-            .backgroundColor('#FFFFFF')
-        } else {
-          Scroll() {
-            Column() {
-              if (this.detail.content.length > 0) {
-                Text(this.detail.content)
-                  .fontSize(FontSize.body)
-                  .fontColor(Theme.text)
-                  .lineHeight(26)
-                  .width('100%')
-                  .textAlign(TextAlign.Start)
-              } else {
-                Text('暂无内容')
-                  .fontSize(FontSize.body)
-                  .fontColor(Theme.textMuted)
-                  .width('100%')
-              }
-              ForEach(this.detail.attachments, (name: string) => {
-                Text('附件：' + name)
-                  .fontSize(FontSize.caption)
-                  .fontColor(Theme.primary)
-                  .width('100%')
-                  .margin({ top: Space.sm })
-              }, (name: string) => name)
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Start)
-            .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.xl })
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .align(Alignment.Top)
-          .scrollBar(BarState.Off)
-          .edgeEffect(EdgeEffect.Spring)
-        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
       }
       .width('100%')
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+    } else if (this.detailError.length > 0) {
+      Column() {
+        this.DetailTitleBlock()
+        Column({ space: Space.md }) {
+          Text(this.detailError)
+            .fontSize(FontSize.body)
+            .fontColor(Theme.error)
+            .textAlign(TextAlign.Center)
+            .padding({ left: Space.lg, right: Space.lg })
+          Text('重试')
+            .fontSize(FontSize.label)
+            .fontColor(Theme.primary)
+            .padding({ left: Space.md, right: Space.md, top: 6, bottom: 6 })
+            .borderRadius(8)
+            .border({ width: 1, color: Theme.primary })
+            .onClick(() => {
+              if (this.currentNews !== undefined) {
+                this.openDetail(this.currentNews);
+              }
+            })
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    } else {
+      // 标题/元信息/白卡正文整体编入 HTML 文档，随内容一起滚动（对齐原项目 ScrollView 结构）；
+      // 同步 webvpn 会话 Cookie 后加载，图片/附件才可鉴权访问
+      Web({ src: '', controller: this.webController })
+        .onControllerAttached(() => {
+          try {
+            SessionManager.getCampusDataService().syncWebvpnCookiesForWebView();
+            // 实测约束：http baseUrl 下 data 为原始 HTML 直通渲染（'base64' 编码不会
+            // 被解码，会整段显示成 base64 文本）；historyUrl 必传，缺省触发 401
+            this.webController.loadData(
+              this.buildDetailDocument(), 'text/html', 'utf-8',
+              'https://webvpn.tsinghua.edu.cn/', 'https://webvpn.tsinghua.edu.cn/');
+          } catch (e) {
+            Log.e('LearnAct', 'NEWS_WEB loadData failed: %{public}s',
+              e instanceof Error ? e.message : String(e));
+          }
+        })
+        .javaScriptAccess(false)
+        .zoomAccess(false)
+        .fileAccess(false)
+        .darkMode(WebDarkMode.Off)
+        .width('100%')
+        .layoutWeight(1)
+        .backgroundColor('#FAFAFB')
     }
   }
 
