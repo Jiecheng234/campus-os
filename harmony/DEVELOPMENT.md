@@ -205,6 +205,16 @@ GET  learnStudentHome                   学生首页
 - **GPA 0.00**（CampusDataService.ets）：原项目 `htmlSelect.childText(tr, N)` 按 cheerio **子节点序**取值——children 含标签间换行缩进**文本节点**，`childText(tr,3/5/7/9/11)` 实为第 2/3/4/5/6 个 td。我们旧版只数 td 且 `cells.length < 12` guard 把所有行滤光 → 空报表 GPA 0.00。重写 `parseGradeTableChildren/parseGradeRowChildren`（文本节点与 td 各占一席），守卫改 `children.length < 12`，并打 row0/row1 诊断日志（tag `LearnAct` `GRADES row0=[..]`）。顺带修 `Number('')=0` bug：绩点空列 → NaN（P/F 课不计学分绩）。
 - **资讯 `&ldquo;` 未解码**：`decodeHtmlEntities` 补 NAMED_HTML_ENTITIES 映射（ldquo/rdquo/mdash/ndash/hellip/middot/bull/times/copy/deg 等 20 项）；解码顺序=数值 → 命名（不含 amp）→ `&amp;` 最后（防 `&amp;ldquo;` 二次解码）；fetchNewsList 调用点去掉冗余外层 decodeNumericEntities。
 
+### 校园卡余额/信息/流水（2026-10-10）
+
+- **CampusCardService**（`services/campus/CampusCardService.ets`）：card.tsinghua.edu.cn 直连域（不走 webvpn 包装）。
+  - **登录**：`TsinghuaAuthService.roamCardPolicy` —— 与 `roamIdPolicy` 同款 ID 两循环登录，但 callback 直连获取（card 域 Cookie 必须落在 card.tsinghua.edu.cn）；payload `eea30c…/0?/userindex`。
+  - **会话**：`ensureCampusCardLogin`（getUserInfoFromToken 取 loginuser，空则抛错）+ `assureCampusCardSession`（探针比对 loginuser）+ `withCardRetry`（两层 `withSessionRecovery`，含登录态快照校验防误判）。
+  - **响应解密**：`business/getCardUserinfo`/`querySelfTradeList` 返回 `success` + `data`（AES-128-ECB-PKCS7，Base64）：key=前 16 字符明文，其余 Base64 解密（`CryptoUtils.aesEcbDecryptBase64`，`convertKeySync` 需 `DataBlob` 包装）。
+  - **postJson**：`HttpClient` 新增 `JsonBodyValue`（string|number|boolean）联合类型 + `postJson`（ArkTS 禁原始类型装箱进 `Record<string, Object>`）。
+- **FinancePage 重写**：余额 hero（最近交易 footer）→ 校园卡信息（姓名/院系/卡号打码/状态/单笔/日限额）→ 近 7 天流水（30 条封顶，充值/圈存等入账绿色 +，消费原色 -；标题 name→summary→txName 链）；信息与流水同一 try（信息成功即渲染，流水失败不抹掉信息）；充值链不迁移（支付宝），按钮 toast。演示模式内置示例。
+- 卡号打码 mask（空→`—`，≤4→`****`，否则 `ab***yz`）；交易时间 `MM-DD HH:mm`。
+
 ### 校园服务真实数据接入（2026-09-20，六项分步推进）
 
 - **资讯详情**：info 门户 `/b/info/xxfb_fg/xnzx/template/detail?_csrf=..&xxid=..`，正文 HTML 经 `stripScriptBlocks/fixNewsAssets` 清洗后 ArkWeb `loadData` 渲染（raw + utf-8 + baseUrl + 第 5 参 historyUrl，缺省 401）；附件列表可复制链接。
@@ -216,7 +226,6 @@ GET  learnStudentHome                   学生首页
 
 ### 其他待办
 
-- 校园卡真实数据（下一项：card.tsinghua.edu.cn 直连域，AES-ECB 解密 + `postJson` + card roam，对齐原项目 campusCard.ts）
 - 校园网/场馆预约等子页真实数据（各自独立 webvpn 域，需单独漫游调试）
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
 - 资讯详情页视觉打磨（六项数据接入全部完成后）

@@ -458,6 +458,50 @@ export class TsinghuaAuthService {
   }
 
   /**
+   * 校园卡漫游（对齐原项目 roamCardPolicy = roam(helper, "card", payload)）。
+   * 与 roamIdSubsystem 的区别：callback 直接访问，不包 WebVPN lbredirect——
+   * card.tsinghua.edu.cn 的 cookie 需要落到正确域名。
+   * 返回 callback 页面 HTML（调用方通常忽略）。
+   */
+  async roamCardPolicy(credentials: CampusCredentials, payload: string): Promise<string> {
+    let response: string = '';
+    for (let i: number = 0; i < 2; i++) {
+      const formHtml: string = await this.http.get(ID_BASE_URL + payload).then((r: HttpResponse) => r.body);
+      const pk: string = extractSm2PublicKey(formHtml);
+      if (pk.length === 0) {
+        throw new Error(`roamCard(${payload}): missing sm2publicKey (form len=${formHtml.length})`);
+      }
+      const epw: string = await encryptPassword(credentials.password, pk);
+      const fd: Record<string, string> = {
+        'i_user': credentials.studentId,
+        'i_pass': epw,
+        'fingerPrint': credentials.fingerprint,
+        'fingerGenPrint': '',
+        'fingerGenPrint3': '',
+        'i_captcha': '',
+      };
+      response = await this.http.postForm(ID_LOGIN_URL, fd).then((r: HttpResponse) => r.body);
+      if (response.indexOf(TWO_FACTOR_MARK) >= 0) {
+        // 同 roamIdPolicy：抛错交由 withSessionRecovery 完整重登录兜底
+        throw new Error('card: 2FA reappeared');
+      }
+      if (response.indexOf(LOGIN_SUCCESS_MARK) >= 0) {
+        break;
+      }
+    }
+    if (response.indexOf(LOGIN_SUCCESS_MARK) < 0) {
+      throw new Error(`roamCard(${payload}): login failed`);
+    }
+    const callbackHref: string = extractFirstAnchorHref(response);
+    if (callbackHref.length === 0) {
+      throw new Error(`roamCard(${payload}): no callback href`);
+    }
+    const cbResp: HttpResponse = await this.http.get(callbackHref);
+    Log.i('LearnAct', 'CARD_CB code=%{public}d len=%{public}d', cbResp.statusCode, cbResp.body.length);
+    return cbResp.body;
+  }
+
+  /**
    * 两层会话兜底（原项目 withSessionRecovery，语义逐行对齐）：
    *   1. 直跑 operation
    *   2. 失败 → onReroam（默认重新漫游 info 门户）→ 重跑 operation

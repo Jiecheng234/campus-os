@@ -68,6 +68,24 @@ export function md5(input: string): string {
   return bytesToHex(result.data);
 }
 
+/**
+ * AES-128-ECB（PKCS7）解密 Base64 密文（校园卡加密响应）。
+ * key 为 16 字符 UTF-8 串（对齐 crypto-js：enc.Utf8.parse(data.substring(0,16)) + AES.decrypt ECB/Pkcs7）。
+ */
+export function aesEcbDecryptBase64(base64Ciphertext: string, key: string): string {
+  const helper: util.Base64Helper = new util.Base64Helper();
+  const cipherBytes: Uint8Array = helper.decodeSync(base64Ciphertext);
+  const keyBytes: Uint8Array = stringToUint8Array(key.substring(0, 16));
+  const keyGenerator: cryptoFramework.SymKeyGenerator = cryptoFramework.createSymKeyGenerator('AES128');
+  const keyBlob: cryptoFramework.DataBlob = { data: keyBytes };
+  const symKey: cryptoFramework.SymKey = keyGenerator.convertKeySync(keyBlob);
+  const cipher: cryptoFramework.Cipher = cryptoFramework.createCipher('AES128|ECB|PKCS7');
+  cipher.initSync(cryptoFramework.CryptoMode.DECRYPT_MODE, symKey, null);
+  const input: cryptoFramework.DataBlob = { data: cipherBytes };
+  const output: cryptoFramework.DataBlob = cipher.doFinalSync(input);
+  return uint8ArrayToString(output.data);
+}
+
 export function formatDate(date: Date): string {
   const year: number = date.getFullYear();
   const month: string = String(date.getMonth() + 1).padStart(2, '0');

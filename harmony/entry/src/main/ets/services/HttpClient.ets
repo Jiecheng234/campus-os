@@ -24,6 +24,9 @@ import { CookieManager } from './CookieManager';
 import { decodeGBK, isGBKContentType } from '../utils/EncodingUtils';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
+/** JSON 请求体标量值（ArkTS 禁止原始类型装箱，Record 值域用原始类型联合） */
+export type JsonBodyValue = string | number | boolean;
+
 export class HttpResponse {
   statusCode: number = 0;
   body: string = '';
@@ -176,6 +179,14 @@ export class HttpClient {
     const body: string = parts.join('&');
     const extraHeaders: Record<string, string> = {};
     extraHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
+    return this.manualRedirect('POST', url, body, extraHeaders);
+  }
+
+  /** POST application/json（校园卡等 JSON API） */
+  async postJson(url: string, jsonBody: Record<string, JsonBodyValue>): Promise<HttpResponse> {
+    const body: string = JSON.stringify(jsonBody);
+    const extraHeaders: Record<string, string> = {};
+    extraHeaders['Content-Type'] = 'application/json';
     return this.manualRedirect('POST', url, body, extraHeaders);
   }
 

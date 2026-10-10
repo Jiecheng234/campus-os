@@ -23,6 +23,7 @@ import { StorageKeys } from '../../storage/StorageKeys';
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
 import { CampusDataService } from '../campus/CampusDataService';
+import { CampusCardService } from '../campus/CampusCardService';
 import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
 
@@ -31,6 +32,7 @@ const SESSION_SAVED_KEY: string = 'auth_session_saved';
 export class SessionManager {
   private static authService: TsinghuaAuthService | undefined = undefined;
   private static campusDataService: CampusDataService | undefined = undefined;
+  private static campusCardService: CampusCardService | undefined = undefined;
 
   static getAuthService(): TsinghuaAuthService {
     if (SessionManager.authService === undefined) {
@@ -46,6 +48,14 @@ export class SessionManager {
       SessionManager.campusDataService = new CampusDataService(http);
     }
     return SessionManager.campusDataService;
+  }
+
+  static getCampusCardService(): CampusCardService {
+    if (SessionManager.campusCardService === undefined) {
+      const auth: TsinghuaAuthService = SessionManager.getAuthService();
+      SessionManager.campusCardService = new CampusCardService(auth.getHttpClient(), auth);
+    }
+    return SessionManager.campusCardService;
   }
 
   static async tryRestoreCachedLogin(): Promise<boolean> {
