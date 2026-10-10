@@ -770,7 +770,6 @@ export class CampusDataService {
   private gradesRoamEnsured: boolean = false;
   /** 电费子系统会话是否已通过 id-roam 建立 */
   private eleSessionEnsured: boolean = false;
-  private webvpnCsrf: string = '';
   /** 课表拉取状态：'unknown' 未拉过 / 'ok' JSONP 正常（可能为空）/ 'error' 拿到非 JSONP（会话失效等） */
   public scheduleStatus: string = 'unknown';
   /** 当前学期首日（YYYY-MM-DD，learn getCurrentAndNextSemester result.kssj），周数计算用 */
@@ -792,13 +791,12 @@ export class CampusDataService {
     return '';
   }
 
-  /** WebVPN 的 XSRF-TOKEN（用于 webvpn 漫游，与 learn csrf 不同） */
+  /** WebVPN 的 XSRF-TOKEN（用于 webvpn 漫游，与 learn csrf 不同）。
+   *  对齐原项目 transport.getCsrfToken：每次现取、不缓存——
+   *  完整重登录会换发新 token，缓存旧值会导致所有 info 门户请求 403（曾致资讯全挂）。 */
   async getWebvpnCsrf(): Promise<string> {
-    if (this.webvpnCsrf.length > 0) {
-      return this.webvpnCsrf;
-    }
     try {
-      // 与原项目 transport.getCsrfToken 一致：cookieSync 接口在响应体里回显
+      // 与原项目一致：cookieSync 接口在响应体里回显
       // webvpn 后端 jar 中的 info 域 cookies，从 body 提取 XSRF-TOKEN
       const url: string = 'https://webvpn.tsinghua.edu.cn/wengine-vpn/cookie?method=get&host=info.tsinghua.edu.cn&scheme=https&path=/f/info/gxfw_fg/common/index';
       const resp: HttpResponse = await this.http.get(url);
@@ -806,9 +804,8 @@ export class CampusDataService {
         resp.statusCode, resp.body.length, resp.body.substring(0, 150));
       const m = /XSRF-TOKEN=([^;]+);/.exec(resp.body + ';');
       if (m !== null && m.length >= 2 && m[1].length > 0) {
-        this.webvpnCsrf = m[1];
-        Log.i('LearnAct', 'WEBVPN_CSRF ok len=%{public}d', this.webvpnCsrf.length);
-        return this.webvpnCsrf;
+        Log.i('LearnAct', 'WEBVPN_CSRF ok len=%{public}d', m[1].length);
+        return m[1];
       }
       // 回退：本地 cookie 管理器（info / webvpn 域）
       const infoCookies: string = this.http.getCookieManager().getCookieHeader('https://info.tsinghua.edu.cn/');
@@ -818,16 +815,15 @@ export class CampusDataService {
         m2 = /XSRF-TOKEN=([^;]+)/.exec(webvpnCookies);
       }
       if (m2 !== null && m2.length >= 2 && m2[1].length > 0) {
-        this.webvpnCsrf = m2[1];
-        Log.i('LearnAct', 'WEBVPN_CSRF fallback ok len=%{public}d', this.webvpnCsrf.length);
-      } else {
-        Log.i('LearnAct', 'WEBVPN_CSRF no_token bodyLen=%{public}d infoCookieLen=%{public}d',
-          resp.body.length, infoCookies.length);
+        Log.i('LearnAct', 'WEBVPN_CSRF fallback ok len=%{public}d', m2[1].length);
+        return m2[1];
       }
+      Log.i('LearnAct', 'WEBVPN_CSRF no_token bodyLen=%{public}d infoCookieLen=%{public}d',
+        resp.body.length, infoCookies.length);
     } catch (e) {
       Log.i('LearnAct', 'WEBVPN_CSRF ex=%{public}s', e instanceof Error ? e.message : String(e));
     }
-    return this.webvpnCsrf;
+    return '';
   }
 
   /** 校验 info 门户会话（原项目 verifyInfoSession：infoUserData?_csrf= 检查 object.ryh） */
@@ -1160,8 +1156,16 @@ export class CampusDataService {
   /**
    * 校园资讯列表（info 门户 JSON，对齐原项目 news.ts getNewsList）：
    * GET /b/info/xxfb_fg/xnzx/template/more?oType=xs&lydw=&_csrf=..&lmid=all&currentPage=..&length=..
+   * 包在 withSessionRecovery 内：403/会话失效时自动重漫游或完整重登录后重试。
    */
   async fetchNewsList(page: number, length: number): Promise<CampusNews[]> {
+    const auth: TsinghuaAuthService = SessionManager.getAuthService();
+    return auth.withSessionRecovery((): Promise<CampusNews[]> => {
+      return this.doFetchNewsList(page, length);
+    }, undefined, 'campus-news-list');
+  }
+
+  private async doFetchNewsList(page: number, length: number): Promise<CampusNews[]> {
     const csrf: string = await this.getWebvpnCsrf();
     if (csrf.length === 0) {
       throw new Error('info 门户会话未建立');
@@ -1174,7 +1178,13 @@ export class CampusDataService {
     const resp: HttpResponse = await this.http.get(url);
     Log.i('LearnAct', 'NEWS code=%{public}d len=%{public}d head=%{public}s',
       resp.statusCode, resp.body.length, resp.body.substring(0, 100));
-    const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
+    let json: Record<string, Object>;
+    try {
+      json = JSON.parse(resp.body) as Record<string, Object>;
+    } catch (e) {
+      // 403/登录页等非 JSON 响应：给出可读错误，交由 withSessionRecovery 恢复重试
+      throw new Error('资讯列表响应异常（HTTP ' + resp.statusCode + '）');
+    }
     const objField = json['object'] as Record<string, Object>;
     if (objField === undefined || objField === null) {
       throw new Error('资讯响应格式异常');
@@ -1223,6 +1233,10 @@ export class CampusDataService {
     const resp: HttpResponse = await this.http.get(buildNewsDetailUrl(url));
     const html: string = resp.body;
     Log.i('LearnAct', 'NEWS_DETAIL page code=%{public}d len=%{public}d', resp.statusCode, html.length);
+    if (resp.statusCode === 403 || resp.statusCode === 401) {
+      // 会话失效：抛错交由 withSessionRecovery 恢复，避免把错误页当正文渲染
+      throw new Error('资讯详情会话失效（HTTP ' + resp.statusCode + '）');
+    }
 
     const xxidMatch = /var\s+xxid\s*=\s*["'](.*?)["']/.exec(html);
     const xxid: string = xxidMatch !== null && xxidMatch.length >= 2 ? xxidMatch[1] : '';

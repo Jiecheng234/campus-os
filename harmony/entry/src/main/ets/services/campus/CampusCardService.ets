@@ -236,15 +236,17 @@ export class CampusCardService {
   /**
    * 两层兜底（对齐原项目 withCardRetry）：
    * ensure + 探测 + 快照校验包在 withSessionRecovery 内；reroam 阶段强制重登录卡系统。
+   * 快照只比对 accountUser（登录标识）——accountCardId 是 getCampusCardInfo 在
+   * operation 内合法写入的数据缓存；原项目连 cardId 一并比对，导致首次
+   * getCampusCardInfo 必然误判"并发修改"而失败并触发完整重登录，此处有意偏离。
    */
   private async withCardRetry<T>(operation: () => Promise<T>): Promise<T> {
     return this.auth.withSessionRecovery<T>(async (): Promise<T> => {
       await this.ensureCampusCardLogin(false);
       await this.assureCampusCardSession();
       const snapUser: string = this.accountUser;
-      const snapCardId: string = this.accountCardId;
       const result: T = await operation();
-      if (this.accountUser !== snapUser || this.accountCardId !== snapCardId) {
+      if (this.accountUser !== snapUser) {
         throw new Error('校园卡登录态在请求期间被并发修改');
       }
       return result;
@@ -276,7 +278,7 @@ export class CampusCardService {
       info.maxDailyTransactionAmount = Number(firstCard['maxconstolamt'] ?? 0) / 100;
       info.maxOneTimeTransactionAmount = Number(firstCard['maxconsamt'] ?? 0) / 100;
       this.accountCardId = info.cardId;
-      Log.i('CampusCard', 'CARD_INFO balance=%{public}f cards=%{public}d', info.balance, cards.length);
+      Log.i('CampusCard', 'CARD_INFO balance=%{public}s cards=%{public}d', info.balance.toFixed(2), cards.length);
       return info;
     });
   }

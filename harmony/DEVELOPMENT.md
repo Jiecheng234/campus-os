@@ -205,6 +205,16 @@ GET  learnStudentHome                   学生首页
 - **GPA 0.00**（CampusDataService.ets）：原项目 `htmlSelect.childText(tr, N)` 按 cheerio **子节点序**取值——children 含标签间换行缩进**文本节点**，`childText(tr,3/5/7/9/11)` 实为第 2/3/4/5/6 个 td。我们旧版只数 td 且 `cells.length < 12` guard 把所有行滤光 → 空报表 GPA 0.00。重写 `parseGradeTableChildren/parseGradeRowChildren`（文本节点与 td 各占一席），守卫改 `children.length < 12`，并打 row0/row1 诊断日志（tag `LearnAct` `GRADES row0=[..]`）。顺带修 `Number('')=0` bug：绩点空列 → NaN（P/F 课不计学分绩）。
 - **资讯 `&ldquo;` 未解码**：`decodeHtmlEntities` 补 NAMED_HTML_ENTITIES 映射（ldquo/rdquo/mdash/ndash/hellip/middot/bull/times/copy/deg 等 20 项）；解码顺序=数值 → 命名（不含 amp）→ `&amp;` 最后（防 `&amp;ldquo;` 二次解码）；fetchNewsList 调用点去掉冗余外层 decodeNumericEntities。
 
+### 资讯详情视觉打磨 + 会话失效修复（2026-10-11）
+
+- **视觉打磨**（NewsPage）：标题/元信息（栏目徽标/来源/日期）加载中立即可见（列表标题兜底，对齐原项目 `detail?.title || news.name`）；加载完成由 HTML 文档内同款样式接管，标题随正文一起滚动（对齐原项目 ScrollView 结构）；正文白卡（radius 20 + hairline 边框）浮灰底；加载/错误态内联；注入文本 `escapeHtml` 转义；演示正文 `\n→<br>` 同卡渲染。
+- **会话失效连锁修复**（校园卡使用后资讯全挂 403 的根因链）：
+  1. `getWebvpnCsrf` **去缓存每次现取**（对齐原项目 `transport.getCsrfToken`）——旧缓存在完整重登录后持有过期 XSRF-TOKEN，导致所有 info 门户请求 403 且无法自愈；
+  2. `fetchNewsList` 包 `withSessionRecovery` + 非 JSON 响应给可读错误（此前 403 HTML 直接抛 `Unexpected Text in JSON` 给用户）；
+  3. `doFetchNewsDetail` 401/403 抛错触发恢复（此前错误页会被 `adaptNewsHtml` 当正文渲染）；
+  4. `CampusCardService.withCardRetry` 快照只比对 `accountUser`（**有意偏离参考实现**：`getCampusCardInfo` 在 operation 内合法写入 `accountCardId`，参考连 cardId 一并比对导致首调必误判"登录态被并发修改"、空跑 3 次登录 + 1 次完整重登录，连锁触发上述过期 csrf 问题）。
+- **按钮边距**：校园财务/宿舍电费"去充值"按钮 `width('90%')` 在 `alignItems(Start)` 父容器下贴左——改卡片同款 `width('100%') + constraintSize({maxWidth:'100%'}) + 左右 margin 16`。
+
 ### 校园卡余额/信息/流水（2026-10-10）
 
 - **CampusCardService**（`services/campus/CampusCardService.ets`）：card.tsinghua.edu.cn 直连域（不走 webvpn 包装）。
@@ -228,7 +238,6 @@ GET  learnStudentHome                   学生首页
 
 - 校园网/场馆预约等子页真实数据（各自独立 webvpn 域，需单独漫游调试）
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
-- 资讯详情页视觉打磨（六项数据接入全部完成后）
 - 修复 #3 密码明文存储（`SecureStorage` 当前仅 URL-encode，应改用 Asset Store Kit 或加密）
 
 ---
