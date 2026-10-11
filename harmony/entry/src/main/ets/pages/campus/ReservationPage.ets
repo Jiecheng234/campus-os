@@ -2,6 +2,7 @@ import { Theme, SafeTop } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
 import { LibrarySeatPage } from './LibrarySeatPage';
 import { LibraryRoomPage } from './LibraryRoomPage';
+import { SportsBookingPage } from './SportsBookingPage';
 
 @Component
 export struct ReservationPage {
@@ -10,10 +11,8 @@ export struct ReservationPage {
   @State showLibrarySeat: boolean = false;
   /** 页内切换：研读间子页（返回回到入口卡片） */
   @State showLibraryRoom: boolean = false;
-
-  private showComingSoon(): void {
-    this.getUIContext().getPromptAction().showToast({ message: '即将支持', duration: 2000 });
-  }
+  /** 页内切换：体育场馆子页（返回回到入口卡片） */
+  @State showSports: boolean = false;
 
   build() {
     Column() {
@@ -30,6 +29,13 @@ export struct ReservationPage {
         LibraryRoomPage({
           onBack: () => {
             this.showLibraryRoom = false;
+          },
+        })
+          .layoutWeight(1)
+      } else if (this.showSports) {
+        SportsBookingPage({
+          onBack: () => {
+            this.showSports = false;
           },
         })
           .layoutWeight(1)
@@ -163,7 +169,7 @@ export struct ReservationPage {
           .border({ width: 1, color: Theme.borderSubtle })
           .margin({ left: 16, right: 16 })
           .onClick(() => {
-            this.showComingSoon();
+            this.showSports = true;
           })
         }
         .width('100%')

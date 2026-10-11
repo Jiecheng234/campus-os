@@ -27,6 +27,7 @@ import { CampusCardService } from '../campus/CampusCardService';
 import { CampusNetworkService } from '../campus/CampusNetworkService';
 import { LibrarySeatService } from '../campus/LibrarySeatService';
 import { LibraryRoomService } from '../campus/LibraryRoomService';
+import { SportsService } from '../campus/SportsService';
 import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
 
@@ -39,6 +40,7 @@ export class SessionManager {
   private static networkService: CampusNetworkService | undefined = undefined;
   private static librarySeatService: LibrarySeatService | undefined = undefined;
   private static libraryRoomService: LibraryRoomService | undefined = undefined;
+  private static sportsService: SportsService | undefined = undefined;
 
   static getAuthService(): TsinghuaAuthService {
     if (SessionManager.authService === undefined) {
@@ -86,6 +88,14 @@ export class SessionManager {
       SessionManager.libraryRoomService = new LibraryRoomService(auth.getHttpClient(), auth);
     }
     return SessionManager.libraryRoomService;
+  }
+
+  static getSportsService(): SportsService {
+    if (SessionManager.sportsService === undefined) {
+      const auth: TsinghuaAuthService = SessionManager.getAuthService();
+      SessionManager.sportsService = new SportsService(auth.getHttpClient(), auth);
+    }
+    return SessionManager.sportsService;
   }
 
   static async tryRestoreCachedLogin(): Promise<boolean> {

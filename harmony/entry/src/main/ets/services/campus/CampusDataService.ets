@@ -991,6 +991,17 @@ export class CampusDataService {
       const path: string = afterHost.startsWith('/') ? afterHost.substring(1) : afterHost;
       return SCHEDULE_BASE + '/' + path;
     }
+    // 体育场馆子系统（gymbook）：roamingurl 为原始主机地址（50.tsinghua.edu.cn）时
+    // 包装为 gymbook WebVPN 前缀后跟进落点（对齐参考 parseUrl.ts HOST_MAP '50' 条目；
+    // 加法式补充，不影响既有 zhjw 分支）。
+    const sportsHost: string = '50.tsinghua.edu.cn';
+    const sportsIdx: number = url.indexOf(sportsHost);
+    if (sportsIdx >= 0) {
+      const sportsToken: string = '77726476706e69737468656265737421a5a70f8834396657761d88e29d51367b6a00';
+      const afterSportsHost: string = url.substring(sportsIdx + sportsHost.length);
+      const sportsPath: string = afterSportsHost.startsWith('/') ? afterSportsHost.substring(1) : afterSportsHost;
+      return 'https://webvpn.tsinghua.edu.cn/http/' + sportsToken + '/' + sportsPath;
+    }
     return url;
   }
 
@@ -1036,8 +1047,9 @@ export class CampusDataService {
       }
       const finalUrl: string = this.parseToWebVPN(roamingurl);
       const authResp: HttpResponse = await this.http.get(finalUrl);
-      Log.i('LearnAct', 'ROAM_HTML landing code=%{public}d len=%{public}d',
-        authResp.statusCode, authResp.body.length);
+      Log.i('LearnAct', 'ROAM_HTML landing url=%{public}s code=%{public}d len=%{public}d head=%{public}s',
+        finalUrl.substring(0, 160), authResp.statusCode, authResp.body.length,
+        authResp.body.substring(0, 160).replace(/[\r\n\t]+/g, ' '));
       return authResp.body;
     } catch (e) {
       Log.i('LearnAct', 'ROAM_HTML ex=%{public}s', e instanceof Error ? e.message : String(e));

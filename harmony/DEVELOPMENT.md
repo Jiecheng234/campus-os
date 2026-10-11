@@ -263,6 +263,21 @@ GET  learnStudentHome                   学生首页
 - **ReservationPage 改造**：研读间卡片 → 内联渲染 `LibraryRoomPage`（返回回到入口卡片）；体育场馆 → toast"即将支持"。
 - `SessionManager.getLibraryRoomService()` 单例接线（与 `getLibrarySeatService()` 同构）。
 
+### 体育场馆（只读）接入（2026-10-11）
+
+- **SportsService**（`services/campus/SportsService.ets`，对齐原项目 `sports.ts`）：
+  - 子系统会话：**通用漫游** `CampusDataService.roamByYyfwidHtml(SPORTS_ROAM_PAYLOAD)`（yyfwid `5539ECF8…`）+ `sportsSessionEnsured` 已激活标记；读取统一包 `withSportsRetry`（`withSessionRecovery(op, reroam{标记复位 + 强制重漫游}, 'sports')`）。
+  - **落点地址映射**：webvpn roamingurl 为**原始主机** `50.tsinghua.edu.cn`（非 WebVPN 域）——`CampusDataService.parseToWebVPN` **加法式**补充体育场馆主机映射（包装为 gymbook webvpn token 前缀，不改既有 zhjw 分支）；`roamByYyfwidHtml` 落点日志补 `finalUrl` 便于核对。
+  - **GBK 解析**：gymbook 子系统 token 已在 `HttpClient.GBK_URL_MARKERS`（响应头无 charset 时按 URL 标记回退 GBK + 严格 UTF-8 嗅探），中文零乱码。
+  - 资源页为**脚本驱动 HTML（非 JSON）**：四类脚本调用按资源标识合并——`resourceArray.push({…});…resourcesm.put(id,hash)`（push.id 与 put 键一致才收录）、`addCost`（费用）、`markResStatus`（预约标识/锁定）、`markStatusColor`（用户类型/支付状态）。
+  - 限额：资源首页脚本变量**多形态匹配**（`var x='n'` / `"n"` / 裸数字 / 不带 var），缺失抛可读错误。
+  - `getSportsResources`：并发取"限额 + 联系电话 + 资源列表"（联系电话约定值 `do_not`/接口失败 → 空，**不阻塞资源加载**）。
+  - 记录：未支付订单按 **td 计数列序 1/3/5/7/9** 取名称/场地/时间/价格/支付方式（参考本地 `cellText` 按 td 计数，**与 cheerio 子节点序不同，勿混用**）；行内脚本 `payNow`/`unsubscribeOnline`/`unsubscribe` 提取支付/预约标识；已支付订单 `tr[display:none]` 内嵌行（列序 2/3/4/5）合并；逐行容错 + 首行诊断日志核对列序。
+  - **只读边界**：下单/支付/退订不迁移（`makeSportsReservation` 等不移植）。
+- **SportsBookingPage**（`pages/campus/SportsBookingPage.ets`）：页内两视图（RESOURCES：固定 8 场馆 chips（默认第一个）+ 近 7 天日期行（默认今天）+ 限额/联系电话卡（仅服务端返回时展示）+ 资源列表（时段/场地/费用/可预约/已锁定/不可预约徽标）+ 我的预约记录入口 → RECORDS：未支付 + 已支付合并列表（可支付/可取消标注）/空态）；标题随视图变化（自绘 HeaderBar——动态标题不能经 `DetailHeader` 传入）；系统返回经 `BackDispatcher` 逐级 pop；右上角刷新加载中转进度；演示模式内置示例零网络请求；只读引导（"下单与支付请通过官方渠道完成"）就位。
+- **ReservationPage 改造**：体育场馆卡片 → 内联渲染 `SportsBookingPage`（返回回到入口卡片）；至此场馆预约三卡片（图书馆座位/研读间/体育场馆）全部接入只读查询。
+- `SessionManager.getSportsService()` 单例接线（与 `getLibrarySeatService()` 同构）。
+
 ### 校园卡余额/信息/流水（2026-10-10）
 
 - **CampusCardService**（`services/campus/CampusCardService.ets`）：card.tsinghua.edu.cn 直连域（不走 webvpn 包装）。
@@ -284,7 +299,6 @@ GET  learnStudentHome                   学生首页
 
 ### 其他待办
 
-- 场馆预约剩余子页真实数据（仅剩体育场馆；图书馆座位与研读间均已接入只读查询）
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
 - 修复 #3 密码明文存储（`SecureStorage` 当前仅 URL-encode，应改用 Asset Store Kit 或加密）
 
