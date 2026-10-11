@@ -11,6 +11,8 @@
  *     并做严格 UTF-8 嗅探兜底（webvpn 会把部分 zhjw 响应重编码为 UTF-8）。
  *   - POST urlencoded：postForm 自动拼 Content-Type: application/x-www-form-urlencoded
  *     【关键】缺了这个头会导致清华 ID 登录失败（响应异常短）。
+ *   - getBytes：GET 响应体原始字节（验证码图片等二进制，不做文本解码）；
+ *     postFormWithHeaders：urlencoded POST + 自定义请求头（X-CSRF-Token 等）。
  *
  * 注意：
  *   - lastSetCookies 暴露最近一次响应的原始 Set-Cookie（用于诊断，如 cookieSync 排查）。
@@ -35,6 +37,16 @@ export class HttpResponse {
 export class HttpError extends Error {
   statusCode: number = 0;
 }
+
+/** 原始字节响应（getBytes 用；响应体不经字符集解码，二进制安全） */
+class HttpBytesResponse {
+  statusCode: number = 0;
+  bytes: Uint8Array = new Uint8Array(0);
+}
+
+/** 统一 User-Agent（既有 rcpRequest 同款） */
+const USER_AGENT: string =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36';
 
 function getLocationFromHeaders(headers: Record<string, string | string[] | undefined>): string {
   const v = headers['Location'] || headers['location'];
@@ -190,6 +202,51 @@ export class HttpClient {
     return this.manualRedirect('POST', url, body, extraHeaders);
   }
 
+  /**
+   * GET 响应体原始字节（验证码图片等二进制内容用）：
+   * 复用既有会话（Cookie 注入 + 手动重定向跟随 Location），但**不做文本解码**——
+   * 既有 get() 返回按字符集解码的文本，直接用于图片会损坏内容。
+   */
+  async getBytes(url: string): Promise<Uint8Array> {
+    let currentUrl: string = url;
+    for (let hop: number = 0; hop < this.maxRedirects; hop++) {
+      const resp: HttpBytesResponse = await this.rcpRequestBytes(currentUrl);
+      if (resp.statusCode < 300 || resp.statusCode >= 400) {
+        return resp.bytes;
+      }
+      const location: string = getLocationFromHeaders(this.lastResponseHeaders);
+      if (location.length === 0) {
+        return resp.bytes;
+      }
+      currentUrl = resolveUrl(currentUrl, location);
+    }
+    const err: HttpError = new HttpError();
+    err.message = 'Too many redirects';
+    throw err;
+  }
+
+  /**
+   * POST urlencoded + 自定义请求头：请求体编码与既有 postForm 完全一致，
+   * 另将 extraHeaders（X-CSRF-Token / X-Requested-With / 带 charset 的 Content-Type 等）
+   * 并入请求头；不改动既有 postForm 的签名与行为。
+   */
+  async postFormWithHeaders(url: string, formData: Record<string, string>, extraHeaders: Record<string, string>): Promise<HttpResponse> {
+    const parts: string[] = [];
+    const keys: string[] = Object.keys(formData);
+    for (let i: number = 0; i < keys.length; i++) {
+      const k: string = keys[i];
+      parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(formData[k]));
+    }
+    const body: string = parts.join('&');
+    const headers: Record<string, string> = {};
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    const extraKeys: string[] = Object.keys(extraHeaders);
+    for (let i: number = 0; i < extraKeys.length; i++) {
+      headers[extraKeys[i]] = extraHeaders[extraKeys[i]];
+    }
+    return this.manualRedirect('POST', url, body, headers);
+  }
+
   clearSession(): void {
     this.cookieManager.clear();
     this.session.close();
@@ -238,11 +295,56 @@ export class HttpClient {
 
   private lastResponseHeaders: Record<string, string | string[] | undefined> = {};
 
+  /** 与 rcpRequest 同款请求装配（Cookie 注入 / Set-Cookie 回写 / 头结构），但保留响应体原始字节 */
+  private async rcpRequestBytes(url: string): Promise<HttpBytesResponse> {
+    const cookieHeader: string = this.cookieManager.getCookieHeader(url);
+
+    const reqHeaders: Record<string, string> = {};
+    reqHeaders['User-Agent'] = USER_AGENT;
+    if (cookieHeader.length > 0) {
+      reqHeaders['Cookie'] = cookieHeader;
+    }
+
+    const config: rcp.Configuration = {
+      transfer: {
+        autoRedirect: false,
+        timeout: { connectMs: this.timeoutMs, transferMs: this.timeoutMs }
+      }
+    };
+
+    const req: rcp.Request = new rcp.Request(url, 'GET', reqHeaders, '', undefined, undefined, config);
+
+    try {
+      const resp: rcp.Response = await this.session.fetch(req);
+      this.lastResponseHeaders = resp.headers;
+
+      const setCookies: string[] = getSetCookieFromHeaders(resp.headers);
+      this.lastSetCookies = setCookies;
+      for (let i: number = 0; i < setCookies.length; i++) {
+        this.cookieManager.setFromResponse(url, setCookies[i]);
+      }
+
+      const result: HttpBytesResponse = new HttpBytesResponse();
+      result.statusCode = resp.statusCode;
+      // RCP 响应体本身就是原始 ArrayBuffer（本 SDK 版本无 toArrayBuffer()），
+      // 直接包装为 Uint8Array 即为未解码字节
+      const buf: ArrayBuffer | undefined = resp.body;
+      result.bytes = buf !== undefined ? new Uint8Array(buf) : new Uint8Array(0);
+      return result;
+    } catch (e) {
+      const err: HttpError = new HttpError();
+      if (e instanceof Error) {
+        err.message = e.message;
+      }
+      throw err;
+    }
+  }
+
   private async rcpRequest(method: string, url: string, body: string, extraHeaders?: Record<string, string>): Promise<HttpResponse> {
     const cookieHeader: string = this.cookieManager.getCookieHeader(url);
 
     const reqHeaders: Record<string, string> = {};
-    reqHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36';
+    reqHeaders['User-Agent'] = USER_AGENT;
     if (cookieHeader.length > 0) {
       reqHeaders['Cookie'] = cookieHeader;
     }

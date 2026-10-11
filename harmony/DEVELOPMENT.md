@@ -215,6 +215,29 @@ GET  learnStudentHome                   学生首页
   4. `CampusCardService.withCardRetry` 快照只比对 `accountUser`（**有意偏离参考实现**：`getCampusCardInfo` 在 operation 内合法写入 `accountCardId`，参考连 cardId 一并比对导致首调必误判"登录态被并发修改"、空跑 3 次登录 + 1 次完整重登录，连锁触发上述过期 csrf 问题）。
 - **按钮边距**：校园财务/宿舍电费"去充值"按钮 `width('90%')` 在 `alignItems(Start)` 父容器下贴左——改卡片同款 `width('100%') + constraintSize({maxWidth:'100%'}) + 左右 margin 16`。
 
+### 校园网接入（2026-10-11）
+
+- **CampusNetworkService**（`services/campus/CampusNetworkService.ets`）：WebVPN 校园网自助服务（token `7772647…`，与 info 门户同一 WebVPN 会话，无需独立漫游）。
+  - **快照**：`getNetworkSnapshot()` = 探测登录入口页（WebVPN 登录页标记=会话失效；`loginform-verifycode`=需验证码）→ 首页（`#w3-container` 余额表、`#w1-container` 设备表、状态图标父文本）→ `users`（`#w0` 账户表，按序 0/1/2/3/5/6/7）→ `user/online-num`（允许设备数取图标父文本首个数字）；整体 `withNetworkRetry`（探测 + `withSessionRecovery(…, 'campus-network')` 两层恢复，对齐原项目 `withNetworkRetry`）。
+  - **注销**：`logoutNetworkDevice(key, mac)` —— 首页提取 `input[name=_csrf-8800]` → `postForm` 携带 CSRF 至 `home/delete?id=&user_mac=`（查询参数百分号编码）→ `w5-success-0` 判成功 / `w5-danger-0` 取失败文本。
+  - **正则解析**：复刻参考 DOM 选择语义，无三方依赖；`tableInnerById` 兼容 id 在 table 上（`#w0` DetailView）与外层容器上（`#w1-container`/`#w3-container` GridView）两种形态；`iconParentText` 向前栈式扫描取图标父元素文本。
+  - **验证码**：命中标记抛 `NetworkCaptchaRequiredError`（稳定 code + `isNetworkCaptchaRequiredError` 判别），页面进验证码登录态——图片验证码登录见下方「校园网图片验证码登录」增量。
+- **NetworkPage 重写**：余额/用量 hero（产品名/已用流量/已用时长/余额/结算日期）→ 账户信息 9 字段（空值"—"）→ 在线设备列表（IPv4/IPv6/登录时间/权限/MAC + 空态）；注销 `AlertDialog.show` 二次确认（文案含权限、掩码 IP/MAC 与断网提示）+ 行内 busy + toast + 重载；右上角刷新加载中转圈；错误/验证码引导态可重试。演示模式内置示例，零网络请求。
+- `SessionManager.getNetworkService()` 单例接线（与 `getCampusCardService()` 同构）。
+
+### 校园网图片验证码登录（2026-10-11 第二轮增量）
+
+- **共享能力**（跨模块新增，既有方法零改动）：
+  - `HttpClient.getBytes(url)`：GET 响应体**原始字节**（`resp.body` ArrayBuffer → `Uint8Array`，不走文本解码——图片二进制经 charset 解码必损坏；同款 Cookie 注入 + 手动重定向跟随 Location）。
+  - `HttpClient.postFormWithHeaders(url, form, extraHeaders)`：urlencoded POST + 自定义请求头（`X-CSRF-Token`/`X-Requested-With`/带 charset 的 Content-Type）；`extraHeaders` 后合并，可覆盖默认 Content-Type；既有 `postForm` 签名未动。
+  - `CryptoUtils.rsaEncryptPkcs1(text, pem)`：PEM 体 Base64 → DER → PKCS#1 裸公钥先 ASN.1 包装为 X.509 SPKI（手写 `readAsn1Length/encodeAsn1Length/wrapPkcs1ToSpki`）→ 密钥位数按模数长度推断（256B→RSA2048，向上取整到 1024 倍数）→ `convertKeySync` + `createCipher('RSA2048|PKCS1')`（**PKCS#1 v1.5**，对齐参考 JSEncrypt 默认填充）→ Base64。
+  - `CampusDataService.roamByYyfwidHtml(yyfwid)`：既有 `roamByYyfwid` 的 HTML 变体（webvpn csrf → onlineAppRedirect → roamingurl → 落点页），返回落点页 HTML；失败返回空串不抛；既有 `roamByYyfwid` 未动。
+- **验证码登录**（CampusNetworkService，对齐原项目 `network.ts` fetchNetworkCaptchaBase64 / loginNetworkWithCaptcha）：
+  - `fetchCaptchaImage()`：`site/captcha?refresh=1` 预热（触发新验证码并落 Cookie）→ `?_=<Date.now()>` 一次性取图规避缓存 → Base64 data URI（`data:image/png;base64,…`）。
+  - `loginNetworkWithCaptcha(code)`：① 空输入拦截 → ② 登录页提取 `meta[name=csrf-token]` / `input[name=_csrf-8800]` / `#public`（RSA 公钥 PEM；属性值内 `&#10;` 等实体先 `decodeEntities`）→ ③ `roamByYyfwidHtml(USER_INFO_YYFWID)` 从 `'addr':'…@mails.tsinghua.edu.cn'` 提取邮箱前缀为账号名 → ④ `rsaEncryptPkcs1` 加密 WebVPN 密码 → ⑤ `postFormWithHeaders` 调 `site/validate-user`（JSON `success` 必须为 true，否则透出服务端 message）→ ⑥ `postForm` 提交登录表单（`LoginForm[username/password/verifyCode/smsCode]` + `_csrf-8800`）→ ⑦ 复探测确认（仍见验证码表单 = 登录未生效）。
+  - **有意偏离**：单发**不套 withNetworkRetry**——探测在验证码态必抛 `NetworkCaptchaRequiredError`（等于必失败），且会话恢复重试可能重复提交登录表单（错验证码二次提交）；错误一律可读中文直接抛给页面。
+- **NetworkPage 验证码态**：进入自动取图；图片点击或「换一张」手动刷新；输入框回车即提交；提交中按钮禁用（`登录中…`）；成功 toast + 退出验证码态 + 自动 `load()` 重载数据；失败 toast + **自动换图** + 清空输入（验证码一次性，旧图作废）；「重试原查询」保留。演示模式零网络请求，永不进验证码态。
+
 ### 校园卡余额/信息/流水（2026-10-10）
 
 - **CampusCardService**（`services/campus/CampusCardService.ets`）：card.tsinghua.edu.cn 直连域（不走 webvpn 包装）。
@@ -236,7 +259,7 @@ GET  learnStudentHome                   学生首页
 
 ### 其他待办
 
-- 校园网/场馆预约等子页真实数据（各自独立 webvpn 域，需单独漫游调试）
+- 场馆预约子页真实数据（独立 webvpn 域，需单独漫游调试；仅覆盖图书馆座位 + 研读间）
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
 - 修复 #3 密码明文存储（`SecureStorage` 当前仅 URL-encode，应改用 Asset Store Kit 或加密）
 

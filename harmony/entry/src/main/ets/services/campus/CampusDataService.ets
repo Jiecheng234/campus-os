@@ -994,6 +994,57 @@ export class CampusDataService {
     return url;
   }
 
+  /**
+   * roamByYyfwid 的 HTML 变体（校园网验证码登录取账号名用）：
+   * 复刻既有漫游流程（webvpn csrf → onlineAppRedirect → roamingurl → 落点页），
+   * 但返回漫游落点页 HTML；失败返回空串（不抛）。既有 roamByYyfwid 保持不变。
+   */
+  async roamByYyfwidHtml(yyfwid: string): Promise<string> {
+    try {
+      const csrf: string = await this.getWebvpnCsrf();
+      if (csrf.length === 0) {
+        Log.i('LearnAct', 'ROAM_HTML skip: no webvpn csrf');
+        return '';
+      }
+      const INFO_TOKEN: string = '77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de';
+      const roamUrl: string = 'https://webvpn.tsinghua.edu.cn/https/' + INFO_TOKEN
+        + '/b/yyfw/vyyfwxx/info/portal_fg/common/onlineAppRedirect?yyfwid=' + yyfwid + '&_csrf='
+        + encodeURIComponent(csrf) + '&machine=p';
+      const resp: HttpResponse = await this.http.get(roamUrl);
+      Log.i('LearnAct', 'ROAM_HTML code=%{public}d len=%{public}d', resp.statusCode, resp.body.length);
+      let json: Record<string, Object>;
+      try {
+        json = JSON.parse(resp.body) as Record<string, Object>;
+      } catch (e) {
+        Log.i('LearnAct', 'ROAM_HTML non_json head=%{public}s', resp.body.substring(0, 120));
+        return '';
+      }
+      const resultStr: string = String(json['result'] ?? '');
+      if (resultStr.length > 0 && resultStr !== 'success') {
+        Log.i('LearnAct', 'ROAM_HTML fail result=%{public}s msg=%{public}s', resultStr, String(json['msg'] ?? ''));
+        return '';
+      }
+      const objField = json['object'] as Record<string, Object>;
+      if (objField === undefined || objField === null) {
+        Log.i('LearnAct', 'ROAM_HTML no_object keys=%{public}s', Object.keys(json).join(','));
+        return '';
+      }
+      const roamingurl: string = String(objField['roamingurl'] ?? '').replace(/&amp;/g, '&');
+      if (roamingurl.length === 0) {
+        Log.i('LearnAct', 'ROAM_HTML no_roamingurl');
+        return '';
+      }
+      const finalUrl: string = this.parseToWebVPN(roamingurl);
+      const authResp: HttpResponse = await this.http.get(finalUrl);
+      Log.i('LearnAct', 'ROAM_HTML landing code=%{public}d len=%{public}d',
+        authResp.statusCode, authResp.body.length);
+      return authResp.body;
+    } catch (e) {
+      Log.i('LearnAct', 'ROAM_HTML ex=%{public}s', e instanceof Error ? e.message : String(e));
+      return '';
+    }
+  }
+
   /** 拉取今日课表事件（今天 + 明天范围，过滤今天） */
   async fetchTodaySchedule(): Promise<ScheduleEvent[]> {
     const now: Date = new Date();
