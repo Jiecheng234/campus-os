@@ -1,17 +1,32 @@
 import { Theme, SafeTop } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
+import { LibrarySeatPage } from './LibrarySeatPage';
 
 @Component
 export struct ReservationPage {
   onBack: () => void = () => {};
+  /** 页内切换：图书馆座位子页（返回回到入口卡片） */
+  @State showLibrarySeat: boolean = false;
+
+  private showComingSoon(): void {
+    this.getUIContext().getPromptAction().showToast({ message: '即将支持', duration: 2000 });
+  }
 
   build() {
     Column() {
       SafeTop()
 
-      DetailHeader({ title: '场馆预约', onBack: () => { this.onBack(); } })
+      if (this.showLibrarySeat) {
+        LibrarySeatPage({
+          onBack: () => {
+            this.showLibrarySeat = false;
+          },
+        })
+          .layoutWeight(1)
+      } else {
+        DetailHeader({ title: '场馆预约', onBack: () => { this.onBack(); } })
 
-      Divider().color(Theme.divider)
+        Divider().color(Theme.divider)
 
       Scroll() {
         Column() {
@@ -53,6 +68,9 @@ export struct ReservationPage {
           .backgroundColor(Theme.surface)
           .border({ width: 1, color: Theme.borderSubtle })
           .margin({ left: 16, right: 16, bottom: 12 })
+          .onClick(() => {
+            this.showLibrarySeat = true;
+          })
 
           // 研读间
           Row() {
@@ -92,6 +110,9 @@ export struct ReservationPage {
           .backgroundColor(Theme.surface)
           .border({ width: 1, color: Theme.borderSubtle })
           .margin({ left: 16, right: 16, bottom: 12 })
+          .onClick(() => {
+            this.showComingSoon();
+          })
 
           // 体育场馆
           Row() {
@@ -131,6 +152,9 @@ export struct ReservationPage {
           .backgroundColor(Theme.surface)
           .border({ width: 1, color: Theme.borderSubtle })
           .margin({ left: 16, right: 16 })
+          .onClick(() => {
+            this.showComingSoon();
+          })
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
@@ -138,6 +162,7 @@ export struct ReservationPage {
       .width('100%')
       .layoutWeight(1)
       .scrollBar(BarState.Off)
+      }
     }
     .width('100%')
     .height('100%')

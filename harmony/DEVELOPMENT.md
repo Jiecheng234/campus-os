@@ -225,6 +225,18 @@ GET  learnStudentHome                   学生首页
 - **NetworkPage 重写**：余额/用量 hero（产品名/已用流量/已用时长/余额/结算日期）→ 账户信息 9 字段（空值"—"）→ 在线设备列表（IPv4/IPv6/登录时间/权限/MAC + 空态）；注销 `AlertDialog.show` 二次确认（文案含权限、掩码 IP/MAC 与断网提示）+ 行内 busy + toast + 重载；右上角刷新加载中转圈；错误/验证码引导态可重试。演示模式内置示例，零网络请求。
 - `SessionManager.getNetworkService()` 单例接线（与 `getCampusCardService()` 同构）。
 
+### 图书馆座位（只读）接入（2026-10-11）
+
+- **LibrarySeatService**（`services/campus/LibrarySeatService.ets`，对齐原项目 `library.ts`）：
+  - 子系统会话：id 漫游 `roamIdSubsystem`（yyfwid `ef84f6…/0?/api/id_tsinghua_callback`）+ 已激活标记 + 首个 home 请求失败忽略；读取统一包 `withLibRetry`（两层 `withSessionRecovery`，reroam = 重置标记 + 强制重漫游，label `lib`）。
+  - 接口（纯 JSON，`api.php/areas|areadays|spaces_old`）：失败标记 `status='false'` → 抛服务端 msg；`data.list` 缺失 → 可读错误。
+  - 楼层使用率：楼层自身无总数，由其开放子区域聚合（可用 = max(0, TotalCount − UnavailableSpace)）；并发拉取（任务数组发起后逐个 await，规避 `Promise.all`）、单层失败容错为 0、未开放层不发请求。
+  - 座位查询：先 `areadays/{sectionId}` 命中目标日拿时段 id 与起止（今天起始时间钳制"当前时刻或更晚"），再 `spaces_old` 查座位状态（1 可用/6 已预约/7 已被占用，其余不可用）。
+  - 我的预约：`user/index/book` HTML 表格正则解析（复刻 cheerio children 语义，childText 索引 3/5/7/11）；无 tbody 且无记录抛可读错误。
+- **LibrarySeatPage**（`pages/campus/LibrarySeatPage.ets`）：页内多级浏览（馆 chips + 今天/明天切换 + 楼层使用率 → 区域（可用/总数/已预约）→ 座位状态 + 我的预约/空态）；标题随层级变化（自绘 HeaderBar——自定义组件普通成员只初始化一次，动态标题不能经 `DetailHeader` 传入）；系统返回经 `BackDispatcher` 逐级 pop；右上角刷新/错误重试按层级重拉；演示模式内置示例零网络请求；只读引导（"预约请前往官方小程序完成"）各层就位。
+- **ReservationPage 改造**：图书馆座位卡片 → 内联渲染 `LibrarySeatPage`（返回回到入口卡片）；研读间/体育场馆 → toast"即将支持"（不发起请求）。
+- `SessionManager.getLibrarySeatService()` 单例接线（与 `getCampusCardService()` 同构）。
+
 ### 校园网图片验证码登录（2026-10-11 第二轮增量）
 
 - **共享能力**（跨模块新增，既有方法零改动）：
@@ -259,7 +271,7 @@ GET  learnStudentHome                   学生首页
 
 ### 其他待办
 
-- 场馆预约子页真实数据（独立 webvpn 域，需单独漫游调试；仅覆盖图书馆座位 + 研读间）
+- 场馆预约剩余子页真实数据（研读间（需 cab 登录）/ 体育场馆；均需单独漫游调试，图书馆座位已接入只读查询）
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
 - 修复 #3 密码明文存储（`SecureStorage` 当前仅 URL-encode，应改用 Asset Store Kit 或加密）
 

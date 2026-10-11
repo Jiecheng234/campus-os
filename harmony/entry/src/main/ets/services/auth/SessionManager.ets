@@ -25,6 +25,7 @@ import { StateManager } from '../../state/StateManager';
 import { CampusDataService } from '../campus/CampusDataService';
 import { CampusCardService } from '../campus/CampusCardService';
 import { CampusNetworkService } from '../campus/CampusNetworkService';
+import { LibrarySeatService } from '../campus/LibrarySeatService';
 import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
 
@@ -35,6 +36,7 @@ export class SessionManager {
   private static campusDataService: CampusDataService | undefined = undefined;
   private static campusCardService: CampusCardService | undefined = undefined;
   private static networkService: CampusNetworkService | undefined = undefined;
+  private static librarySeatService: LibrarySeatService | undefined = undefined;
 
   static getAuthService(): TsinghuaAuthService {
     if (SessionManager.authService === undefined) {
@@ -66,6 +68,14 @@ export class SessionManager {
       SessionManager.networkService = new CampusNetworkService(auth.getHttpClient(), auth);
     }
     return SessionManager.networkService;
+  }
+
+  static getLibrarySeatService(): LibrarySeatService {
+    if (SessionManager.librarySeatService === undefined) {
+      const auth: TsinghuaAuthService = SessionManager.getAuthService();
+      SessionManager.librarySeatService = new LibrarySeatService(auth.getHttpClient(), auth);
+    }
+    return SessionManager.librarySeatService;
   }
 
   static async tryRestoreCachedLogin(): Promise<boolean> {
