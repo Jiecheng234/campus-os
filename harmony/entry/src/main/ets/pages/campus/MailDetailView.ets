@@ -283,16 +283,6 @@ export struct MailDetailView {
         .width('100%')
         .alignItems(HorizontalAlign.Start)
         .padding({ left: Space.md, right: Space.md, bottom: Space.md })
-
-        if (this.detail.attachments.length > 0) {
-          // 附件元信息白卡（外层 padding 防右缘溢出）
-          Column() {
-            this.AttachmentSection()
-          }
-          .width('100%')
-          .alignItems(HorizontalAlign.Start)
-          .padding({ left: Space.md, right: Space.md, bottom: Space.md })
-        }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -345,40 +335,42 @@ export struct MailDetailView {
     .border({ width: 1, color: Theme.borderSubtle })
   }
 
-  /** 底部操作条：删除 / 移动（具体确认流程与写操作由父组件执行） */
+  /** 底部操作条：删除 / 移动（具体确认流程与写操作由父组件执行）
+   *  说明：上移并加高，避免被应用底部 Tab 栏遮挡 / 视觉上与背景混淆。 */
   @Builder
   private ActionBar() {
     Row({ space: Space.md }) {
-      Text('删除')
+      Text('删除邮件')
         .fontSize(FontSize.label)
-        .fontWeight(FontWeight.Medium)
+        .fontWeight(FontWeight.Bold)
         .fontColor(Theme.error)
         .layoutWeight(1)
-        .height(40)
+        .height(48)
         .textAlign(TextAlign.Center)
         .borderRadius(Radius.pill)
         .backgroundColor(Theme.errorMuted)
-        .border({ width: 1, color: Theme.errorMuted })
+        .border({ width: 1, color: Theme.error })
         .onClick(() => {
           this.onDelete();
         })
 
-      Text('移动')
+      Text('移动邮件')
         .fontSize(FontSize.label)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Theme.textSecondary)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(Theme.primary)
         .layoutWeight(1)
-        .height(40)
+        .height(48)
         .textAlign(TextAlign.Center)
         .borderRadius(Radius.pill)
         .backgroundColor(Theme.surface)
-        .border({ width: 1, color: Theme.borderSubtle })
+        .border({ width: 1, color: Theme.primary })
         .onClick(() => {
           this.onMove();
         })
     }
     .width('100%')
     .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+    .margin({ bottom: 72 })
   }
 
   build() {
@@ -407,6 +399,15 @@ export struct MailDetailView {
                 .backgroundColor('#FAFAFB')
             } else {
               this.PlainBodyView()
+            }
+            // 附件元信息（纯文本与富文本正文均展示；富文本 Web 占 layoutWeight(1)，此处挤在其下方）
+            if (this.detail.attachments.length > 0) {
+              Column() {
+                this.AttachmentSection()
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+              .padding({ left: Space.md, right: Space.md, bottom: Space.md })
             }
             this.ActionBar()
           }

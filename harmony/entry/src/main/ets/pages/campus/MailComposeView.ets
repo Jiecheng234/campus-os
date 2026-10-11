@@ -210,6 +210,8 @@ export struct MailComposeView {
       }
       .width('100%')
       .padding({ left: Space.md, right: Space.md, bottom: Space.md })
+      // 上移，避免「发送」按钮被应用底部 Tab 栏遮挡
+      .margin({ bottom: 72 })
     }
     .width('100%')
     .height('100%')

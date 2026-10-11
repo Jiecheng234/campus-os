@@ -11,7 +11,13 @@
  *   - 自愈：接口返回会话失效类错误码（FA_INVALID_SESSION / FA_SECURITY）时清缓存
  *     强制重建一次后重试；业务错误（result=error / FA_* 码）转可读中文错误。
  *   - 接口：JSON POST（func 查询参数 + JSON 体，复用 HttpClient.postJsonRaw）与
- *     urlencoded POST（复用 postFormWithHeaders）。
+ *     urlencoded POST（复用 postFormWithHeaders，Content-Type 精确为
+ *     "application/x-www-form-urlencoded; charset=UTF-8"）。
+ *   - 修复轮 R1（真实模式缺口，实测驱动）：本部署 `/coremail/s`（XML RPC）对所有读信
+ *     func 均返回 XML "Invalid method"/FR_INVALID_REQUEST，故读信改走 JSON 端点
+ *     `/coremail/s/json`：① `mbox:getMessageInfos` 取元信息；② `mbox:getMessageData`
+ *     {id,part:'1',mode:'download'} 取正文；③ 无 part 取原始 RFC822 解析 MIME 附件；
+ *     列表附件标记派生链对齐参考 parseMessage（上游无线索时退化为详情页展示）。
  *   - 列表多形态回退：线程/扁平 × 排序字段（date/receivedDate），全空再试兼容
  *     XML 接口（RPC + {var: xml}）；"总数 > 0 但解析 0 条"抛可读错误。
  *   - 解析容错：递归寻找邮件数组/总数、逐条失败跳过、联系人兼容字符串/对象/数组。
@@ -53,6 +59,10 @@ const FUNC_LIST_THREADS: string = 'mbox:listThreads';
 const FUNC_LIST_MESSAGES: string = 'mbox:listMessages';
 const FUNC_SEARCH: string = 'mail:searchMessages';
 const FUNC_READ: string = 'readMessage';
+/** 实测可用：邮件元信息（JSON 端点 S_OK，返回 var:[{from,to,subject,sentDate,...}]） */
+const FUNC_GET_INFOS: string = 'mbox:getMessageInfos';
+/** 实测可用：邮件正文/原始数据（JSON 端点 status=200，part=1 返回正文，无 part 返回原始 RFC822） */
+const FUNC_GET_DATA: string = 'mbox:getMessageData';
 const FUNC_COMPOSE_INIT: string = 'compose';
 const FUNC_UPDATE_INFOS: string = 'mbox:updateMessageInfos';
 const FUNC_DELETE: string = 'mbox:deleteMessages';
@@ -60,6 +70,13 @@ const FUNC_COMPOSE: string = 'mbox:compose';
 
 /** Coremail POST 公共请求头（对齐参考 coremailXhrText 的 XHR 装配） */
 const COREMAIL_JSON_HEADERS: Record<string, string> = {
+  'X-Requested-With': 'XMLHttpRequest',
+  'Accept': 'text/x-json, application/json, */*'
+};
+
+/** Coremail form/RPC POST 公共请求头（对齐参考 formCall：精确 charset 的 urlencoded Content-Type） */
+const COREMAIL_FORM_HEADERS: Record<string, string> = {
+  'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
   'X-Requested-With': 'XMLHttpRequest',
   'Accept': 'text/x-json, application/json, */*'
 };
@@ -83,6 +100,8 @@ export class MailAttachment {
   id: string = '';
   name: string = '';
   size: number = 0;
+  /** Coremail part 标识（附件定位用；本轮仅记录元信息，不用于下载） */
+  part: string = '';
 }
 
 export class MailMessageSummary {
@@ -332,6 +351,10 @@ function parseMessage(raw: Object): MailMessageSummary {
     || attr['read'] === false || item['isRead'] === false
     || (flags['read'] === undefined && flagKeys.length > 0);
   m.flagged = isTruthy(firstNonEmpty([flags['flagged'], item['flagged'], item['label0']]));
+  // 附件标记派生链（修复轮 R1 / T025，对齐参考 parseMessage）：
+  // attached | hasAttachment | attach | attr.attached | attr.hasAttachment | envelope.hasAttachment，
+  // 全缺时回退 attachments 数组长度；上游列表接口实测不返回任何附件线索 →
+  // 列表标记退化为"未知"（false，不显示附件标、不伪造），附件以详情页元信息为准。
   const attachFlag: Object | undefined = firstNonEmpty([
     item['attached'], item['hasAttachment'], item['attach'],
     attr['attached'], attr['hasAttachment'], envelope['hasAttachment'],
@@ -454,6 +477,464 @@ function findTotal(value: Object | undefined, depth: number): number {
 class RawList {
   messages: Object[] = [];
   total: number = 0;
+}
+
+/** Coremail 原始响应（未解析，供读信正文/原始邮件使用） */
+class RawReadResponse {
+  statusCode: number = 0;
+  text: string = '';
+}
+
+/** 搜索候选（JSON 端点；多候选方法名覆盖不同 Coremail 部署） */
+class SearchCandidate {
+  func: string = '';
+  body: Record<string, Object> = {};
+}
+
+// ============================================================
+// MIME 辅助（读信：从原始邮件解析正文与附件）
+// ============================================================
+
+/** 头部/正文分离（兼容 CRLF 与 LF；无分隔则返回 ['', raw]） */
+function splitHeadersBody(raw: string): string[] {
+  const idx: number = raw.indexOf('\r\n\r\n');
+  if (idx >= 0) {
+    const out: string[] = [raw.substring(0, idx), raw.substring(idx + 4)];
+    return out;
+  }
+  const idx2: number = raw.indexOf('\n\n');
+  if (idx2 >= 0) {
+    const out2: string[] = [raw.substring(0, idx2), raw.substring(idx2 + 2)];
+    return out2;
+  }
+  const out3: string[] = ['', raw];
+  return out3;
+}
+
+/** 头部字段取值（大小写不敏感；含折行续行合并；无则 ''） */
+function headerValue(headers: string, name: string): string {
+  const lines: string[] = headers.replace(/\r/g, '').split('\n');
+  const lower: string = name.toLowerCase();
+  let value: string = '';
+  let capturing: boolean = false;
+  for (let i: number = 0; i < lines.length; i++) {
+    const line: string = lines[i];
+    if (line.length > 0 && (line.charAt(0) === ' ' || line.charAt(0) === '\t')) {
+      if (capturing) {
+        value = value + ' ' + line.trim();
+      }
+      continue;
+    }
+    const idx: number = line.indexOf(':');
+    if (idx <= 0) {
+      capturing = false;
+      continue;
+    }
+    const key: string = line.substring(0, idx).trim().toLowerCase();
+    if (key === lower) {
+      value = line.substring(idx + 1).trim();
+      capturing = true;
+    } else {
+      capturing = false;
+    }
+  }
+  return value;
+}
+
+/** Content-Type/Disposition 参数提取（boundary / name / filename） */
+function headerParam(header: string, param: string): string {
+  if (header.length === 0) {
+    return '';
+  }
+  const re: RegExp = new RegExp(param + '\\s*=\\s*("[^"]*"|[^;\\s]+)', 'i');
+  const m: RegExpExecArray | null = re.exec(header);
+  if (m === null) {
+    return '';
+  }
+  return m[1].replace(/^"|"$/g, '').trim();
+}
+
+/** RFC2047 编码字解码（=?charset?B|Q?...?=），失败保留原文 */
+function decodeMimeWords(value: string): string {
+  if (value.length === 0 || value.indexOf('=?') < 0) {
+    return value;
+  }
+  let out: string = value;
+  const re: RegExp = /=\?[^?]+\?([BbQq])\?([^?]*)\?=/g;
+  let m: RegExpExecArray | null = re.exec(value);
+  while (m !== null) {
+    const enc: string = m[1].toUpperCase();
+    let text: string = '';
+    if (enc === 'B') {
+      try {
+        text = safeBase64Decode(m[2]);
+      } catch (e) {
+        text = m[2];
+      }
+    } else {
+      text = decodeQuotedWord(m[2]);
+    }
+    out = out.replace(m[0], text);
+    m = re.exec(value);
+  }
+  return out;
+}
+
+/** Q 编码字解码（_→空格 + =XX 十六进制，按 UTF-8 字节还原） */
+function decodeQuotedWord(value: string): string {
+  const bytes: number[] = [];
+  let i: number = 0;
+  while (i < value.length) {
+    const c: string = value.charAt(i);
+    if (c === '_') {
+      bytes.push(0x20);
+      i++;
+    } else if (c === '=' && i + 2 < value.length) {
+      const hex: string = value.substring(i + 1, i + 3);
+      const n: number = parseInt(hex, 16);
+      if (!Number.isNaN(n)) {
+        bytes.push(n);
+        i += 3;
+      } else {
+        bytes.push(c.charCodeAt(0));
+        i++;
+      }
+    } else {
+      bytes.push(c.charCodeAt(0));
+      i++;
+    }
+  }
+  return utf8FromBytes(bytes);
+}
+
+/** base64 → UTF-8 文本（失败抛错由调用方兜底） */
+function safeBase64Decode(value: string): string {
+  const bytes: number[] = [];
+  const clean: string = value.replace(/[^A-Za-z0-9+/=]/g, '');
+  for (let i: number = 0; i < clean.length; i += 4) {
+    const c0: number = base64Index(clean.charAt(i));
+    const c1: number = base64Index(clean.charAt(i + 1));
+    const c2: number = base64Index(clean.charAt(i + 2));
+    const c3: number = base64Index(clean.charAt(i + 3));
+    if (c0 < 0 || c1 < 0) {
+      break;
+    }
+    bytes.push((c0 << 2) | (c1 >> 4));
+    if (c2 >= 0) {
+      bytes.push(((c1 & 15) << 4) | (c2 >> 2));
+    }
+    if (c3 >= 0) {
+      bytes.push(((c2 & 3) << 6) | c3);
+    }
+  }
+  return utf8FromBytes(bytes);
+}
+
+/** base64 字符 → 6bit 值（非法返回 -1；'=' 返回 -2 语义由调用方按 <0 处理） */
+function base64Index(c: string): number {
+  if (c.length === 0 || c === '=') {
+    return -1;
+  }
+  const code: number = c.charCodeAt(0);
+  if (code >= 65 && code <= 90) { return code - 65; }
+  if (code >= 97 && code <= 122) { return code - 71; }
+  if (code >= 48 && code <= 57) { return code + 4; }
+  if (c === '+') { return 62; }
+  if (c === '/') { return 63; }
+  return -1;
+}
+
+/** UTF-8 字节序列 → 字符串（严格按 UTF-8 解码；非法字节以 U+FFFD 兜底） */
+function utf8FromBytes(bytes: number[]): string {
+  let out: string = '';
+  let i: number = 0;
+  while (i < bytes.length) {
+    const b: number = bytes[i];
+    let cp: number = 0;
+    let len: number = 1;
+    if (b < 0x80) {
+      cp = b; len = 1;
+    } else if (b >= 0xC0 && b < 0xE0) {
+      cp = b & 0x1F; len = 2;
+    } else if (b >= 0xE0 && b < 0xF0) {
+      cp = b & 0x0F; len = 3;
+    } else if (b >= 0xF0) {
+      cp = b & 0x07; len = 4;
+    } else {
+      out = out + '\uFFFD'; i++; continue;
+    }
+    if (i + len > bytes.length) {
+      out = out + '\uFFFD'; break;
+    }
+    for (let j: number = 1; j < len; j++) {
+      cp = (cp << 6) | (bytes[i + j] & 0x3F);
+    }
+    out = out + String.fromCodePoint(cp);
+    i += len;
+  }
+  return out;
+}
+
+/** 按 boundary 拆分 MIME 部件（去 preamble/epilogue 与分隔行） */
+function splitMimeParts(body: string, boundary: string): string[] {
+  const delim: string = '--' + boundary;
+  const chunks: string[] = body.split(delim);
+  const parts: string[] = [];
+  for (let i: number = 0; i < chunks.length; i++) {
+    let c: string = chunks[i];
+    if (c.length === 0) {
+      continue;
+    }
+    if (c.startsWith('--')) {
+      continue;
+    }
+    const nl: number = c.indexOf('\n');
+    if (nl >= 0 && nl < 4) {
+      c = c.substring(nl + 1);
+    } else if (nl > 4) {
+      continue;
+    }
+    if (c.endsWith('\r\n')) {
+      c = c.substring(0, c.length - 2);
+    } else if (c.endsWith('\n')) {
+      c = c.substring(0, c.length - 1);
+    }
+    if (c.trim().length > 0) {
+      parts.push(c);
+    }
+  }
+  return parts;
+}
+
+/** 递归收集原邮件中的附件（Content-Disposition: attachment 或带 filename/name 的部件） */
+function collectAttachments(part: string, out: MailAttachment[], depth: number): void {
+  if (depth > 4) {
+    return;
+  }
+  const hb: string[] = splitHeadersBody(part);
+  const headers: string = hb[0];
+  const body: string = hb[1];
+  const ct: string = headerValue(headers, 'Content-Type');
+  const boundary: string = headerParam(ct, 'boundary');
+  if (ct.toLowerCase().indexOf('multipart/') >= 0 && boundary.length > 0) {
+    const subs: string[] = splitMimeParts(body, boundary);
+    for (let i: number = 0; i < subs.length; i++) {
+      collectAttachments(subs[i], out, depth + 1);
+    }
+    return;
+  }
+  const cd: string = headerValue(headers, 'Content-Disposition');
+  let name: string = headerParam(cd, 'filename');
+  if (name.length === 0) {
+    name = headerParam(ct, 'name');
+  }
+  const isAttachment: boolean = cd.toLowerCase().indexOf('attachment') >= 0 || name.length > 0;
+  if (!isAttachment) {
+    return;
+  }
+  const enc: string = headerValue(headers, 'Content-Transfer-Encoding').toLowerCase();
+  const att: MailAttachment = new MailAttachment();
+  att.name = decodeMimeWords(name);
+  if (att.name.length === 0) {
+    att.name = '附件';
+  }
+  att.size = estimateEncodedSize(body, enc);
+  out.push(att);
+}
+
+/** 部件正文大小估算（base64 按 3/4 还原；其余按字符数近似） */
+function estimateEncodedSize(body: string, encoding: string): number {
+  if (encoding.indexOf('base64') >= 0) {
+    const clean: string = body.replace(/[^A-Za-z0-9+/=]/g, '');
+    let pad: number = 0;
+    if (clean.endsWith('==')) { pad = 2; } else if (clean.endsWith('=')) { pad = 1; }
+    return Math.max(0, Math.floor(clean.length * 3 / 4) - pad);
+  }
+  return body.length;
+}
+
+/** 文本是否疑似二进制（PDF/压缩包/图片等；非可打印字符占比 > 10%） */
+function looksBinaryText(text: string): boolean {
+  const head: string = text.substring(0, 8);
+  if (head.startsWith('%PDF') || head.startsWith('PK\u0003')) {
+    return true;
+  }
+  const sample: number = Math.min(text.length, 512);
+  if (sample === 0) {
+    return false;
+  }
+  let bad: number = 0;
+  for (let i: number = 0; i < sample; i++) {
+    const code: number = text.charCodeAt(i);
+    if (code === 9 || code === 10 || code === 13) {
+      continue;
+    }
+    if (code < 32 || code === 0xFFFD) {
+      bad++;
+    }
+  }
+  return bad / sample > 0.1;
+}
+
+/** quoted-printable 解码（软换行 + =XX 十六进制字节 → UTF-8 文本） */
+function decodeQuotedPrintable(text: string): string {
+  const cleaned: string = text.replace(/=\r?\n/g, '');
+  const bytes: number[] = [];
+  let i: number = 0;
+  while (i < cleaned.length) {
+    const c: string = cleaned.charAt(i);
+    if (c === '=' && i + 2 < cleaned.length) {
+      const hex: string = cleaned.substring(i + 1, i + 3);
+      if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+        bytes.push(parseInt(hex, 16));
+        i += 3;
+        continue;
+      }
+    }
+    bytes.push(c.charCodeAt(0));
+    i++;
+  }
+  return utf8FromBytes(bytes);
+}
+
+/** Content-Transfer-Encoding 解码（base64 / quoted-printable / 原文） */
+function decodeTransfer(body: string, encoding: string): string {
+  const e: string = encoding.toLowerCase();
+  if (e.indexOf('base64') >= 0) {
+    try {
+      return safeBase64Decode(body);
+    } catch (err) {
+      return body;
+    }
+  }
+  if (e.indexOf('quoted-printable') >= 0) {
+    return decodeQuotedPrintable(body);
+  }
+  return body;
+}
+
+/**
+ * 从原始 RFC822 邮件提取正文（返回 [正文, isHtml('1'/'0')]）：
+ * 递归 multipart（跳过 attachment 部件），优先 text/html → text/plain，
+ * 并按 Content-Transfer-Encoding 解码；未知类型（application/pdf 等）不作为正文。
+ */
+function extractMimeBody(raw: string, depth: number): string[] {
+  if (depth > 4) {
+    const empty: string[] = ['', '0'];
+    return empty;
+  }
+  const hb: string[] = splitHeadersBody(raw);
+  const headers: string = hb[0];
+  const ct: string = headerValue(headers, 'Content-Type');
+  const ctLower: string = ct.toLowerCase();
+  const boundary: string = headerParam(ct, 'boundary');
+  if (ctLower.indexOf('multipart/') >= 0 && boundary.length > 0) {
+    const subs: string[] = splitMimeParts(hb[1], boundary);
+    let html: string = '';
+    let plain: string = '';
+    for (let i: number = 0; i < subs.length; i++) {
+      const sub: string = subs[i];
+      const shb: string[] = splitHeadersBody(sub);
+      const subCd: string = headerValue(shb[0], 'Content-Disposition').toLowerCase();
+      if (subCd.indexOf('attachment') >= 0) {
+        continue;
+      }
+      const subCt: string = headerValue(shb[0], 'Content-Type').toLowerCase();
+      if (subCt.indexOf('multipart/') >= 0) {
+        const nested: string[] = extractMimeBody(sub, depth + 1);
+        if (nested[1] === '1' && html.length === 0) {
+          html = nested[0];
+        } else if (nested[0].length > 0 && plain.length === 0) {
+          plain = nested[0];
+        }
+        continue;
+      }
+      const enc: string = headerValue(shb[0], 'Content-Transfer-Encoding');
+      const txt: string = decodeTransfer(shb[1], enc);
+      if (subCt.indexOf('text/html') >= 0 && html.length === 0) {
+        html = txt;
+      } else if (subCt.indexOf('text/plain') >= 0 && plain.length === 0) {
+        plain = txt;
+      }
+    }
+    if (html.length > 0) {
+      const r: string[] = [html, '1'];
+      return r;
+    }
+    const rp: string[] = [plain, '0'];
+    return rp;
+  }
+  const encTop: string = headerValue(headers, 'Content-Transfer-Encoding');
+  const txtTop: string = decodeTransfer(hb[1], encTop);
+  if (ctLower.indexOf('text/html') >= 0) {
+    const rh: string[] = [txtTop, '1'];
+    return rh;
+  }
+  if (ctLower.indexOf('text/plain') >= 0 || ctLower.length === 0) {
+    const rt: string[] = [txtTop, '0'];
+    return rt;
+  }
+  const rn: string[] = ['', '0'];
+  return rn;
+}
+
+/** 是否为 Coremail 错误响应（XML / 带 FA_/FR_ 码的 JSON 壳） */
+function isCoremailErrorText(text: string): boolean {
+  const t: string = text.replace(/^\s+/, '');
+  if (t.startsWith('<?xml') || t.startsWith('<result>')) {
+    return true;
+  }
+  if (t.startsWith('{')) {
+    try {
+      const p: Record<string, Object> = JSON.parse(t) as Record<string, Object>;
+      const code: string = strCoalesce([p['code']]);
+      if (code.indexOf('FA_') === 0 || code.indexOf('FR_') === 0) {
+        return true;
+      }
+      if (strCoalesce([p['result']]) === 'error') {
+        return true;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** 联系人 → 文本（本地搜索匹配用） */
+function contactsText(contacts: MailContact[]): string {
+  const parts: string[] = [];
+  for (let i: number = 0; i < contacts.length; i++) {
+    parts.push(contacts[i].name);
+    parts.push(contacts[i].address);
+  }
+  return parts.join(' ');
+}
+
+/** 服务端搜索候选（JSON 端点多方法名；本部署 `mail:` 模块无效，故不列 mail:） */
+function buildSearchCandidates(pattern: string, start: number, limit: number): SearchCandidate[] {
+  const list: SearchCandidate[] = [];
+  const names: string[] = ['mbox:searchMessages', 'mbox:search', 'global:searchMessages'];
+  for (let i: number = 0; i < names.length; i++) {
+    const c: SearchCandidate = new SearchCandidate();
+    c.func = names[i];
+    c.body['start'] = start;
+    c.body['limit'] = limit;
+    c.body['pattern'] = pattern;
+    c.body['order'] = 'date';
+    c.body['desc'] = true;
+    c.body['returnTotal'] = true;
+    c.body['summaryWindowSize'] = limit;
+    c.body['mboxa'] = '';
+    list.push(c);
+  }
+  const kw: SearchCandidate = new SearchCandidate();
+  kw.func = 'mbox:searchMessages';
+  kw.body['keyword'] = pattern;
+  kw.body['start'] = start;
+  kw.body['limit'] = limit;
+  list.push(kw);
+  return list;
 }
 
 /** 取 var/object/data 载荷（对齐参考 pickPayload） */
@@ -835,12 +1316,14 @@ export class MailService {
       (): Promise<Record<string, Object>> => this.postCoremailJson(func, body, true, useRpcUrl));
   }
 
-  /** urlencoded POST 调用包装（搜索/读信/写信初始化等） */
+  /** urlencoded POST 调用包装（读信/搜索/写信初始化等；精确 charset 的 Content-Type） */
   private async formCall(func: string, form: Record<string, string>,
     force: boolean): Promise<Record<string, Object>> {
     const s: CoremailSession = await this.obtainSession(force);
     const url: string = this.rpcUrl(s, func);
-    const resp: HttpResponse = await this.http.postFormWithHeaders(url, form, COREMAIL_JSON_HEADERS);
+    const resp: HttpResponse = await this.http.postFormWithHeaders(url, form, COREMAIL_FORM_HEADERS);
+    Log.i('CampusMail', 'FORM func=%{public}s status=%{public}d bodyLen=%{public}d head=%{public}s',
+      func, resp.statusCode, resp.body.length, resp.body.length > 0 ? resp.body.charAt(0) : '');
     return this.handleCoremailResponse(resp.body, force,
       (): Promise<Record<string, Object>> => this.formCall(func, form, true));
   }
@@ -896,69 +1379,109 @@ export class MailService {
     const result: MailListResult = new MailListResult();
     result.messages = messages;
     result.total = total > 0 ? total : messages.length;
-    Log.i('CampusMail', 'LIST fid=%{public}d start=%{public}d got=%{public}d total=%{public}d',
-      fid, start, messages.length, result.total);
+    // T025：附件标记计数（上游列表无附件线索时恒为 0，验证阶段据此确认退化结论）
+    let attFlagCount: number = 0;
+    for (let i: number = 0; i < messages.length; i++) {
+      if (messages[i].hasAttachment) {
+        attFlagCount++;
+      }
+    }
+    Log.i('CampusMail', 'LIST fid=%{public}d start=%{public}d got=%{public}d total=%{public}d attFlag=%{public}d',
+      fid, start, messages.length, result.total, attFlagCount);
     return result;
   }
 
-  /** 关键词搜索（urlencoded '!' → urlencoded → JSON 多模块前缀逐级回退） */
+  /**
+   * 关键词搜索。
+   *
+   * 实测结论：本部署 `/coremail/s`（XML RPC）返回 XML "Invalid module mail"/FR_INVALID_REQUEST，
+   * `mail:searchMessages` 在 JSON 端点亦报 "Invalid module mail"（`mail` 模块不存在）。故改为：
+   *   ① JSON 端点多候选服务端搜索方法（mbox:searchMessages / mbox:search / global:searchMessages）；
+   *   ② 全部失败时回退**本地过滤**（对齐参考 nativeMail 的 listNativeMailMessages 客户端过滤：
+   *      拉取收件箱邮件并按 主题/摘要/发件人 匹配关键词）。
+   */
   async searchMessages(pattern: string, start: number, limit: number): Promise<MailListResult> {
-    const form: Record<string, string> = {};
-    form['start'] = String(start);
-    form['limit'] = String(limit);
-    form['pattern'] = pattern;
-    form['order'] = 'date';
-    form['desc'] = 'true';
-    form['returnTotal'] = 'true';
-    form['summaryWindowSize'] = String(limit);
-    form['mboxa'] = '';
-    const body: Record<string, Object> = {};
-    body['start'] = start;
-    body['limit'] = limit;
-    body['pattern'] = pattern;
-    body['order'] = 'date';
-    body['desc'] = true;
-    body['returnTotal'] = true;
-    body['summaryWindowSize'] = limit;
-    body['mboxa'] = '';
-    const jsonFuncs: string[] = ['mail:searchMessages', 'mbox:searchMessages', '!mail:searchMessages'];
-    let parsed: Record<string, Object> = {};
-    let ok: boolean = false;
-    let lastErr: string = '';
+    const cands: SearchCandidate[] = buildSearchCandidates(pattern, start, limit);
     const marks: string[] = [];
-    for (let i: number = 0; i < 2 + jsonFuncs.length && !ok; i++) {
+    for (let i: number = 0; i < cands.length; i++) {
+      const c: SearchCandidate = cands[i];
+      const resp: RawReadResponse | undefined = await this.postJsonRawResponse(c.func, c.body);
+      if (resp === undefined) {
+        marks.push(c.func + '=EXC');
+        continue;
+      }
+      Log.i('CampusMail',
+        'SEARCHPROBE[%{public}d] func=%{public}s status=%{public}d head=%{public}s body=%{public}s',
+        i, c.func, resp.statusCode, resp.text.length > 0 ? resp.text.charAt(0) : '',
+        resp.text.substring(0, 300));
+      if (isCoremailErrorText(resp.text)) {
+        marks.push(c.func + '=ERR');
+        continue;
+      }
+      let parsed: Record<string, Object> | undefined = undefined;
       try {
-        let candidate: Record<string, Object>;
-        if (i === 0) {
-          candidate = await this.formCall('!' + FUNC_SEARCH, form, false);
-        } else if (i === 1) {
-          candidate = await this.formCall(FUNC_SEARCH, form, false);
-        } else {
-          candidate = await this.postCoremailJson(jsonFuncs[i - 2], body, false, false);
-        }
-        if (this.isCoremailErrorPayload(candidate)) {
-          lastErr = this.coremailErrorPayloadText(candidate);
-          marks.push('invalid' + String(i));
-        } else {
-          parsed = candidate;
-          ok = true;
-          marks.push('ok' + String(i));
-        }
+        parsed = JSON.parse(resp.text) as Record<string, Object>;
       } catch (e) {
-        lastErr = e instanceof Error ? e.message : String(e);
-        marks.push('fail' + String(i));
+        marks.push(c.func + '=NONJSON');
+        continue;
+      }
+      if (this.isCoremailErrorPayload(parsed)) {
+        marks.push(c.func + '=SHELL');
+        continue;
+      }
+      const uw: RawList = unwrapMessageList(parsed);
+      if (uw.messages.length > 0 || uw.total > 0) {
+        const result: MailListResult = new MailListResult();
+        result.messages = parseMessageList(uw.messages);
+        result.total = uw.total > 0 ? uw.total : result.messages.length;
+        Log.i('CampusMail', 'SEARCH ok func=%{public}s got=%{public}d total=%{public}d',
+          c.func, result.messages.length, result.total);
+        return result;
+      }
+      marks.push(c.func + '=EMPTY');
+    }
+    Log.i('CampusMail', 'SEARCH rpc-fail patternLen=%{public}d marks=%{public}s → local',
+      pattern.length, marks.join(','));
+    return await this.localSearch(pattern, start, limit);
+  }
+
+  /** 本地过滤回退（收件箱按 主题/摘要/发件人 匹配；最多扫描 200 封，对齐参考客户端过滤） */
+  private async localSearch(pattern: string, start: number, limit: number): Promise<MailListResult> {
+    const needle: string = pattern.trim().toLowerCase();
+    const hits: MailMessageSummary[] = [];
+    const pageSize: number = 50;
+    let offset: number = 0;
+    let scanned: number = 0;
+    while (offset < 200) {
+      let page: MailListResult;
+      try {
+        page = await this.listMessages(1, offset, pageSize);
+      } catch (e) {
+        Log.i('CampusMail', 'SEARCH local list fail offset=%{public}d: %{public}s',
+          offset, e instanceof Error ? e.message : String(e));
+        break;
+      }
+      scanned = scanned + page.messages.length;
+      for (let i: number = 0; i < page.messages.length; i++) {
+        const m: MailMessageSummary = page.messages[i];
+        const hay: string = (m.subject + ' ' + m.brief + ' ' + contactsText(m.from)).toLowerCase();
+        if (needle.length === 0 || hay.indexOf(needle) >= 0) {
+          hits.push(m);
+        }
+      }
+      if (page.messages.length < pageSize) {
+        break;
+      }
+      offset = offset + pageSize;
+      if (page.total > 0 && offset >= page.total) {
+        break;
       }
     }
-    if (!ok) {
-      throw new Error(lastErr.length > 0 ? lastErr : '邮件搜索失败，请稍后重试');
-    }
-    Log.i('CampusMail', 'SEARCH variants=%{public}s', marks.join(','));
-    const unwrapped: RawList = unwrapMessageList(parsed);
     const result: MailListResult = new MailListResult();
-    result.messages = parseMessageList(unwrapped.messages);
-    result.total = unwrapped.total > 0 ? unwrapped.total : result.messages.length;
-    Log.i('CampusMail', 'SEARCH patternLen=%{public}d got=%{public}d total=%{public}d',
-      pattern.length, result.messages.length, result.total);
+    result.messages = hits.slice(start, start + limit);
+    result.total = hits.length;
+    Log.i('CampusMail', 'SEARCH local patternLen=%{public}d scanned=%{public}d hits=%{public}d',
+      pattern.length, scanned, hits.length);
     return result;
   }
 
@@ -986,101 +1509,116 @@ export class MailService {
     return strCoalesce([asRecord(arr[0])['summary']]);
   }
 
-  /** 邮件详情（抄送、正文文本/HTML、附件元信息） */
+  /**
+   * 邮件详情（抄送、正文文本/HTML、附件元信息）。
+   *
+   * 修复轮 R1（实测结论驱动）：本部署 `/coremail/s`（XML RPC）对所有读信 func 均返回
+   * XML "Invalid method"/FR_INVALID_REQUEST，且 `readMessage` 非有效方法——故改用实测可用的
+   * **JSON 端点 `/coremail/s/json`**：
+   *   ① `mbox:getMessageInfos` {ids,returnOriginalMsgInfos} → var:[{from,to,subject,sentDate,...}]（元信息）
+   *   ② `mbox:getMessageData` {id,part:'1',mode:'download'} → 正文（status=200，非 JSON 文本/HTML）
+   *   ③ `mbox:getMessageData` {id,mode:'download'} → 原始 RFC822（解析 MIME 附件与正文兜底）
+   * 正文/附件/元信息均取不到时抛可读中文错误；解析异常不崩溃。
+   */
   async readMessage(id: string): Promise<MailMessageDetail> {
-    const form: Record<string, string> = {};
-    form['mid'] = id;
-    form['mboxa'] = '';
-    const jsonBody: Record<string, Object> = {};
-    jsonBody['mid'] = id;
-    jsonBody['mboxa'] = '';
-    // 多形态回退：JSON(/s/json) → JSON '!' → urlencoded(/s) → urlencoded '!'
-    // 实测：本部署 /s 端点返回 XML；'!' 前缀在 JSON 端点非法（Invalid method），
-    // 故 JSON(无前缀 readMessage) 为可靠路径。
-    let parsed: Record<string, Object> = {};
-    let ok: boolean = false;
-    let lastErr: string = '';
-    const marks: string[] = [];
-    for (let i: number = 0; i < 4 && !ok; i++) {
-      try {
-        let candidate: Record<string, Object>;
-        if (i === 0) {
-          candidate = await this.postCoremailJson(FUNC_READ, jsonBody, false, false);
-        } else if (i === 1) {
-          candidate = await this.postCoremailJson('!' + FUNC_READ, jsonBody, false, false);
-        } else if (i === 2) {
-          candidate = await this.formCall(FUNC_READ, form, false);
-        } else {
-          candidate = await this.formCall('!' + FUNC_READ, form, false);
-        }
-        if (this.isCoremailErrorPayload(candidate)) {
-          lastErr = this.coremailErrorPayloadText(candidate);
-          marks.push('invalid' + String(i));
-        } else {
-          parsed = candidate;
-          ok = true;
-          marks.push('ok' + String(i));
-        }
-      } catch (e) {
-        lastErr = e instanceof Error ? e.message : String(e);
-        marks.push('fail' + String(i));
-      }
-    }
-    if (!ok) {
-      throw new Error(lastErr.length > 0 ? lastErr : '邮件详情读取失败，请稍后重试');
-    }
-    Log.i('CampusMail', 'READ variants=%{public}s', marks.join(','));
-    const payload: Record<string, Object> = asRecord(pickPayload(parsed));
-    const msgArr: Object[] = asArrayItems(payload['messages']);
-    const msgObj: Record<string, Object> = asRecord(payload['messages']);
-    // 实测：JSON readMessage 返回 {code, messages:[mailObj]} 或 {code, var:{...}}
-    const mail: Record<string, Object> = asRecord(firstNonEmpty([
-      payload['mail'], payload['message'], msgArr.length > 0 ? msgArr[0] : undefined,
-      msgObj['mail'], msgObj['mailInfo'], msgObj,
-    ]));
-    const info: Record<string, Object> = asRecord(firstNonEmpty([
-      payload['mailInfo'], payload['info'], msgArr.length > 1 ? msgArr[1] : undefined, msgObj,
-    ]));
-    // mail + info 合并（info 覆盖）后按摘要解析，id 强制回填
-    const merged: Record<string, Object> = {};
-    const mailKeys: string[] = Object.keys(mail);
-    for (let i: number = 0; i < mailKeys.length; i++) {
-      merged[mailKeys[i]] = mail[mailKeys[i]];
-    }
-    const infoKeys: string[] = Object.keys(info);
-    for (let i: number = 0; i < infoKeys.length; i++) {
-      merged[infoKeys[i]] = info[infoKeys[i]];
-    }
-    merged['id'] = id;
-    const summary: MailMessageSummary = parseMessage(merged);
     const detail: MailMessageDetail = new MailMessageDetail();
-    detail.loadSummary(summary);
-    detail.cc = parseContacts(firstNonEmpty([mail['cc'], info['cc'], merged['cc']]));
-    detail.contentHtml = strCoalesce([
-      mail['content'], mail['html'], mail['text'],
-      info['content'], info['html'], info['text'],
-      merged['content'], merged['html'], merged['text'],
-    ]);
-    detail.contentText = stripHtml(detail.contentHtml);
-    const attachments: MailAttachment[] = [];
-    const attRows: Object[] = asArrayItems(firstNonEmpty([
-      mail['attachments'], info['attachments'], merged['attachments'],
-    ]));
-    for (let i: number = 0; i < attRows.length; i++) {
-      const attRec: Record<string, Object> = asRecord(attRows[i]);
-      const att: MailAttachment = new MailAttachment();
-      att.id = strCoalesce([attRec['id'], attRec['attachId']]);
-      att.name = strCoalesce([attRec['name'], attRec['fileName'], attRec['displayName']]);
-      if (att.name.length === 0) {
-        att.name = '附件';
+    detail.id = id;
+    // ① 元信息（mbox:getMessageInfos）
+    const ids: string[] = [id];
+    const infoBody: Record<string, Object> = {};
+    infoBody['ids'] = ids;
+    infoBody['returnOriginalMsgInfos'] = true;
+    let metaFound: boolean = false;
+    try {
+      const parsed: Record<string, Object> =
+        await this.postCoremailJson(FUNC_GET_INFOS, infoBody, false, false);
+      const uw: RawList = unwrapMessageList(parsed);
+      if (uw.messages.length > 0) {
+        detail.loadSummary(parseMessage(uw.messages[0]));
+        metaFound = true;
       }
-      att.size = numCoalesce([attRec['size']]);
-      attachments.push(att);
+    } catch (e) {
+      Log.i('CampusMail', 'READ meta fail: %{public}s', e instanceof Error ? e.message : String(e));
+    }
+    detail.id = id;
+    // ② 原始邮件（正文权威来源 + 附件）
+    let rawMail: string = '';
+    const rawResp: RawReadResponse | undefined = await this.fetchMessageData(id, '');
+    if (rawResp !== undefined && !isCoremailErrorText(rawResp.text) && rawResp.text.length > 0) {
+      rawMail = rawResp.text;
+    }
+    let bodyText: string = '';
+    let bodyIsHtml: boolean = false;
+    if (rawMail.length > 0) {
+      const b: string[] = extractMimeBody(rawMail, 0);
+      bodyText = b[0];
+      bodyIsHtml = b[1] === '1';
+    }
+    // ③ 兜底：part=N 逐级回退（仅当原始邮件未解析出正文；跳过二进制/附件内容）
+    if (bodyText.length === 0) {
+      const parts: string[] = ['1', '1.1', '1.2', '2'];
+      for (let i: number = 0; i < parts.length && bodyText.length === 0; i++) {
+        const resp: RawReadResponse | undefined = await this.fetchMessageData(id, parts[i]);
+        if (resp === undefined || isCoremailErrorText(resp.text)) {
+          continue;
+        }
+        const t: string = resp.text;
+        if (t.trim().length === 0 || looksBinaryText(t)) {
+          continue;
+        }
+        bodyText = t;
+        bodyIsHtml = /<[a-zA-Z][^>]*>/.test(t);
+      }
+    }
+    if (bodyIsHtml) {
+      detail.contentHtml = bodyText;
+      detail.contentText = stripHtml(bodyText);
+    } else {
+      detail.contentText = bodyText;
+      detail.contentHtml = '';
+    }
+    const attachments: MailAttachment[] = [];
+    if (rawMail.length > 0) {
+      collectAttachments(rawMail, attachments, 0);
     }
     detail.attachments = attachments;
-    Log.i('CampusMail', 'READ idLen=%{public}d htmlLen=%{public}d textLen=%{public}d att=%{public}d',
-      id.length, detail.contentHtml.length, detail.contentText.length, attachments.length);
+    detail.hasAttachment = attachments.length > 0;
+    Log.i('CampusMail',
+      'READ idLen=%{public}d meta=%{public}d htmlLen=%{public}d textLen=%{public}d att=%{public}d rawLen=%{public}d',
+      id.length, metaFound ? 1 : 0, detail.contentHtml.length, detail.contentText.length,
+      attachments.length, rawMail.length);
+    if (!metaFound && detail.contentText.length === 0 && detail.contentHtml.length === 0
+      && attachments.length === 0) {
+      throw new Error('邮件详情读取失败，请稍后重试');
+    }
     return detail;
+  }
+
+  /** JSON 端点原始响应（不做 JSON 解析/错误抛出，供读信正文等非 JSON 响应使用） */
+  private async postJsonRawResponse(func: string,
+    body: Record<string, Object>): Promise<RawReadResponse | undefined> {
+    try {
+      const s: CoremailSession = await this.obtainSession(false);
+      const resp: HttpResponse = await this.http.postJsonRaw(this.jsonUrl(s, func),
+        JSON.stringify(body), COREMAIL_JSON_HEADERS);
+      const r: RawReadResponse = new RawReadResponse();
+      r.statusCode = resp.statusCode;
+      r.text = resp.body;
+      return r;
+    } catch (e) {
+      Log.i('CampusMail', 'RAWRESP exc func=%{public}s: %{public}s',
+        func, e instanceof Error ? e.message : String(e));
+      return undefined;
+    }
+  }
+
+  /** 取邮件正文/原始数据（mbox:getMessageData；part 为空串取原始 RFC822） */
+  private async fetchMessageData(id: string, part: string): Promise<RawReadResponse | undefined> {
+    const body: Record<string, Object> = {};
+    body['id'] = id;
+    body['part'] = part;
+    body['mode'] = 'download';
+    return this.postJsonRawResponse(FUNC_GET_DATA, body);
   }
 
   // ============================================================

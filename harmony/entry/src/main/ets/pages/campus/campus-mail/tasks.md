@@ -148,6 +148,42 @@
 
 ---
 
+## 修复轮 R1：真实模式缺口（2026-10-11）
+
+**范围**：仅修复真实模式下与既有需求不符的缺陷（FR-005 详情 / FR-006 附件元信息 / FR-007 搜索），**不改动需求**。
+**验证范围**：沿用本特性的 `build+ui`（修复必须经真实模式实测）。
+
+**依据（参考实现 `src/services/campus/mail.ts`）**：
+- 详情：`formCall('!readMessage', {mid, mboxa})`，失败回退 `formCall('readMessage', ...)` —— 即 **form/RPC 端点（`/coremail/s?sid=..&func=!readMessage`）+ urlencoded 体**；载荷映射为 `payload.mail|message|payload` 与 `payload.mailInfo|info`，正文取 `content|html|text`，附件取 `attachments[].id|attachId`、`name|fileName|displayName`、`size`、`part`
+- 搜索：**form/RPC 优先**（`!mail:searchMessages` → `mail:searchMessages`），JSON 仅作最后回退
+- 列表附件标记：按参考 `parseMessage` 的 `hasAttachment` 派生规则取值
+
+- [X] T023 [US2] 在 `harmony/entry/src/main/ets/services/campus/MailService.ets` 修复 `readMessage`：改用 **form/RPC 端点**（`func=!readMessage`，urlencoded 体 `mid`/`mboxa`；失败回退 `readMessage`；复用既有 `postForm`）；补齐**载荷映射**（`mail|message`、`mailInfo|info`、`content|html|text`、附件字段多源）；保留空壳/错误检测并给出可读错误（依赖既有 T005）
+- [X] T024 [US3] 同文件修复 `searchMessages`：改为 **form/RPC 优先**（`!mail:searchMessages` → `mail:searchMessages`，urlencoded 体含 `start/limit/pattern/order/desc/returnTotal/summaryWindowSize/mboxa`），JSON 仅作最后回退；沿用 `unwrapMessageList` 解析（依赖既有 T005）
+- [X] T025 [US2] 同文件补齐**列表附件标记**：按参考 `parseMessage` 的 `hasAttachment` 规则派生；若上游列表接口确不提供该字段，则退化为"详情页展示附件 + 列表标记置为未知"并记录日志说明（依赖 T023）
+- [X] T026 对 `harmony/entry/src/main/ets/services/campus/MailService.ets` 运行 `arkts_check` 并修复违规，然后在 `harmony` 目录执行 `devecocli build --modules entry` 至**构建成功**（唯一允许噪声：`Logger.ets` 的 `BuildProfile` 已知误报）
+
+## Phase 11: Verification（修复轮 R1）
+
+<!-- verification_scope: build+ui -->
+
+**Purpose**：构建、部署并在**真实模式**下逐故事复核三项缺口是否闭合（发送/删除仍仅验证到确认弹窗）
+
+- [X] T027 构建工程并修复编译错误（`devecocli build --modules entry`，迭代 修复 → 构建 直至成功）
+- [X] T028 部署到模拟器（`devecocli run --skip-build --device 127.0.0.1:5555`，必要时先唤醒屏幕）
+- [X] T029 运行 UI 验证（`verify_ui`）并**以真实模式为主**复核：US2 详情**正文与附件元信息**可见；US3 **搜索有结果**（含空态）；US1 列表附件标记按 T025 的结论表现；US4–US6 回归（US5/US6 仅验证到确认弹窗并取消，**严禁真实发送/删除**）
+
+> **修复轮 R1 验证结论（2026-10-11，spec-verify 执行）**：初始构建 1 次通过；部署成功（Smoke 锁屏抖动，唤醒后 PASS）。逐故事 UI 验证（Phase 1）→ 因改码而执行 Phase 2 最终复验（权威结论）：
+> - **三项缺口闭合（实测证据）**：
+>   ① **详情正文可获取**（US2 PASS，真实模式）：本部署 `/coremail/s`（XML RPC）对读信 func 全部返回 `FR_INVALID_REQUEST`/`Invalid method`，`readMessage`/`mail:` 模块均不存在；改用 JSON 端点 `/coremail/s/json`：`mbox:getMessageInfos`（元信息）+ `mbox:getMessageData {id,part:'1',mode:'download'}`（正文）+ 无 part 取原始 RFC822 解析 MIME（附件）。日志：`READ idLen=24 meta=1 htmlLen=1236 textLen=501 att=0 rawLen=2664`；含附件邮件 `htmlLen=756 textLen=136 att=1 rawLen=57533`，详情展示「附件（1）2609039703.pdf 38.4 KB」。
+>   ② **搜索有结果**（US3 PASS）：`mail:` 模块无效（`Invalid module mail`）、`mbox:searchMessages` 空壳 → 回退**本地过滤**（对齐参考 `nativeMail` 客户端过滤），日志 `SEARCH local scanned=190 hits=99`；搜索「通知」返回 99 封，无匹配返回空态。
+>   ③ **列表附件标记**：日志 `LIST ... attFlag=0` 恒定，详情 `att=N>0` —— 与 T025 结论一致（列表不显示、详情展示附件元信息）。
+> - **逐故事（最终复验，真实模式）**：US1 PASS（收件箱 190 封 / 已发送 34 封 / 未读随已读更新）· US2 PASS（正文 + 附件元信息）· US3 PASS（结果 + 空态）· US4 PASS（未读 14→13，圆点消失）· US5 PASS（删除确认弹窗，取消，未删除）· US6 PASS（必填校验 + 发送确认弹窗，取消，未发送）。
+> - **代码改动（本轮验证期间修复）**：`MailService.ets`（读信改 JSON 端点 + MIME 正文/附件解析；搜索服务端候选 + 本地过滤回退）、`MailDetailView.ets`（富文本正文下也展示附件元信息；底部操作条上移加高防遮挡）、`MailComposeView.ets`（发送按钮上移防遮挡）。
+> - **安全约束**：未真实发送、未真实删除（US5/US6 仅到确认弹窗并取消）；US4 为阅读副作用（标记已读），已如实记录。
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
