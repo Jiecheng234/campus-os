@@ -47,6 +47,19 @@ const LEARN_STUDENT_HOME: string = LEARN_BASE + '/f/wlxt/index/course/student/';
 // 与原项目一致的权威判定标记
 const LOGIN_SUCCESS_MARK: string = '登录成功。正在重定向到';
 const TWO_FACTOR_MARK: string = '二次认证';
+// === 研读间（cab）端点（对齐原项目 ENDPOINTS.libRoomBooking* / LIB_ROOM_TOKEN） ===
+/** 研读间 webvpn token（原项目 LIB_ROOM_TOKEN） */
+const CAB_ROOM_TOKEN: string = '77726476706e69737468656265737421f3f643d22b396a1e6a1b80a29f5d363409e413829737d1';
+/** 研读间根地址（webvpn 前缀，前缀替换目标） */
+const CAB_ROOM_BOOKING_ROOT: string = WEBVPN_BASE_URL + '/https/' + CAB_ROOM_TOKEN;
+/** 研读间直连根地址（前缀替换源） */
+const CAB_LIB_ROOT: string = 'https://cab.lib.tsinghua.edu.cn';
+/** 研读间"认证地址"接口（返回动态登录地址） */
+const CAB_QUERY_AUTH_ADDRESS_URL: string = CAB_ROOM_BOOKING_ROOT
+  + '/ic-web/auth/address?finalAddress=https:%2F%2Fcab.lib.tsinghua.edu.cn'
+  + '&errPageUrl=https:%2F%2Fcab.lib.tsinghua.edu.cn%2F%23%2Ferror&manager=false&consoleType=16';
+/** 研读间"用户信息"接口（登录后账号一致性校验） */
+const CAB_USER_INFO_URL: string = CAB_ROOM_BOOKING_ROOT + '/ic-web/auth/userInfo';
 
 export enum LoginResultType {
   SUCCESS = 'success',
@@ -455,6 +468,94 @@ export class TsinghuaAuthService {
   async roamIdSubsystem(payload: string): Promise<void> {
     const creds: CampusCredentials = await this.getRoamCredentials();
     await this.roamIdPolicy(creds, payload);
+  }
+
+  /**
+   * 研读间子系统登录（对齐原项目 tsinghuaAuth.ts cabLogin，L819–884）：
+   *   ① 请求研读间"认证地址"接口（响应为 JSON 取 data 地址字段；纯地址文本兼容）
+   *   ② 地址非 WebVPN 域 → 等价前缀替换（研读间根地址 → WebVPN 前缀）
+   *   ③ resolveFinalUrl 跟随重定向取最终地址
+   *   ④ 解析 /login/form/<标识>（保留 ?/# 之后完整尾串；缺失抛可读错误）
+   *   ⑤ roamIdSubsystem(标识) 建立子系统会话（复用既有 id 漫游）
+   *   ⑥ 请求"用户信息"接口校验：业务码 0 且 pid 与当前登录学号一致
+   * 失败抛可读错误（调用方决定呈现与恢复）。
+   */
+  async cabLogin(): Promise<void> {
+    const credentials: CampusCredentials = await this.getRoamCredentials();
+
+    // ① 动态认证地址（{"code":0,"data":"https://cab..."}；少数环境为纯地址文本）
+    const rawResp: HttpResponse = await this.http.get(CAB_QUERY_AUTH_ADDRESS_URL);
+    const raw: string = rawResp.body.trim();
+    let authAddress: string = raw;
+    try {
+      const parsed: Record<string, Object> = JSON.parse(raw) as Record<string, Object>;
+      const codeVal: Object | undefined = parsed['code'];
+      if (codeVal !== undefined && Number(codeVal) !== 0) {
+        const msgVal: Object | undefined = parsed['message'];
+        const msg: string = msgVal !== undefined && msgVal !== null ? String(msgVal) : '';
+        throw new Error(msg.length > 0 ? msg : '获取研读间认证地址失败');
+      }
+      const dataVal: Object | undefined = parsed['data'];
+      if (typeof dataVal === 'string' && dataVal.length > 0) {
+        authAddress = dataVal.trim();
+      }
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        // 非 JSON：视为纯地址文本（对齐参考兼容分支）
+        authAddress = raw;
+      } else {
+        // arkts-limited-throw：catch 参数为任意类型，需归一为 Error 再抛
+        throw e instanceof Error ? e : new Error(String(e));
+      }
+    }
+    Log.i('LearnAct', 'CAB_AUTH_ADDRESS=%{public}s', authAddress.substring(0, 120));
+
+    // ② 非 WebVPN 域 → 等价前缀替换（cab.lib 根地址 → WebVPN 前缀）
+    const wrapped: string = authAddress.indexOf('webvpn.tsinghua.edu.cn') >= 0
+      ? authAddress
+      : authAddress.replace(CAB_LIB_ROOT, CAB_ROOM_BOOKING_ROOT);
+
+    // ③ 跟随重定向取最终地址（等价 XHR responseURL）
+    const loginUrl: string = await this.http.resolveFinalUrl(wrapped);
+
+    // ④ 解析 /login/form/<标识>——保留 ?/# 之后完整尾串（截断会让会话失效）
+    const payloadMatch: RegExpExecArray | null = /\/login\/form\/(.+)$/.exec(loginUrl);
+    if (payloadMatch === null || payloadMatch.length < 2 || payloadMatch[1].length === 0) {
+      throw new Error('未解析到研读间登录标识（最终地址: '
+        + (loginUrl.length > 0 ? loginUrl : '(空)') + '）');
+    }
+    const payload: string = payloadMatch[1];
+    Log.i('LearnAct', 'CAB_PAYLOAD len=%{public}d', payload.length);
+
+    // ⑤ 复用既有 id 漫游建立子系统会话
+    await this.roamIdSubsystem(payload);
+
+    // ⑥ 用户信息校验：业务码 0 且 pid 与当前学号一致（否则后续接口会报"用户未登录"）
+    const userInfoResp: HttpResponse = await this.http.get(CAB_USER_INFO_URL);
+    const userInfoText: string = userInfoResp.body;
+    let userInfo: Record<string, Object>;
+    try {
+      userInfo = JSON.parse(userInfoText) as Record<string, Object>;
+    } catch (e) {
+      throw new Error('研读间用户信息响应非 JSON: ' + userInfoText.substring(0, 80));
+    }
+    const uiCodeVal: Object | undefined = userInfo['code'];
+    if (uiCodeVal === undefined || Number(uiCodeVal) !== 0) {
+      const msgVal: Object | undefined = userInfo['message'];
+      const msg: string = msgVal !== undefined && msgVal !== null ? String(msgVal) : '';
+      throw new Error(msg.length > 0 ? msg : '研读间用户信息校验失败');
+    }
+    let pid: string = '';
+    const dataVal: Object | undefined = userInfo['data'];
+    if (dataVal !== undefined && dataVal !== null && typeof dataVal === 'object' && !Array.isArray(dataVal)) {
+      const dataRec: Record<string, Object> = dataVal as Record<string, Object>;
+      const pidVal: Object | undefined = dataRec['pid'];
+      pid = pidVal !== undefined && pidVal !== null ? String(pidVal) : '';
+    }
+    if (pid !== credentials.studentId) {
+      throw new Error('研读间登录账号与当前账号不一致');
+    }
+    Log.i('LearnAct', 'CAB_LOGIN ok');
   }
 
   /**

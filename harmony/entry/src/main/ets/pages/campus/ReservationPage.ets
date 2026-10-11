@@ -1,12 +1,15 @@
 import { Theme, SafeTop } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
 import { LibrarySeatPage } from './LibrarySeatPage';
+import { LibraryRoomPage } from './LibraryRoomPage';
 
 @Component
 export struct ReservationPage {
   onBack: () => void = () => {};
   /** 页内切换：图书馆座位子页（返回回到入口卡片） */
   @State showLibrarySeat: boolean = false;
+  /** 页内切换：研读间子页（返回回到入口卡片） */
+  @State showLibraryRoom: boolean = false;
 
   private showComingSoon(): void {
     this.getUIContext().getPromptAction().showToast({ message: '即将支持', duration: 2000 });
@@ -20,6 +23,13 @@ export struct ReservationPage {
         LibrarySeatPage({
           onBack: () => {
             this.showLibrarySeat = false;
+          },
+        })
+          .layoutWeight(1)
+      } else if (this.showLibraryRoom) {
+        LibraryRoomPage({
+          onBack: () => {
+            this.showLibraryRoom = false;
           },
         })
           .layoutWeight(1)
@@ -111,7 +121,7 @@ export struct ReservationPage {
           .border({ width: 1, color: Theme.borderSubtle })
           .margin({ left: 16, right: 16, bottom: 12 })
           .onClick(() => {
-            this.showComingSoon();
+            this.showLibraryRoom = true;
           })
 
           // 体育场馆

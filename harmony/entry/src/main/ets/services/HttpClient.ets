@@ -226,6 +226,31 @@ export class HttpClient {
   }
 
   /**
+   * GET 跟随重定向返回最终落点地址（研读间 cab 登录用，等价 XHR responseURL）：
+   * 复用既有请求头/Cookie 注入与手动重定向循环（manualRedirect 同款语义），
+   * 但不返回响应体，而是返回最终请求落点的完整地址。
+   * 不改动既有 get/postForm/postJson/manualRedirect 的签名与行为。
+   */
+  async resolveFinalUrl(url: string): Promise<string> {
+    let currentUrl: string = url;
+    for (let hop: number = 0; hop < this.maxRedirects; hop++) {
+      const resp: HttpResponse = await this.rcpRequest('GET', currentUrl, '');
+      const status: number = resp.statusCode;
+      if (status < 300 || status >= 400) {
+        return currentUrl;
+      }
+      const location: string = getLocationFromHeaders(this.lastResponseHeaders);
+      if (location.length === 0) {
+        return currentUrl;
+      }
+      currentUrl = resolveUrl(currentUrl, location);
+    }
+    const err: HttpError = new HttpError();
+    err.message = 'Too many redirects';
+    throw err;
+  }
+
+  /**
    * POST urlencoded + 自定义请求头：请求体编码与既有 postForm 完全一致，
    * 另将 extraHeaders（X-CSRF-Token / X-Requested-With / 带 charset 的 Content-Type 等）
    * 并入请求头；不改动既有 postForm 的签名与行为。

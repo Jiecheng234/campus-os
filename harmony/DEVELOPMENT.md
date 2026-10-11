@@ -250,6 +250,19 @@ GET  learnStudentHome                   学生首页
   - **有意偏离**：单发**不套 withNetworkRetry**——探测在验证码态必抛 `NetworkCaptchaRequiredError`（等于必失败），且会话恢复重试可能重复提交登录表单（错验证码二次提交）；错误一律可读中文直接抛给页面。
 - **NetworkPage 验证码态**：进入自动取图；图片点击或「换一张」手动刷新；输入框回车即提交；提交中按钮禁用（`登录中…`）；成功 toast + 退出验证码态 + 自动 `load()` 重载数据；失败 toast + **自动换图** + 清空输入（验证码一次性，旧图作废）；「重试原查询」保留。演示模式零网络请求，永不进验证码态。
 
+### 研读间（只读 + 子系统登录）接入（2026-10-11）
+
+- **共享能力（跨模块新增，既有方法零改动）**：
+  - `HttpClient.resolveFinalUrl(url)`：GET 跟随重定向返回**最终落点地址**（同款 Cookie 注入 + 手动重定向循环，等价 XHR responseURL；研读间 cab 登录解析动态标识用）。
+  - `TsinghuaAuthService.cabLogin()`：研读间专用登录——cab 登录链路要点：①请求 `ic-web/auth/address` 取**动态认证地址**（JSON 取 data 地址字段，纯地址文本兼容）→ ②非 WebVPN 域做等价前缀替换（cab.lib 根地址 → WebVPN 前缀）→ ③`resolveFinalUrl` **跟随重定向**取最终地址 → ④正则 `/\/login\/form\/(.+)$/` 解析登录标识（**保留 `?`/`#` 之后完整尾串**，截断会让会话失效）→ ⑤`roamIdSubsystem(标识)` **复用既有 id 漫游** → ⑥`ic-web/auth/userInfo` **账号校验**（业务码 0 且 `data.pid` 与当前学号一致，否则抛可读错误）。
+- **LibraryRoomService**（`services/campus/LibraryRoomService.ets`，对齐原项目 `library.ts` cab 部分）：
+  - 会话装配：`cabLoginEnsured` 标记 + `cabAccNo` 账号号缓存 + `assureCabSession` **最多两轮复查**（失败强制重登后再读用户信息比对学号，仍失败抛可读错误）+ `withCabRetry`（`withSessionRecovery(op, reroam{标记复位 + 强制 cabLogin}, 'cab')`——**勿用默认 info 门户 reroam**，恢复后访问不到研读间子系统）。
+  - 接口（ic-web 纯 JSON，业务码非 0 抛服务端 message；非 JSON 抛可读错误附截断片段）：类型 `roomDevice/roomInfos`、资源 `reserve?sysKind=1&resvDates=yyyyMMdd&kindIds=`、我的预约 `reserve/resvInfo?needStatus=8454&orderKey=gmt_create&orderModel=desc&beginDate=&endDate=`（查询窗口"今天 → +6 天"）。
+  - 日期：近 5 天（今天起偏移 0–4）；展示 `YYYY-MM-DD`（`formatLibRoomDateIso`）、请求 `yyyyMMdd`（`formatLibRoomDateYmd`）。
+- **LibraryRoomPage**（`pages/campus/LibraryRoomPage.ets`）：页内多级（类型卡（"N 个房间 · 点选查看近 5 天"）点击展开近 5 天日期项 → 当天资源（房间名（`maxUser>1` 附"最少~最多人"）、类型名、开放时间、"可浏览/未开放"徽标（`kindName` 含"暂未开放"视为未开放））+ 我的预约（房间/日期起止/成员文本）/空态）；标题随层级变化（自绘 HeaderBar——动态标题不能经 `DetailHeader` 传入）；系统返回经 `BackDispatcher` 逐级 pop；右上角刷新加载中转进度；各态加载（首次"正在建立研读间会话…"）/错误（可重试）/空态；演示模式内置示例零网络请求。
+- **ReservationPage 改造**：研读间卡片 → 内联渲染 `LibraryRoomPage`（返回回到入口卡片）；体育场馆 → toast"即将支持"。
+- `SessionManager.getLibraryRoomService()` 单例接线（与 `getLibrarySeatService()` 同构）。
+
 ### 校园卡余额/信息/流水（2026-10-10）
 
 - **CampusCardService**（`services/campus/CampusCardService.ets`）：card.tsinghua.edu.cn 直连域（不走 webvpn 包装）。
@@ -271,7 +284,7 @@ GET  learnStudentHome                   学生首页
 
 ### 其他待办
 
-- 场馆预约剩余子页真实数据（研读间（需 cab 登录）/ 体育场馆；均需单独漫游调试，图书馆座位已接入只读查询）
+- 场馆预约剩余子页真实数据（仅剩体育场馆；图书馆座位与研读间均已接入只读查询）
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
 - 修复 #3 密码明文存储（`SecureStorage` 当前仅 URL-encode，应改用 Asset Store Kit 或加密）
 
