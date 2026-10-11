@@ -562,7 +562,7 @@ export struct LibrarySeatPage {
           this.DateChip('今天', 0)
           this.DateChip('明天', 1)
         }
-        .margin({ top: Space.md, bottom: Space.md })
+        .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
         // 馆列表（横向 chips）
         Scroll() {
