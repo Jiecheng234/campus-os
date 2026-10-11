@@ -5,6 +5,8 @@ import { window } from '@kit.ArkUI';
 import { getTurboModuleList } from '../turbomodules/TurboModuleRegistry';
 import { runPhase4SelfTest } from '../utils/Phase4SelfTest';
 import { PreferencesStorage } from '../storage/PreferencesStorage';
+import { SettingsManager } from '../state/SettingsManager';
+import { I18n } from '../utils/I18n';
 
 const DOMAIN = 0xCAFE;
 
@@ -17,6 +19,8 @@ export default class EntryAbility extends UIAbility {
     }
     hilog.info(DOMAIN, 'CampusOS', 'CampusOS EntryAbility onCreate');
     PreferencesStorage.init(this.context);
+    // 尽早开始加载持久化设置（幂等；onWindowStageCreate 复用同一任务）
+    SettingsManager.ensureLoaded();
 
     // TODO(Phase 4): Initialize React Native runtime
     // 1. Create RN instance: const rnInstance = await RNInstanceFactory.create(this.context);
@@ -48,14 +52,19 @@ export default class EntryAbility extends UIAbility {
       AppStorage.setOrCreate<number>('cutoutBottom', 0);
     });
 
-    // Currently loads native ArkUI page; will be replaced with RN ReactRootView
-    windowStage.loadContent('pages/Index', (err: BusinessError) => {
-      if (err.code !== undefined && err.code !== 0) {
-        hilog.error(DOMAIN, 'CampusOS', 'Failed to load content. code=%{public}d msg=%{public}s', err.code, err.message);
-        return;
-      }
-      hilog.info(DOMAIN, 'CampusOS', 'Content loaded successfully.');
-      runPhase4SelfTest();
+    // 设置加载完成后才装载首页：保证偏好（演示模式/信任设备/语言）重启后保持，
+    // 且 AppStorage('locale') 在任何页面的 @StorageLink 绑定前就绪
+    SettingsManager.ensureLoaded().then((): void => {
+      I18n.init();
+      // Currently loads native ArkUI page; will be replaced with RN ReactRootView
+      windowStage.loadContent('pages/Index', (err: BusinessError) => {
+        if (err.code !== undefined && err.code !== 0) {
+          hilog.error(DOMAIN, 'CampusOS', 'Failed to load content. code=%{public}d msg=%{public}s', err.code, err.message);
+          return;
+        }
+        hilog.info(DOMAIN, 'CampusOS', 'Content loaded successfully.');
+        runPhase4SelfTest();
+      });
     });
   }
 

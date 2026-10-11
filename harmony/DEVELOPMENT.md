@@ -314,10 +314,26 @@ GET  learnStudentHome                   学生首页
 - **宿舍电费**（DormitoryPage）：id-roam 电费子系统（yyfwid `0a993…/1`，`TsinghuaAuthService.roamIdSubsystem` 复用登录链 `roamIdPolicy`）→ webvpn 只读页 `Netweb_Home_electricity_Detail.aspx`：剩余电量（lblele）+ 房间信息（input value 提取）+ 缴费记录（myTable 正则）。登录页检测会话失效自动重漫游；余额核心 await，房间/记录失败不阻塞（对齐原项目 allSettled）。充值链不迁移，按钮 toast 提示走网页。用户实测余额/房间/记录正常。
 - **UI 边界修复**：宿舍页卡片 `width('100%')` + 左右 margin 导致右缘溢出，补 `constraintSize({ maxWidth: '100%' })`（对齐 HomePage 模式）。
 
+### 设置页功能对接（含 i18n 框架）（2026-10-11）
+
+- **偏好持久化（修复"假设置"根因）**：`state/SettingsManager.ets` 三个 setter（`setDemoMode`/`setTrustDevice`/`setLocale`）改为**写内存后立即异步持久化**（`StateManager.saveSettings`，失败记日志不抛；新增 `flush(): Promise<boolean>` 供页面可读提示），签名与语义不变。新增 `ensureLoaded()`（幂等一次性加载 `StateManager.init`），由 `EntryAbility` 在**装载首页之前**调用——此前 `StateManager.init` 从未被调用、设置从不回读，持久化无从谈起。演示模式写内存即全应用生效（既有判定读同一设置对象，无需广播）。
+- **i18n 分期**：本轮交付**框架 + 设置页双语化**；其余页面**后续批次**迁移（未迁移页面保持中文）。
+  - `utils/I18n.ets`：词典 `key → {zh, en}` 成对（`SETTINGS_DICTIONARY`）；`t(key)` 回退链=当前语言 → 中文 → 可读占位 `—`（禁止空白/键名外泄）；`setLocale` 仅接受 `zh`/`en`（非法回退 `zh`）→ 写 **AppStorage 键 `'locale'`** → 经 `SettingsManager.setLocale` 持久化（单一写入路径）；`init()` 启动时把持久化 locale 灌入 AppStorage（EntryAbility 调用，先于任何 `@StorageLink('locale')` 绑定）。
+  - 设置页全部文案走 `I18n.t('settings.xxx')`，以 `@StorageLink('locale')` 订阅语言变化**即时重渲染**；后续页面迁移只需扩词典 + 同款 StorageLink。
+- **退出登录**：`AlertDialog.show` 二次确认 → `SessionManager.logout()`（注销会话）→ `SecureStorage.clearCredentials()`（清除本地凭证）→ 成功 toast；异常可读提示。凭证与会话标记双清后**冷启动不再自动登录**。
+- **数据清理**：`storage/LocalDataCleaner.ets` 集中管理清理项（键名不散落页面）——`clearAiConversations()`/`clearLearningCache()` 基于既有 `StorageKeys`（AI 会话/学习缓存两个占位键，当前无模块写入，正常返回 0）；返回清理条数（JSON 数组按元素数计、非数组按 1 计、空为 0），失败不抛返回 0。设置页入口 + 二次确认 + 结果提示（含清理项与条数，无数据亦提示"未发现可清理的本地数据"）。
+- **版本号**：设置页改读**自身应用包信息** `bundleManager.getBundleInfoForSelf(GET_BUNDLE_INFO_DEFAULT).versionName`（来源 `AppScope/app.json5` 的 `versionName`，禁止硬编码）；读取失败回退可读占位（"版本未知"）。
+- **"暂不支持"三项**：AI 记忆 / 操作记录 / 智能监控 → 新 `UnsupportedRow` 禁用态行（muted + 无 › 无点击），移除"已保存偏好/查看最近操作/管理提醒监控项"等误导文案与"开发中"toast。
+- **账号信息（只读）**：学号取自本地凭证（`SecureStorage.getCredentials`）；姓名/邮箱无既有获取能力，**省略该行**（不臆造）；未登录/演示模式展示对应状态文案。
+- **弃用 API 清理**：SettingsPage 弃用 `promptAction.showToast` 全部移除，统一 `getUIContext().getPromptAction().showToast`（LoginPage/LearningPage 同类 WARN 仍保留，待后续批次）。
+
 ### 其他待办
 
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
 - 清华邮件（Coremail）逐用户故事 UI 验证（构建 + 模拟器部署后按 US1–US6 校验：列表/未读计数/分页、详情与附件、搜索、已读标记、删除/移动确认、撰写校验/确认/发送反馈）
+- i18n 其余页面双语化（后续批次：扩词典 + `@StorageLink('locale')`；未迁移页面回退中文）
+- "信任此设备"后续是否与指纹复用/2FA 策略真正联动（本轮仅持久化，UI 文案已准确表述）
+- SettingsPage 退出登录后整应用回登录页需 Index 门控联动（本轮受"不改导航装配"约束，仅清会话+凭证+页内状态刷新；冷启动正确回登录页）
 
 ### 已修复待办
 

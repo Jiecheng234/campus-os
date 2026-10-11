@@ -200,12 +200,17 @@ function runStateTests(): void {
   });
 
   TestRunner.test('SettingsManager locale', () => {
-    SettingsManager.setLocale('zh');
+    // settings-integration 后 setLocale 会持久化：此处以「当前值」做幂等往返，
+    // 避免启动自检把用户已持久化的语言偏好覆盖为硬编码值。
+    const before: string = SettingsManager.getLocale();
+    SettingsManager.setLocale(before);
     const locale: string = SettingsManager.getLocale();
-    return locale === 'zh';
+    return locale === before;
   });
 
-  TestRunner.test('StateManager demo default', () => {
-    return StateManager.settings.demoMode === false;
+  TestRunner.test('StateManager settings present', () => {
+    // settings-integration 后偏好持久化：demoMode 可能为用户保持的任意值，
+    // 此处仅校验设置对象已就绪（locale 恒有值：默认 zh 或持久化值）
+    return StateManager.settings.locale.length > 0;
   });
 }

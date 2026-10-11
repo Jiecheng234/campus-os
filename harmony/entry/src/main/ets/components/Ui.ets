@@ -12,8 +12,9 @@ function emptyContent() {}
 // ────────────────────────────────
 @Component
 export struct ScreenHeader {
-  eyebrow: string = '';
-  title: string = '';
+  /** @Prop：父组件状态（如 i18n locale）更新时需跟随刷新 */
+  @Prop eyebrow: string = '';
+  @Prop title: string = '';
   /** @Prop：父组件 @State 更新时副标题需跟随刷新（天气/周范围等动态副标题） */
   @Prop subtitle: string = '';
   @BuilderParam right: () => void = emptyContent;
@@ -55,8 +56,9 @@ export struct ScreenHeader {
 // ────────────────────────────────
 @Component
 export struct SectionHeader {
-  title: string = '';
-  actionText: string = '';
+  /** @Prop：父组件状态（如 i18n locale）更新时需跟随刷新 */
+  @Prop title: string = '';
+  @Prop actionText: string = '';
   onAction: () => void = () => {};
 
   build() {
@@ -173,8 +175,9 @@ export struct ListCard {
 // ────────────────────────────────
 @Component
 export struct InfoRow {
-  label: string = '';
-  value: string = '';
+  /** @Prop：父组件状态（如异步加载的账号信息、i18n locale）更新时需跟随刷新 */
+  @Prop label: string = '';
+  @Prop value: string = '';
 
   build() {
     Row({ space: Space.md }) {
