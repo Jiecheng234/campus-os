@@ -300,7 +300,11 @@ GET  learnStudentHome                   学生首页
 ### 其他待办
 
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
-- 修复 #3 密码明文存储（`SecureStorage` 当前仅 URL-encode，应改用 Asset Store Kit 或加密）
+
+### 已修复待办
+
+- ~~修复 #3 密码明文存储~~ **已修复（2026-10-11，凭证安全存储特性）**：`storage/SecureStorage.ets` 内部改为**系统关键资产存储**（Asset Store Kit）——单条关键资产：固定别名 `campusos.credentials` + 凭证三项（学号/密码/指纹）沿用既有格式序列化进唯一加密字段 `SECRET`（严禁放入别名或 DATA_LABEL 类明文字段）；访问条件"设备开机后可用"（不设"需用户认证"，保证静默自动登录）；保存幂等（新增命中"已存在"错误码则更新）。读取路径**惰性自动迁移**：关键资产未命中 → 读偏好设置旧明文键 `@secure:credentials` → 写入新存储**成功后**才清除旧明文（失败保留、不丢数据、下次读取重试）；注销双清（关键资产 + 旧明文键，各自容错、幂等）。保存失败只记日志不阻断登录；读取失败/ASSET 不可用返回空值，**绝不回退明文写入**。日志不含明文（tag `SecureStore`：`CRED_SAVE`/`CRED_QUERY`/`CRED_MIGRATE`/`CRED_CLEAR`，仅步骤/命中布尔/长度/错误码）。对外三方法（保存/读取/清除）签名与语义不变，调用方零改动。
+- 备注：`turbomodules/SecureStorageTurboModule.ets` 为 HUKS 桥接**桩**（`getGenericPassword` 恒返回 `null`），未接入凭证链路；本特性未改动它，保持现状、不在凭证安全存储范围内。
 
 ---
 
