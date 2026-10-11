@@ -27,6 +27,7 @@ import { CampusCardService } from '../campus/CampusCardService';
 import { CampusNetworkService } from '../campus/CampusNetworkService';
 import { LibrarySeatService } from '../campus/LibrarySeatService';
 import { LibraryRoomService } from '../campus/LibraryRoomService';
+import { MailService } from '../campus/MailService';
 import { SportsService } from '../campus/SportsService';
 import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
@@ -40,6 +41,7 @@ export class SessionManager {
   private static networkService: CampusNetworkService | undefined = undefined;
   private static librarySeatService: LibrarySeatService | undefined = undefined;
   private static libraryRoomService: LibraryRoomService | undefined = undefined;
+  private static mailService: MailService | undefined = undefined;
   private static sportsService: SportsService | undefined = undefined;
 
   static getAuthService(): TsinghuaAuthService {
@@ -88,6 +90,15 @@ export class SessionManager {
       SessionManager.libraryRoomService = new LibraryRoomService(auth.getHttpClient(), auth);
     }
     return SessionManager.libraryRoomService;
+  }
+
+  static getMailService(): MailService {
+    if (SessionManager.mailService === undefined) {
+      const auth: TsinghuaAuthService = SessionManager.getAuthService();
+      SessionManager.mailService = new MailService(
+        auth.getHttpClient(), SessionManager.getCampusDataService(), auth);
+    }
+    return SessionManager.mailService;
   }
 
   static getSportsService(): SportsService {

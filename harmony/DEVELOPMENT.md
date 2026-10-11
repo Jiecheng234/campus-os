@@ -278,6 +278,22 @@ GET  learnStudentHome                   学生首页
 - **ReservationPage 改造**：体育场馆卡片 → 内联渲染 `SportsBookingPage`（返回回到入口卡片）；至此场馆预约三卡片（图书馆座位/研读间/体育场馆）全部接入只读查询。
 - `SessionManager.getSportsService()` 单例接线（与 `getLibrarySeatService()` 同构）。
 
+### 清华邮件（Coremail 读写）接入（2026-10-11）
+
+- **MailService**（`services/campus/MailService.ets`，对齐原项目 `src/services/campus/mail.ts`）：
+  - 会话（`ensureMailSession`）：①`auth.hydrateCredentials()` 校验登录 → ②`campus.roamByYyfwidHtml(INFO_PORTAL_YYFWID)` 建立信息门户会话（失败返回空串不阻断）→ ③对 [邮箱门户地址（webvpn info 门户 `roamingToApp?yyfwid=清华邮箱yyfwid`）, `mails.tsinghua.edu.cn/coremail/XT/index.jsp`] **双路径**依次 `HttpClient.resolveFinalUrl` 取最终地址并解析 sid（URL 参数优先 → 落地页正文 → Cookie 池兜底）→ ④再取一次完成落地（刷新 Cookie）→ ⑤内存缓存约 20 分钟。
+  - 会话自愈：响应错误码 `FA_INVALID_SESSION`/`FA_SECURITY` → 清缓存强制重建**一次**后重试；`result=error` 或 `FA_*` 码 → `coremailErrorMessage` 转可读中文（messages 摘要拼接）。
+  - 接口：JSON POST 走 `HttpClient.postJsonRaw`（**加法式新增**：`/coremail/s/json?sid=..&func=..`）；urlencoded 走既有 `postFormWithHeaders`（`/coremail/s?sid=..&func=..`）；公共头 `X-Requested-With: XMLHttpRequest` + `Accept`。
+  - 列表多形态回退：`[mbox:listThreads×date, listThreads×receivedDate, mbox:listMessages×date, listMessages×receivedDate]` 全空再试兼容 XML（RPC url + `{var: xml}`）；"总数>0 但解析 0 条"抛可读错误。解析容错：递归寻找邮件数组/总数（深度 6/5）、逐条失败跳过、联系人三形态（字符串/对象/数组）。
+  - 读信 `readMessage` 与搜索 `mail:searchMessages`（均带 `!` 前缀变体回退，搜索再回退 JSON 接口）；写操作 `mbox:updateMessageInfos`（标记已读/移动）、`mbox:deleteMessages`、`mbox:compose`（compose 初始化 → `action=deliver` 发送）。
+  - `syncCoremailCookiesForWebView()`：Coremail 域会话 Cookie → `webview.WebCookieManager.configCookieSync`（受控 Web 内嵌图片鉴权，对齐 NewsPage 的 webvpn Cookie 同步做法）。
+- **页面三件套**（`pages/campus/MailPage.ets` / `MailDetailView.ets` / `MailComposeView.ets`）：
+  - **MailPage**：页内多级 LIST/DETAIL/COMPOSE（详情/撰写整页切换，自带 DetailHeader）；文件夹 chips（收件箱/草稿箱/已发送/已删除/垃圾邮件）+ 未读计数 + 列表（发件人/主题/摘要/时间/未读圆点/附件标记）+ 加载更多（id 去重追加）；搜索框（空关键词=清除恢复文件夹视图，结果复用列表渲染）；列表长按 ActionSheet（删除/移动）；演示模式内置示例**零网络请求**。
+  - **MailDetailView**：纯文本原生直显；富文本受控 Web（CSP 禁脚本/图片放行 + 禁缩放 + 禁文件访问 + 关暗色 + `loadData` 五参 baseUrl=mails.tsinghua.edu.cn，配合父级同步的 Coremail Cookie）；附件元信息（名称/大小）；底部删除/移动操作条（确认流程由父组件执行）。
+  - **MailComposeView**：收件人/抄送/主题/正文输入 + 必填校验（收件人、主题，缺失 toast 不发请求）+ AlertDialog 发送前二次确认；失败保留已填内容并展示服务端消息。
+  - **写操作确认**：删除 `AlertDialog.show` 二次确认；移动 ActionSheet 选目标文件夹 → AlertDialog 确认；打开未读邮件自动标记已读（失败不阻塞阅读，仅日志 + 轻提示）；成功 toast + 刷新当前列表（搜索模式重搜索）。
+- `SessionManager.getMailService()` 单例接线（与 `getLibrarySeatService()` 同构）。
+
 ### 校园卡余额/信息/流水（2026-10-10）
 
 - **CampusCardService**（`services/campus/CampusCardService.ets`）：card.tsinghua.edu.cn 直连域（不走 webvpn 包装）。
@@ -300,6 +316,7 @@ GET  learnStudentHome                   学生首页
 ### 其他待办
 
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
+- 清华邮件（Coremail）逐用户故事 UI 验证（构建 + 模拟器部署后按 US1–US6 校验：列表/未读计数/分页、详情与附件、搜索、已读标记、删除/移动确认、撰写校验/确认/发送反馈）
 
 ### 已修复待办
 

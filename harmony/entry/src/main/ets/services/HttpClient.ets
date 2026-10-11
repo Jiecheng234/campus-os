@@ -203,6 +203,25 @@ export class HttpClient {
   }
 
   /**
+   * POST 原始 JSON 文本（Coremail 等需要数组/嵌套 JSON 体的接口用）：
+   * 与 postJson 同款请求装配（Content-Type: application/json + Cookie 注入 + 手动重定向），
+   * 但请求体由调用方自行序列化——postJson 的 Record<string, JsonBodyValue> 只能表达
+   * 标量值，无法表达嵌套对象与数组（如邮件写操作的 ids/attrs 结构）。
+   * 不改动既有 postJson 的签名与行为。
+   */
+  async postJsonRaw(url: string, jsonText: string, extraHeaders?: Record<string, string>): Promise<HttpResponse> {
+    const headers: Record<string, string> = {};
+    headers['Content-Type'] = 'application/json';
+    if (extraHeaders !== undefined) {
+      const keys: string[] = Object.keys(extraHeaders);
+      for (let i: number = 0; i < keys.length; i++) {
+        headers[keys[i]] = extraHeaders[keys[i]];
+      }
+    }
+    return this.manualRedirect('POST', url, jsonText, headers);
+  }
+
+  /**
    * GET 响应体原始字节（验证码图片等二进制内容用）：
    * 复用既有会话（Cookie 注入 + 手动重定向跟随 Location），但**不做文本解码**——
    * 既有 get() 返回按字符集解码的文本，直接用于图片会损坏内容。
