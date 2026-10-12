@@ -22,12 +22,13 @@ const MOCK_MODELS: AIModel[] = [
   { name: 'Moonshot', provider: 'moonshot', icon: '🌙' },
 ];
 
-const SUGGESTIONS: string[] = [
-  '今天有什么课？',
-  '查一下空教室',
-  '帮我添加一个DDL',
-  '最近的成绩怎么样？',
-  '校园卡还有多少钱？',
+/** 推荐提问：词典键（渲染与发送时均经页面 tr() 按当前语言解析） */
+const SUGGESTION_KEYS: string[] = [
+  'ai.suggest.schedule',
+  'ai.suggest.classroom',
+  'ai.suggest.ddl',
+  'ai.suggest.grades',
+  'ai.suggest.card',
 ];
 
 function getNowStr(): string {
@@ -155,22 +156,25 @@ export struct AIChatPage {
   }
 
   getMockResponse(prompt: string): string {
-    if (prompt.indexOf('课') >= 0 || prompt.indexOf('课程') >= 0) {
-      return '根据你的课表，今天有以下课程：\n\n🔹 8:00-9:35 高等数学(1) — 六教6A201\n🔹 10:10-11:45 大学物理B(2) — 四教4301\n🔹 13:30-15:05 线性代数 — 六教6B101\n\n需要我帮你查看课程详情或作业吗？';
+    // 中英文关键词均可命中（英文建议在 en 模式下发送，保持 mock 应答行为一致）
+    const p: string = prompt.toLowerCase();
+    if (prompt.indexOf('课') >= 0 || p.indexOf('class') >= 0 || p.indexOf('schedule') >= 0) {
+      return this.tr('ai.mockCourses');
     }
-    if (prompt.indexOf('空教室') >= 0 || prompt.indexOf('教室') >= 0) {
-      return '查询到当前时段以下教室空闲：\n\n🏫 六教：6A301, 6A302, 6A401, 6A402, 6B203\n🏫 四教：4303, 4304, 4402\n🏫 五教：5102, 5201, 5303\n\n共 11 间教室可用。需要预约吗？';
+    if (prompt.indexOf('教室') >= 0 || p.indexOf('classroom') >= 0 || p.indexOf('room') >= 0) {
+      return this.tr('ai.mockClassroom');
     }
-    if (prompt.indexOf('DDL') >= 0 || prompt.indexOf('作业') >= 0) {
-      return '你当前有 2 项待完成的作业：\n\n📝 高等数学(1) — 习题集第5章 — 截止：7月25日\n📝 大学物理B(2) — 实验报告2 — 截止：7月28日\n\n需要我帮你添加新的DDL吗？';
+    if (prompt.indexOf('DDL') >= 0 || prompt.indexOf('作业') >= 0 || p.indexOf('ddl') >= 0
+      || p.indexOf('deadline') >= 0 || p.indexOf('assignment') >= 0 || p.indexOf('homework') >= 0) {
+      return this.tr('ai.mockDdl');
     }
-    if (prompt.indexOf('成绩') >= 0 || prompt.indexOf('GPA') >= 0) {
-      return '你的学业成绩概览：\n\n📊 本学期 GPA：3.72\n🏆 等级分布：A=3门, A-=2门, B+=1门, B=1门\n\n详细成绩可在「校园」→「成绩查询」中查看。';
+    if (prompt.indexOf('成绩') >= 0 || p.indexOf('gpa') >= 0 || p.indexOf('grade') >= 0) {
+      return this.tr('ai.mockGrades');
     }
-    if (prompt.indexOf('校园卡') >= 0 || prompt.indexOf('余额') >= 0) {
-      return '你的校园卡信息：\n\n💰 当前余额：¥285.30\n💳 卡号：**** **** **** 6821\n📋 最近消费：紫荆园餐厅 -¥15.50\n\n余额充足，无需充值。';
+    if (prompt.indexOf('校园卡') >= 0 || prompt.indexOf('余额') >= 0 || p.indexOf('card') >= 0 || p.indexOf('balance') >= 0) {
+      return this.tr('ai.mockCard');
     }
-    return '我是 CampusOS AI 助手，可以帮你：\n\n📚 查询课表和学习任务\n🏫 查找空教室\n📊 查看成绩和 GPA\n💰 查询校园卡余额\n📝 管理 DDL 待办\n🌐 查询校园网状态\n\n有什么我可以帮你的吗？';
+    return this.tr('ai.mockDefault');
   }
 
   sendMessage(): void {
@@ -199,7 +203,7 @@ export struct AIChatPage {
 
   @Builder
   newChatButton() {
-    Text('新建对话')
+    Text(this.tr('ai.newChat'))
       .fontSize(FontSize.caption)
       .fontWeight(FontWeight.Medium)
       .fontColor(Theme.primary)
@@ -217,7 +221,7 @@ export struct AIChatPage {
 
       Column() {
         ScreenHeader({
-          eyebrow: 'AI ASSISTANT',
+          eyebrow: this.tr('ai.eyebrow'),
           title: this.tr('ai.title'),
           right: (): void => this.newChatButton()
         })
@@ -279,23 +283,23 @@ export struct AIChatPage {
             .fontSize(64)
             .margin({ bottom: 16 })
 
-          Text('CampusOS AI')
+          Text(this.tr('ai.brandName'))
             .fontSize(22)
             .fontWeight(FontWeight.Bold)
             .fontColor(Theme.text)
 
-          Text('你的清华校园智能助手')
+          Text(this.tr('ai.subtitle'))
             .fontSize(14)
             .fontColor(Theme.textMuted)
             .margin({ top: 6, bottom: 32 })
 
-          Text('试试问我：')
+          Text(this.tr('ai.tryAsking'))
             .fontSize(13)
             .fontColor(Theme.textMuted)
             .margin({ bottom: 12 })
 
-          ForEach(SUGGESTIONS, (item: string) => {
-            Text(item)
+          ForEach(SUGGESTION_KEYS, (key: string) => {
+            Text(this.tr(key))
               .fontSize(14)
               .fontColor(Theme.primary)
               .padding({ left: 16, right: 16, top: 10, bottom: 10 })
@@ -304,7 +308,7 @@ export struct AIChatPage {
               .border({ width: 1, color: 'rgba(124,92,250,0.15)' })
               .margin({ bottom: 8 })
               .onClick(() => {
-                this.inputText = item;
+                this.inputText = this.tr(key);
                 this.sendMessage();
               })
           })
@@ -316,7 +320,7 @@ export struct AIChatPage {
       }
 
       Row() {
-        TextInput({ placeholder: '问我关于校园的任何问题...', text: this.inputText })
+        TextInput({ placeholder: this.tr('ai.inputPlaceholder'), text: this.inputText })
           .type(InputType.Normal)
           .height(44)
           .fontSize(14)
@@ -332,7 +336,7 @@ export struct AIChatPage {
             this.inputText = v;
           })
 
-        Button('发送')
+        Button(this.tr('ai.send'))
           .type(ButtonType.Capsule)
           .height(44)
           .fontSize(14)

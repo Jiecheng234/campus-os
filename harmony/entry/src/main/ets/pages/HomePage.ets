@@ -56,14 +56,15 @@ struct CourseRow {
 /** 快捷操作胶囊按钮（primaryMuted 底 pill）；onTap 由父组件注入（真实跳转/降级 toast） */
 @Component
 struct QuickActionButton {
-  @Prop action: QuickAction = new QuickAction();
+  @Prop iconText: string = '';
+  @Prop labelText: string = '';
   onTap: () => void = () => {};
 
   build() {
     Row({ space: 4 }) {
-      Text(this.action.icon)
+      Text(this.iconText)
         .fontSize(FontSize.label)
-      Text(this.action.label)
+      Text(this.labelText)
         .fontSize(FontSize.caption)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.primary)
@@ -85,6 +86,10 @@ export struct HomePage {
 
   private tr(key: string): string {
     return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
   }
 
   @State syncStatus: string = '';
@@ -122,7 +127,7 @@ export struct HomePage {
       this.weatherSubtitle = buildWeatherSubtitle(w);
     } catch (e) {
       Log.i('HomeAct', 'HOME weather ex=%{public}s', e instanceof Error ? e.message : String(e));
-      this.weatherSubtitle = '海淀 · 天气暂不可用';
+      this.weatherSubtitle = this.tr('home.weatherUnavailable');
     }
   }
 
@@ -136,7 +141,7 @@ export struct HomePage {
     }
     const service: CampusDataService = SessionManager.getCampusDataService();
     if (showStatus) {
-      this.syncStatus = '同步中...';
+      this.syncStatus = this.tr('home.syncing');
     }
 
     // 1. 课程列表（learn 域）
@@ -196,12 +201,13 @@ export struct HomePage {
     this.scheduleOk = service.scheduleStatus === 'ok';
 
     if (showStatus) {
-      let status: string = '已同步 ' + String(courses.length) + ' 门课程';
+      let status: string = this.trp('home.syncDone', { 'n': String(courses.length) });
       if (courses.length > 0) {
-        status = status + ' · 待办 ' + String(pending) + ' · 未读 ' + String(unread);
+        status = status + ' · ' + this.trp('home.syncPending', { 'n': String(pending) })
+          + ' · ' + this.trp('home.syncUnread', { 'n': String(unread) });
       }
       if (events.length === 0 && !this.scheduleOk) {
-        status = status + ' · 课表暂不可用';
+        status = status + ' · ' + this.tr('home.syncScheduleUnavailable');
       }
       this.syncStatus = status;
     }
@@ -214,7 +220,7 @@ export struct HomePage {
 
   syncCampusData(): void {
     if (!AuthManager.isLoggedIn() || StateManager.isDemoMode()) {
-      this.getUIContext().getPromptAction().showToast({ message: '演示模式下使用本地数据', duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({ message: this.tr('home.demoToast'), duration: 2000 });
       return;
     }
     this.refreshHomeData(true);
@@ -230,7 +236,10 @@ export struct HomePage {
       emitNavigate(target);
       return;
     }
-    this.getUIContext().getPromptAction().showToast({ message: `${action.label} — 即将接入`, duration: 2000 });
+    this.getUIContext().getPromptAction().showToast({
+      message: `${this.tr(action.label)} — ${this.tr('home.comingSoon')}`,
+      duration: 2000
+    });
   }
 
   build() {
@@ -241,7 +250,7 @@ export struct HomePage {
         // ── 头部（eyebrow=问候语·日期 / 标题 / 天气）──
         Row() {
           ScreenHeader({
-            eyebrow: `${getGreeting()} · ${getDateString()}`,
+            eyebrow: `${this.tr(getGreeting())} · ${getDateString()}`,
             title: this.tr('home.title'),
             subtitle: this.weatherSubtitle
           })
@@ -251,7 +260,7 @@ export struct HomePage {
 
         // 同步状态行
         Row({ space: Space.sm }) {
-          Text('同步校园数据')
+          Text(this.tr('home.syncAction'))
             .fontSize(FontSize.caption)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.primary)
@@ -272,16 +281,16 @@ export struct HomePage {
 
         // ── 今日重点（简报卡 + 指标凹槽块）──
         Column() {
-          Text('今日重点')
+          Text(this.tr('home.todayFocus'))
             .fontSize(FontSize.h3)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
             .margin({ bottom: Space.md })
 
           Row({ space: Space.sm }) {
-            MetricPill({ label: '今日课程', value: this.metricClasses, tone: BadgeTone.Default })
-            MetricPill({ label: '待处理任务', value: this.metricTasks, tone: BadgeTone.Default })
-            MetricPill({ label: '未读通知', value: this.metricUnread, tone: BadgeTone.Warning })
+            MetricPill({ label: this.tr('home.metricClasses'), value: this.metricClasses, tone: BadgeTone.Default })
+            MetricPill({ label: this.tr('home.metricTasks'), value: this.metricTasks, tone: BadgeTone.Default })
+            MetricPill({ label: this.tr('home.metricUnread'), value: this.metricUnread, tone: BadgeTone.Warning })
           }
           .width('100%')
         }
@@ -296,7 +305,7 @@ export struct HomePage {
 
         // ── 今日课程 ──
         Column() {
-          SectionHeader({ title: '今日课程' })
+          SectionHeader({ title: this.tr('home.sectionTodayCourses') })
             .padding({ left: Space.lg, right: Space.lg })
         }
         .width('100%')
@@ -314,7 +323,7 @@ export struct HomePage {
             }
           })
           if (this.getDisplayTodayCourses().length === 0) {
-            Text(this.scheduleOk ? '今日无课程安排' : '课表暂不可用（教务会话调试中）')
+            Text(this.scheduleOk ? this.tr('home.noClassesToday') : this.tr('home.scheduleDebugging'))
               .fontSize(FontSize.caption)
               .fontColor(Theme.textMuted)
               .padding({ top: Space.md, bottom: Space.md })
@@ -330,7 +339,7 @@ export struct HomePage {
 
         // ── 快捷操作 ──
         Column() {
-          SectionHeader({ title: '快捷操作' })
+          SectionHeader({ title: this.tr('home.quickActions') })
             .padding({ left: Space.lg, right: Space.lg })
         }
         .width('100%')
@@ -338,7 +347,11 @@ export struct HomePage {
 
         Row() {
           ForEach(getQuickActions(), (action: QuickAction) => {
-            QuickActionButton({ action: action, onTap: () => { this.handleQuickAction(action); } })
+            QuickActionButton({
+              iconText: action.icon,
+              labelText: this.tr(action.label),
+              onTap: () => { this.handleQuickAction(action); }
+            })
           })
         }
         .width('100%')

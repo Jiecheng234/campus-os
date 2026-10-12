@@ -61,7 +61,7 @@ struct Index {
     }
     this.lastBackAt = now;
     try {
-      this.getUIContext().getPromptAction().showToast({ message: '再按一次退出应用', duration: 1500 });
+      this.getUIContext().getPromptAction().showToast({ message: this.tr('common.exitHint'), duration: 1500 });
     } catch (e) {
       /* ignore */
     }
@@ -165,7 +165,7 @@ struct Index {
         LoadingProgress()
           .width(48)
           .color(Theme.primary)
-        Text('正在恢复登录…')
+        Text(this.tr('login.restoring'))
           .fontSize(14)
           .fontColor(Theme.textMuted)
           .margin({ top: 16 })

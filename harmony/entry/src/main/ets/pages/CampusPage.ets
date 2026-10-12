@@ -88,18 +88,28 @@ export struct CampusPage {
     return e;
   }
 
+  /** 渲染用副本：title/subtitle 存词典键，此处按当前语言解析（语言切换即时重渲染） */
+  private localizedEntry(entry: CampusEntry): CampusEntry {
+    const copy: CampusEntry = new CampusEntry();
+    copy.iconRes = entry.iconRes;
+    copy.title = this.tr(entry.title);
+    copy.subtitle = this.tr(entry.subtitle);
+    copy.action = entry.action;
+    return copy;
+  }
+
   aboutToAppear(): void {
     this.entries = [
-      this.makeEntry($r('app.media.news'), '校园资讯', '清华快讯 · 公告', 'news'),
-      this.makeEntry($r('app.media.classroom'), '空闲教室', '查询空闲教室', 'classroom'),
-      this.makeEntry($r('app.media.grades'), '成绩查询', '查看成绩绩点', 'grades'),
-      this.makeEntry($r('app.media.petest'), '体测成绩', '查看体测结果', 'petest'),
-      this.makeEntry($r('app.media.dormitory'), '宿舍服务', '电费 · 洗衣机', 'dormitory'),
-      this.makeEntry($r('app.media.finance'), '财务缴费', '校园卡 · 消费记录', 'finance'),
-      this.makeEntry($r('app.media.network'), '校园网', '余额 · 在线设备', 'network'),
-      this.makeEntry($r('app.media.reservation'), '场馆预约', '研读间 · 体育场馆', 'reservation'),
-      this.makeEntry($r('app.media.mail'), '校园邮箱', '清华邮箱', 'mail'),
-      this.makeEntry($r('app.media.campus'), '培养方案', '学分完成度', 'program'),
+      this.makeEntry($r('app.media.news'), 'campus.news.title', 'campus.news.subtitle', 'news'),
+      this.makeEntry($r('app.media.classroom'), 'campus.classroom.title', 'campus.classroom.subtitle', 'classroom'),
+      this.makeEntry($r('app.media.grades'), 'campus.grades.title', 'campus.grades.subtitle', 'grades'),
+      this.makeEntry($r('app.media.petest'), 'campus.petest.title', 'campus.petest.subtitle', 'petest'),
+      this.makeEntry($r('app.media.dormitory'), 'campus.dormitory.title', 'campus.dormitory.subtitle', 'dormitory'),
+      this.makeEntry($r('app.media.finance'), 'campus.finance.title', 'campus.finance.subtitle', 'finance'),
+      this.makeEntry($r('app.media.network'), 'campus.network.title', 'campus.network.subtitle', 'network'),
+      this.makeEntry($r('app.media.reservation'), 'campus.reservation.title', 'campus.reservation.subtitle', 'reservation'),
+      this.makeEntry($r('app.media.mail'), 'campus.mail.title', 'campus.mail.subtitle', 'mail'),
+      this.makeEntry($r('app.media.campus'), 'campus.program.title', 'campus.program.subtitle', 'program'),
     ];
 
     // 跨页导航（如首页"查空教室"）：切到校园 Tab 后直接打开子页
@@ -154,14 +164,14 @@ export struct CampusPage {
           SafeTop()
 
           Column() {
-            ScreenHeader({ eyebrow: 'CAMPUS', title: this.tr('campus.title'), subtitle: this.trp('campus.services', { 'n': String(this.entries.length) }) })
+            ScreenHeader({ eyebrow: this.tr('campus.eyebrow'), title: this.tr('campus.title'), subtitle: this.trp('campus.services', { 'n': String(this.entries.length) }) })
           }
           .width('100%')
           .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.lg })
 
           Column() {
             ForEach(this.entries, (entry: CampusEntry, index: number) => {
-              EntryRow({ entry: entry })
+              EntryRow({ entry: this.localizedEntry(entry) })
                 .onClick(() => { this.handleEntryClick(entry); })
               if (index < this.entries.length - 1) {
                 Divider().color(Theme.divider)

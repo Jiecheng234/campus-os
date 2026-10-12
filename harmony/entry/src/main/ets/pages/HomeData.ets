@@ -1,6 +1,12 @@
 /**
  * 首页 Mock 数据（硬编码）
+ *
+ * 【i18n】getGreeting/getQuickActions 的 label 返回词典键（由页面 tr() 解析）；
+ * getDateString 返回按当前 locale 翻译后的日期文案（显式传 I18n.getLocale()）。
+ * 导出名与函数签名保持不变。
  */
+import { I18n } from '../utils/I18n';
+
 export class CourseItem {
   time: string = '';
   title: string = '';
@@ -58,42 +64,48 @@ export function getQuickActions(): QuickAction[] {
   const actions: QuickAction[] = [];
   const a1: QuickAction = new QuickAction();
   a1.icon = '🏫';
-  a1.label = '查空教室';
+  a1.label = 'home.qa.emptyClassroom';
   a1.targetTab = 3;
   a1.campusSub = 'classroom';
   actions.push(a1);
 
   const a2: QuickAction = new QuickAction();
   a2.icon = '📚';
-  a2.label = '图书馆座位';
+  a2.label = 'home.qa.librarySeat';
   actions.push(a2);
 
   const a3: QuickAction = new QuickAction();
   a3.icon = '📝';
-  a3.label = '添加 DDL';
+  a3.label = 'home.qa.addDdl';
   a3.targetTab = 1;
   a3.learningTab = '作业';
   actions.push(a3);
   return actions;
 }
 
+/** 问候语：返回词典键（home.greet*），由页面经 tr() 按当前语言解析 */
 export function getGreeting(): string {
   const hour: number = new Date().getHours();
   if (hour < 6) {
-    return '夜深了';
+    return 'home.greetNight';
   } else if (hour < 12) {
-    return '早上好';
+    return 'home.greetMorning';
   } else if (hour < 14) {
-    return '中午好';
+    return 'home.greetNoon';
   } else if (hour < 18) {
-    return '下午好';
+    return 'home.greetAfternoon';
   } else {
-    return '晚上好';
+    return 'home.greetEvening';
   }
 }
 
+/** 日期文案：按当前 locale 翻译输出（显式传入 locale，切换语言后由页面重渲染刷新） */
 export function getDateString(): string {
   const now: Date = new Date();
-  const weekdays: string[] = ['日', '一', '二', '三', '四', '五', '六'];
-  return `${now.getMonth() + 1}月${now.getDate()}日 周${weekdays[now.getDay()]}`;
+  const locale: string = I18n.getLocale();
+  return I18n.tp('home.date', {
+    'm': String(now.getMonth() + 1),
+    'd': String(now.getDate()),
+    'w': I18n.t('home.weekday' + String(now.getDay()), locale)
+  }, locale);
 }

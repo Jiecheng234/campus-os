@@ -94,10 +94,6 @@ function ymdCompact(d: Date): string {
   return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
 }
 
-function monthDay(d: Date): string {
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
-}
-
 @Component
 export struct SchedulePage {
   /** 语言订阅：语言切换即时重渲染 */
@@ -109,6 +105,11 @@ export struct SchedulePage {
 
   private trp(key: string, args: Record<string, string>): string {
     return I18n.tp(key, args, this.locale);
+  }
+
+  /** 日期显示文案（按当前语言格式化：zh "{m}月{d}日" / en "{m}/{d}"） */
+  private fmtDate(d: Date): string {
+    return this.trp('schedule.dateMd', { 'm': String(d.getMonth() + 1), 'd': String(d.getDate()) });
   }
 
   @State weekOffset: number = 0;
@@ -125,8 +126,8 @@ export struct SchedulePage {
     }
     const monday: Date = mondayOf(new Date());
     this.cells = getMockCells();
-    this.rangeLabel = monthDay(monday) + ' – ' + monthDay(addDays(monday, 6));
-    this.hint = '演示数据 · 登录后显示真实课表';
+    this.rangeLabel = this.fmtDate(monday) + ' – ' + this.fmtDate(addDays(monday, 6));
+    this.hint = 'schedule.demoHint';
   }
 
   /** 加载指定周（相对本周偏移）的课表 */
@@ -136,7 +137,7 @@ export struct SchedulePage {
     this.hint = '';
     const monday: Date = addDays(mondayOf(new Date()), offset * 7);
     const sunday: Date = addDays(monday, 6);
-    this.rangeLabel = monthDay(monday) + ' – ' + monthDay(sunday);
+    this.rangeLabel = this.fmtDate(monday) + ' – ' + this.fmtDate(sunday);
 
     const service: CampusDataService = SessionManager.getCampusDataService();
     const firstDay: string = await service.fetchSemesterInfo();
@@ -152,14 +153,14 @@ export struct SchedulePage {
       const events: ScheduleEvent[] = await service.fetchScheduleEvents(ymdCompact(monday), ymdCompact(sunday));
       if (service.scheduleStatus !== 'ok') {
         this.cells = [];
-        this.hint = '课表拉取失败（教务会话未打通）';
+        this.hint = 'schedule.fetchFailedSession';
       } else {
         this.cells = this.mapEventsToCells(events);
-        this.hint = this.cells.length === 0 ? '本周无课程安排' : '';
+        this.hint = this.cells.length === 0 ? 'schedule.emptyWeek' : '';
       }
     } catch (e) {
       this.cells = [];
-      this.hint = '课表拉取失败';
+      this.hint = 'schedule.fetchFailed';
       Log.i('SchedAct', 'loadWeek ex=%{public}s', e instanceof Error ? e.message : String(e));
     }
     this.loading = false;
@@ -232,7 +233,9 @@ export struct SchedulePage {
           })
 
         Column() {
-          Text(this.weekNumber > 0 ? `第 ${this.weekNumber} 周` : (this.weekOffset === 0 ? '本周' : '非本学期周次'))
+          Text(this.weekNumber > 0
+            ? this.trp('schedule.week', { 'n': String(this.weekNumber) })
+            : (this.weekOffset === 0 ? this.tr('schedule.thisWeek') : this.tr('schedule.offSemester')))
             .fontSize(FontSize.h3)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
@@ -275,7 +278,7 @@ export struct SchedulePage {
               .height(16)
               .color(Theme.primary)
           }
-          Text(this.loading ? '加载中...' : this.hint)
+          Text(this.loading ? this.tr('status.loading') : this.tr(this.hint))
             .fontSize(FontSize.caption)
             .fontColor(Theme.textMuted)
         }
@@ -288,11 +291,11 @@ export struct SchedulePage {
       Divider()
         .color(Theme.divider)
 
-      // 星期头
+      // 星期头（标签经词典翻译：schedule.day0=一/Mon … day6=日/Sun）
       Row() {
         Blank().width(56).height(36)
-        ForEach(WEEKDAYS, (day: string) => {
-          Text(day)
+        ForEach(WEEKDAYS, (day: string, dayIdx: number) => {
+          Text(this.tr('schedule.day' + String(dayIdx)))
             .fontSize(12)
             .fontColor(Theme.textMuted)
             .layoutWeight(1)

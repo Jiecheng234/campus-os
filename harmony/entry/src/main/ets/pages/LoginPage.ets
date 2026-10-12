@@ -1,12 +1,23 @@
 import { Theme, SafeTop } from './Theme';
 import { AuthState, AuthStatus, TwoFactorMethod, getDefaultTwoFactorMethods } from './AuthState';
-import { promptAction } from '@kit.ArkUI';
 import { SessionManager } from '../services/auth/SessionManager';
 import { LoginResult, LoginResultType } from '../services/auth/TsinghuaAuthService';
 import { AuthManager } from '../state/AuthManager';
+import { I18n } from '../utils/I18n';
 
 @Component
 export struct LoginPage {
+  /** 语言订阅：语言切换即时重渲染 */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
+
   @State auth: AuthState = new AuthState();
   @State studentId: string = '';
   @State password: string = '';
@@ -22,7 +33,7 @@ export struct LoginPage {
     }
     if (this.studentId.trim() === '' || this.password.trim() === '') {
       this.auth.status = AuthStatus.ERROR;
-      this.auth.error = '请输入学号和密码';
+      this.auth.error = this.tr('login.errorEmptyFields');
       return;
     }
 
@@ -34,7 +45,7 @@ export struct LoginPage {
       this.isSubmitting = false;
       if (result.type === LoginResultType.SUCCESS) {
         this.auth.status = AuthStatus.AUTHENTICATED;
-        promptAction.showToast({ message: result.message, duration: 3000 });
+        this.getUIContext().getPromptAction().showToast({ message: result.message, duration: 3000 });
         this.onLoginSuccess();
       } else if (result.type === LoginResultType.TWO_FACTOR) {
         this.auth.status = AuthStatus.TWO_FACTOR;
@@ -43,12 +54,12 @@ export struct LoginPage {
         this.auth.selectedMethod = 'wechat';
       } else {
         this.auth.status = AuthStatus.ERROR;
-        this.auth.error = '认证服务器返回错误：' + result.message + '\n\n请使用「演示模式」进入（无需账号）';
+        this.auth.error = this.trp('login.errorServerResponse', { 'msg': result.message });
       }
     }).catch((err: Error) => {
       this.isSubmitting = false;
       this.auth.status = AuthStatus.ERROR;
-      this.auth.error = '网络不可达\n\n真实登录需要清华校园网或 WebVPN。\n请使用「演示模式」进入（无需账号）';
+      this.auth.error = this.tr('login.errorNetwork');
     });
   }
 
@@ -61,16 +72,16 @@ export struct LoginPage {
   handleSendCode(): void {
     SessionManager.send2FACode(this.auth.selectedMethod).then((sent: boolean) => {
       if (sent) {
-        promptAction.showToast({ message: '验证码已发送', duration: 2000 });
+        this.getUIContext().getPromptAction().showToast({ message: this.tr('login.codeSent'), duration: 2000 });
       } else {
-        promptAction.showToast({ message: '发送验证码失败', duration: 2000 });
+        this.getUIContext().getPromptAction().showToast({ message: this.tr('login.codeSendFailed'), duration: 2000 });
       }
     });
   }
 
   handleVerify(): void {
     if (this.twoFactorCode.trim() === '') {
-      this.auth.error = '请输入验证码';
+      this.auth.error = this.tr('login.errorEmptyCode');
       this.auth.status = AuthStatus.ERROR;
       return;
     }
@@ -84,12 +95,12 @@ export struct LoginPage {
         this.onLoginSuccess();
       } else {
         this.auth.status = AuthStatus.ERROR;
-        this.auth.error = result.message.length > 0 ? result.message : '验证失败';
+        this.auth.error = result.message.length > 0 ? result.message : this.tr('login.verifyFailed');
       }
     }).catch((err: Error) => {
       this.isSubmitting = false;
       this.auth.status = AuthStatus.ERROR;
-      this.auth.error = '网络错误，请重试';
+      this.auth.error = this.tr('login.errorRetry');
     });
   }
 
@@ -112,7 +123,7 @@ export struct LoginPage {
             .letterSpacing(-0.6)
             .margin({ top: 24 })
 
-          Text('清华校园 AI 操作系统')
+          Text(this.tr('login.subtitle'))
             .fontSize(15)
             .fontColor(Theme.textSecondary)
             .margin({ top: 8, bottom: 40 })
@@ -123,7 +134,7 @@ export struct LoginPage {
 
         if (this.auth.status === AuthStatus.TWO_FACTOR) {
           Column() {
-            Text('二次认证')
+            Text(this.tr('login.twoFactorTitle'))
               .fontSize(16)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.text)
@@ -160,7 +171,7 @@ export struct LoginPage {
             .width('100%')
             .margin({ bottom: 16 })
 
-            Button('发送验证码')
+            Button(this.tr('login.sendCode'))
               .type(ButtonType.Normal)
               .width('100%')
               .height(52)
@@ -175,7 +186,7 @@ export struct LoginPage {
                 this.handleSendCode();
               })
 
-            TextInput({ placeholder: '输入验证码', text: this.twoFactorCode })
+            TextInput({ placeholder: this.tr('login.codePlaceholder'), text: this.twoFactorCode })
               .type(InputType.Number)
               .width('100%')
               .height(52)
@@ -191,7 +202,7 @@ export struct LoginPage {
                 this.twoFactorCode = value;
               })
 
-            Button('验证')
+            Button(this.tr('login.verify'))
               .type(ButtonType.Normal)
               .width('100%')
               .height(52)
@@ -210,7 +221,7 @@ export struct LoginPage {
           .padding({ left: 24, right: 24 })
         } else {
           Column() {
-            TextInput({ placeholder: '学号', text: this.studentId })
+            TextInput({ placeholder: this.tr('login.studentIdPlaceholder'), text: this.studentId })
               .type(InputType.Normal)
               .width('100%')
               .height(52)
@@ -228,7 +239,7 @@ export struct LoginPage {
                 this.studentId = value;
               })
 
-            TextInput({ placeholder: '密码', text: this.password })
+            TextInput({ placeholder: this.tr('login.passwordPlaceholder'), text: this.password })
               .type(InputType.Password)
               .width('100%')
               .height(52)
@@ -246,7 +257,7 @@ export struct LoginPage {
                 this.password = value;
               })
 
-            Button(this.auth.status === AuthStatus.AUTHENTICATING ? '登录中...' : '登  录')
+            Button(this.auth.status === AuthStatus.AUTHENTICATING ? this.tr('login.loggingIn') : this.tr('login.loginButton'))
               .type(ButtonType.Normal)
               .width('100%')
               .height(52)
@@ -260,7 +271,7 @@ export struct LoginPage {
                 this.handleLogin();
               })
 
-            Button('演示模式（无需账号）')
+            Button(this.tr('login.demoButton'))
               .type(ButtonType.Normal)
               .width('100%')
               .height(52)
@@ -290,7 +301,7 @@ export struct LoginPage {
         }
 
         Column() {
-          Text('部分功能需清华大学校园网')
+          Text(this.tr('login.footerNote'))
             .fontSize(13)
             .fontColor(Theme.textMuted)
 

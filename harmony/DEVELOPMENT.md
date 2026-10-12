@@ -327,11 +327,21 @@ GET  learnStudentHome                   学生首页
 - **账号信息（只读）**：学号取自本地凭证（`SecureStorage.getCredentials`）；姓名/邮箱无既有获取能力，**省略该行**（不臆造）；未登录/演示模式展示对应状态文案。
 - **弃用 API 清理**：SettingsPage 弃用 `promptAction.showToast` 全部移除，统一 `getUIContext().getPromptAction().showToast`（LoginPage/LearningPage 同类 WARN 仍保留，待后续批次）。
 
+### i18n 核心骨架 + 高频页迁移（2026-10-13，第一批）
+
+- **范围与键前缀**：底部导航 + 六个高频页全部静态文案迁移完成——`Index.ets`（`nav.*` 底部导航 + `common.exitHint` 退出提示 + `login.restoring` 自动登录等待）、`HomePage.ets`（+`HomeData.ets`，`home.*` 含问候/日期/同步/快捷操作）、`LearningPage.ets`（`learning.*`）、`SchedulePage.ets`（`schedule.*` 含周选择器/星期列/日期区间/状态提示）、`CampusPage.ets`（`campus.*` 入口卡）、`ai/AIChatPage.ets`（`ai.*` 含推荐提问与 mock 回复）、`LoginPage.ets`（`login.*` 含 2FA/错误/演示入口）；通用态用 `status.*`（loading/empty/failed/retry/demo），通用操作用 `common.*`。词典 zh/en 成对，回退链不变（当前语言 → 中文 → `—`）。
+- **页面范式**：`@StorageLink('locale') locale` + 页面私有 `tr(key)`/`trp(key, args)`（内部 `I18n.t/tp(key, …, this.locale)`，显式读 `this.locale` 建立渲染依赖）——语言切换即时重渲染。
+- **参数化 `tp()` 用法**：模板 `{name}` 占位安全替换（缺参保留占位符原文）。示例：`trp('schedule.week', { 'n': String(weekNumber) })` → "第 3 周 / Week 3"；`trp('home.date', { 'm': '10', 'd': '13', 'w': '一' })` → "10月13日 周一 / Mon, 10/13"。
+- **课表页细节**：周提示 `hint` 状态存**词典键**、渲染时 `tr(this.hint)` 翻译（切换即时生效且不改状态逻辑）；日期区间经 `schedule.dateMd`（zh `{m}月{d}日` / en `{m}/{d}`）格式化。
+- **弃用 API 清理**：LoginPage/LearningPage 残留 `promptAction.showToast` 全部改 `getUIContext().getPromptAction().showToast`（首批页面 grep 无弃用提示 API）。
+- **未迁移页面（回退中文，无键名外泄）**：`pages/campus/*`（10 个子页）、`pages/learning/*`（4 个详情页 + WebViewer）、`ClassroomPage`/`GradesPage`/`PlaceholderPage`/`common/components/MarkdownText` 均**未引入** `t()/tr()/I18n` 调用（硬编码中文即回退态）。
+- **下批清单**：①校园子页 10 个（邮箱/网课/图书馆座位/研读间/体育/宿舍/财务/资讯/程序/校园网）；②学习子页 4 个（课程/作业/通知/文件详情）；③其它页（Classroom/Grades/Placeholder/MarkdownText）——扩词典 + 同款 `@StorageLink('locale')` + `tr()/trp()` 范式；业务数据（课程名/邮件主题/机构名）不翻译。
+
 ### 其他待办
 
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
 - 清华邮件（Coremail）逐用户故事 UI 验证（构建 + 模拟器部署后按 US1–US6 校验：列表/未读计数/分页、详情与附件、搜索、已读标记、删除/移动确认、撰写校验/确认/发送反馈）
-- i18n 其余页面双语化（后续批次：扩词典 + `@StorageLink('locale')`；未迁移页面回退中文）
+- i18n 其余页面双语化（下一批次：校园子页/学习子页/其它页——见上方"i18n 核心骨架 + 高频页迁移"节的下批清单）
 - "信任此设备"后续是否与指纹复用/2FA 策略真正联动（本轮仅持久化，UI 文案已准确表述）
 - SettingsPage 退出登录后整应用回登录页需 Index 门控联动（本轮受"不改导航装配"约束，仅清会话+凭证+页内状态刷新；冷启动正确回登录页）
 

@@ -44,6 +44,7 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'common.confirm': { zh: '确定', en: 'Confirm' },
   'common.ok': { zh: '好的', en: 'OK' },
   'common.more': { zh: '更多', en: 'More' },
+  'common.exitHint': { zh: '再按一次退出应用', en: 'Press back again to exit' },
 
   // ── 底部导航（nav.*，对应 Index.tabTitles 6 项）──
   'nav.home': { zh: '首页', en: 'Home' },
@@ -74,6 +75,175 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'schedule.week': { zh: '第 {n} 周', en: 'Week {n}' },
   'schedule.today': { zh: '今天', en: 'Today' },
   'schedule.location': { zh: '地点', en: 'Location' },
+
+  // ── 首页（home.*）──
+  'home.greetNight': { zh: '夜深了', en: 'Up late' },
+  'home.greetMorning': { zh: '早上好', en: 'Good morning' },
+  'home.greetNoon': { zh: '中午好', en: 'Good afternoon' },
+  'home.greetAfternoon': { zh: '下午好', en: 'Good afternoon' },
+  'home.greetEvening': { zh: '晚上好', en: 'Good evening' },
+  'home.date': { zh: '{m}月{d}日 周{w}', en: '{w}, {m}/{d}' },
+  'home.weekday0': { zh: '日', en: 'Sun' },
+  'home.weekday1': { zh: '一', en: 'Mon' },
+  'home.weekday2': { zh: '二', en: 'Tue' },
+  'home.weekday3': { zh: '三', en: 'Wed' },
+  'home.weekday4': { zh: '四', en: 'Thu' },
+  'home.weekday5': { zh: '五', en: 'Fri' },
+  'home.weekday6': { zh: '六', en: 'Sat' },
+  'home.weatherUnavailable': { zh: '海淀 · 天气暂不可用', en: 'Haidian · Weather unavailable' },
+  'home.syncAction': { zh: '同步校园数据', en: 'Sync campus data' },
+  'home.syncing': { zh: '同步中...', en: 'Syncing…' },
+  'home.syncDone': { zh: '已同步 {n} 门课程', en: 'Synced {n} courses' },
+  'home.syncPending': { zh: '待办 {n}', en: '{n} pending' },
+  'home.syncUnread': { zh: '未读 {n}', en: '{n} unread' },
+  'home.syncScheduleUnavailable': { zh: '课表暂不可用', en: 'Schedule unavailable' },
+  'home.demoToast': { zh: '演示模式下使用本地数据', en: 'Demo mode uses local data' },
+  'home.todayFocus': { zh: '今日重点', en: 'Today\'s focus' },
+  'home.metricClasses': { zh: '今日课程', en: 'Classes today' },
+  'home.metricTasks': { zh: '待处理任务', en: 'Pending tasks' },
+  'home.metricUnread': { zh: '未读通知', en: 'Unread notices' },
+  'home.sectionTodayCourses': { zh: '今日课程', en: 'Today\'s classes' },
+  'home.noClassesToday': { zh: '今日无课程安排', en: 'No classes scheduled today' },
+  'home.scheduleDebugging': {
+    zh: '课表暂不可用（教务会话调试中）',
+    en: 'Schedule unavailable (academic system session in progress)'
+  },
+  'home.quickActions': { zh: '快捷操作', en: 'Quick actions' },
+  'home.qa.emptyClassroom': { zh: '查空教室', en: 'Free classrooms' },
+  'home.qa.librarySeat': { zh: '图书馆座位', en: 'Library seats' },
+  'home.qa.addDdl': { zh: '添加 DDL', en: 'Add deadline' },
+  'home.comingSoon': { zh: '即将接入', en: 'Coming soon' },
+
+  // ── 学习页（learning.*；tabs 中文名为跨页逻辑标识，仅展示层翻译）──
+  'learning.eyebrow': { zh: 'LEARNING', en: 'LEARNING' },
+  'learning.tabCourses': { zh: '课程', en: 'Courses' },
+  'learning.tabHomework': { zh: '作业', en: 'Homework' },
+  'learning.tabNotifications': { zh: '通知', en: 'Notices' },
+  'learning.tabFiles': { zh: '文件', en: 'Files' },
+  'learning.countsSnippet': {
+    zh: '{a} 门课程 · {b} 项作业 · {c} 通知 · {d} 文件',
+    en: '{a} courses · {b} assignments · {c} notices · {d} files'
+  },
+  'learning.emptyHomework': { zh: '暂无作业', en: 'No assignments yet' },
+  'learning.emptyNotifications': { zh: '暂无通知', en: 'No notices yet' },
+  'learning.emptyFiles': { zh: '暂无文件', en: 'No files yet' },
+  'learning.addDdl': { zh: '添加 DDL', en: 'Add deadline' },
+  'learning.formTitle': { zh: '标题（必填）', en: 'Title (required)' },
+  'learning.formDate': { zh: '日期', en: 'Date' },
+  'learning.formTime': { zh: '时间', en: 'Time' },
+  'learning.formCourse': { zh: '课程（选填）', en: 'Course (optional)' },
+  'learning.formNote': { zh: '备注（选填）', en: 'Note (optional)' },
+  'learning.save': { zh: '保存', en: 'Save' },
+  'learning.titleRequired': { zh: '请输入标题', en: 'Please enter a title' },
+  'learning.customCourse': { zh: '自定义', en: 'Custom' },
+  'learning.badgeNew': { zh: 'NEW', en: 'NEW' },
+
+  // ── 校园页入口（campus.*）──
+  'campus.eyebrow': { zh: 'CAMPUS', en: 'CAMPUS' },
+  'campus.news.title': { zh: '校园资讯', en: 'Campus news' },
+  'campus.news.subtitle': { zh: '清华快讯 · 公告', en: 'Tsinghua updates · notices' },
+  'campus.classroom.title': { zh: '空闲教室', en: 'Free classrooms' },
+  'campus.classroom.subtitle': { zh: '查询空闲教室', en: 'Find free classrooms' },
+  'campus.grades.title': { zh: '成绩查询', en: 'Grades' },
+  'campus.grades.subtitle': { zh: '查看成绩绩点', en: 'Check grades and GPA' },
+  'campus.petest.title': { zh: '体测成绩', en: 'Fitness test' },
+  'campus.petest.subtitle': { zh: '查看体测结果', en: 'View fitness results' },
+  'campus.dormitory.title': { zh: '宿舍服务', en: 'Dormitory' },
+  'campus.dormitory.subtitle': { zh: '电费 · 洗衣机', en: 'Power · laundry' },
+  'campus.finance.title': { zh: '财务缴费', en: 'Payments' },
+  'campus.finance.subtitle': { zh: '校园卡 · 消费记录', en: 'Campus card · spending' },
+  'campus.network.title': { zh: '校园网', en: 'Campus network' },
+  'campus.network.subtitle': { zh: '余额 · 在线设备', en: 'Balance · devices' },
+  'campus.reservation.title': { zh: '场馆预约', en: 'Book venues' },
+  'campus.reservation.subtitle': { zh: '研读间 · 体育场馆', en: 'Study rooms · gyms' },
+  'campus.mail.title': { zh: '校园邮箱', en: 'Campus mail' },
+  'campus.mail.subtitle': { zh: '清华邮箱', en: 'Tsinghua email' },
+  'campus.program.title': { zh: '培养方案', en: 'Degree program' },
+  'campus.program.subtitle': { zh: '学分完成度', en: 'Credit progress' },
+
+  // ── AI 助手（ai.*）──
+  'ai.eyebrow': { zh: 'AI ASSISTANT', en: 'AI ASSISTANT' },
+  'ai.newChat': { zh: '新建对话', en: 'New chat' },
+  'ai.brandName': { zh: 'CampusOS AI', en: 'CampusOS AI' },
+  'ai.tryAsking': { zh: '试试问我：', en: 'Try asking:' },
+  'ai.inputPlaceholder': { zh: '问我关于校园的任何问题...', en: 'Ask me anything about campus...' },
+  'ai.send': { zh: '发送', en: 'Send' },
+  'ai.suggest.schedule': { zh: '今天有什么课？', en: 'What is my schedule today?' },
+  'ai.suggest.classroom': { zh: '查一下空教室', en: 'Find a free classroom' },
+  'ai.suggest.ddl': { zh: '帮我添加一个DDL', en: 'Help me add a deadline' },
+  'ai.suggest.grades': { zh: '最近的成绩怎么样？', en: 'How are my grades?' },
+  'ai.suggest.card': { zh: '校园卡还有多少钱？', en: 'How much is left on my card?' },
+  'ai.mockCourses': {
+    zh: '根据你的课表，今天有以下课程：\n\n🔹 8:00-9:35 高等数学(1) — 六教6A201\n🔹 10:10-11:45 大学物理B(2) — 四教4301\n🔹 13:30-15:05 线性代数 — 六教6B101\n\n需要我帮你查看课程详情或作业吗？',
+    en: 'Based on your schedule, today\'s classes:\n\n🔹 8:00-9:35 Advanced Math I — Bldg 6, 6A201\n🔹 10:10-11:45 Physics II — Bldg 4, 4301\n🔹 13:30-15:05 Linear Algebra — Bldg 6, 6B101\n\nWant to see course details or homework?'
+  },
+  'ai.mockClassroom': {
+    zh: '查询到当前时段以下教室空闲：\n\n🏫 六教：6A301, 6A302, 6A401, 6A402, 6B203\n🏫 四教：4303, 4304, 4402\n🏫 五教：5102, 5201, 5303\n\n共 11 间教室可用。需要预约吗？',
+    en: 'These classrooms are free right now:\n\n🏫 Building 6: 6A301, 6A302, 6A401, 6A402, 6B203\n🏫 Building 4: 4303, 4304, 4402\n🏫 Building 5: 5102, 5201, 5303\n\n11 rooms available. Want to book one?'
+  },
+  'ai.mockDdl': {
+    zh: '你当前有 2 项待完成的作业：\n\n📝 高等数学(1) — 习题集第5章 — 截止：7月25日\n📝 大学物理B(2) — 实验报告2 — 截止：7月28日\n\n需要我帮你添加新的DDL吗？',
+    en: 'You have 2 pending assignments:\n\n📝 Advanced Math I — Problem set Ch.5 — due Jul 25\n📝 Physics II — Lab report 2 — due Jul 28\n\nWant me to add a new deadline?'
+  },
+  'ai.mockGrades': {
+    zh: '你的学业成绩概览：\n\n📊 本学期 GPA：3.72\n🏆 等级分布：A=3门, A-=2门, B+=1门, B=1门\n\n详细成绩可在「校园」→「成绩查询」中查看。',
+    en: 'Your academic overview:\n\n📊 This term GPA: 3.72\n🏆 Grade distribution: A=3, A-=2, B+=1, B=1\n\nSee full grades in Campus → Grades.'
+  },
+  'ai.mockCard': {
+    zh: '你的校园卡信息：\n\n💰 当前余额：¥285.30\n💳 卡号：**** **** **** 6821\n📋 最近消费：紫荆园餐厅 -¥15.50\n\n余额充足，无需充值。',
+    en: 'Your campus card:\n\n💰 Balance: ¥285.30\n💳 Card no.: **** **** **** 6821\n📋 Latest purchase: Zijing Dining Hall -¥15.50\n\nBalance looks good, no top-up needed.'
+  },
+  'ai.mockDefault': {
+    zh: '我是 CampusOS AI 助手，可以帮你：\n\n📚 查询课表和学习任务\n🏫 查找空教室\n📊 查看成绩和 GPA\n💰 查询校园卡余额\n📝 管理 DDL 待办\n🌐 查询校园网状态\n\n有什么我可以帮你的吗？',
+    en: 'I\'m your CampusOS AI assistant. I can help you:\n\n📚 Check classes and tasks\n🏫 Find free classrooms\n📊 View grades and GPA\n💰 Check campus card balance\n📝 Manage deadlines\n🌐 Check campus network status\n\nWhat can I do for you?'
+  },
+
+  // ── 登录页（login.*）──
+  'login.subtitle': { zh: '清华校园 AI 操作系统', en: 'Tsinghua campus AI OS' },
+  'login.restoring': { zh: '正在恢复登录…', en: 'Restoring sign-in…' },
+  'login.twoFactorTitle': { zh: '二次认证', en: 'Two-factor authentication' },
+  'login.sendCode': { zh: '发送验证码', en: 'Send code' },
+  'login.codePlaceholder': { zh: '输入验证码', en: 'Enter verification code' },
+  'login.verify': { zh: '验证', en: 'Verify' },
+  'login.studentIdPlaceholder': { zh: '学号', en: 'Student ID' },
+  'login.passwordPlaceholder': { zh: '密码', en: 'Password' },
+  'login.loggingIn': { zh: '登录中...', en: 'Signing in…' },
+  'login.loginButton': { zh: '登  录', en: 'Sign in' },
+  'login.demoButton': { zh: '演示模式（无需账号）', en: 'Demo mode (no account needed)' },
+  'login.footerNote': { zh: '部分功能需清华大学校园网', en: 'Some features require the Tsinghua campus network' },
+  'login.errorEmptyFields': { zh: '请输入学号和密码', en: 'Please enter your student ID and password' },
+  'login.errorServerResponse': {
+    zh: '认证服务器返回错误：{msg}\n\n请使用「演示模式」进入（无需账号）',
+    en: 'Authentication server error: {msg}\n\nUse "Demo mode" to continue (no account needed)'
+  },
+  'login.errorNetwork': {
+    zh: '网络不可达\n\n真实登录需要清华校园网或 WebVPN。\n请使用「演示模式」进入（无需账号）',
+    en: 'Network unreachable\n\nSigning in requires the Tsinghua campus network or WebVPN.\nUse "Demo mode" to continue (no account needed)'
+  },
+  'login.codeSent': { zh: '验证码已发送', en: 'Verification code sent' },
+  'login.codeSendFailed': { zh: '发送验证码失败', en: 'Failed to send verification code' },
+  'login.errorEmptyCode': { zh: '请输入验证码', en: 'Please enter the verification code' },
+  'login.verifyFailed': { zh: '验证失败', en: 'Verification failed' },
+  'login.errorRetry': { zh: '网络错误，请重试', en: 'Network error. Please try again.' },
+
+  // ── 课表页正文（schedule.*，第二批追加；day0=周一 … day6=周日，对应页内 WEEKDAYS 下标）──
+  'schedule.thisWeek': { zh: '本周', en: 'This week' },
+  'schedule.offSemester': { zh: '非本学期周次', en: 'Outside semester' },
+  'schedule.demoHint': { zh: '演示数据 · 登录后显示真实课表', en: 'Demo data · Sign in for your real schedule' },
+  'schedule.fetchFailed': { zh: '课表拉取失败', en: 'Failed to load schedule' },
+  'schedule.fetchFailedSession': {
+    zh: '课表拉取失败（教务会话未打通）',
+    en: 'Failed to load schedule (registrar session unavailable)'
+  },
+  'schedule.emptyWeek': { zh: '本周无课程安排', en: 'No classes this week' },
+  'schedule.dateMd': { zh: '{m}月{d}日', en: '{m}/{d}' },
+  'schedule.day0': { zh: '一', en: 'Mon' },
+  'schedule.day1': { zh: '二', en: 'Tue' },
+  'schedule.day2': { zh: '三', en: 'Wed' },
+  'schedule.day3': { zh: '四', en: 'Thu' },
+  'schedule.day4': { zh: '五', en: 'Fri' },
+  'schedule.day5': { zh: '六', en: 'Sat' },
+  'schedule.day6': { zh: '日', en: 'Sun' },
 
   'settings.eyebrow': { zh: 'SETTINGS', en: 'SETTINGS' },
   'settings.title': { zh: '设置', en: 'Settings' },

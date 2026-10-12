@@ -7,7 +7,6 @@ import {
   getCourses, getHomeworkList, getNotifications, getFiles, getTodayDateStr,
   CourseItem, HomeworkItem, NotificationItem, FileItem, DeadlineForm
 } from './LearningData';
-import { promptAction } from '@kit.ArkUI';
 import { Log } from '../utils/Logger';
 import { I18n } from '../utils/I18n';
 import { CourseDetailPage } from './learning/CourseDetailPage';
@@ -24,14 +23,17 @@ import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget
 @Component
 struct SegmentBar {
   @Link activeTab: string;
+  /** 子标签逻辑标识（中文常量，跨页契约：与 HomeData 的 learningTab/页面 activeTab 匹配） */
   @Prop tabs: string[] = [];
+  /** 子标签展示文案（按当前语言翻译，由父组件传入） */
+  @Prop labels: string[] = [];
   @Prop counts: number[] = [];
 
   build() {
     Row() {
       ForEach(this.tabs, (tab: string, index: number) => {
         Row({ space: 4 }) {
-          Text(tab)
+          Text(this.labels.length > index ? this.labels[index] : tab)
             .fontSize(FontSize.caption)
             .fontWeight(this.activeTab === tab ? FontWeight.Medium : FontWeight.Normal)
             .fontColor(this.activeTab === tab ? Theme.text : Theme.textSecondary)
@@ -135,6 +137,7 @@ struct CourseCard {
 @Component
 struct NotificationCard {
   @Prop item: NotificationItem = new NotificationItem();
+  @Prop badgeText: string = 'NEW';
   onCardClick: () => void = () => {};
 
   build() {
@@ -159,7 +162,7 @@ struct NotificationCard {
       .layoutWeight(1)
 
       if (this.item.isNew) {
-        Text('NEW')
+        Text(this.badgeText)
           .fontSize(11)
           .fontColor(Theme.warning)
           .alignSelf(ItemAlign.Center)
@@ -179,6 +182,7 @@ struct NotificationCard {
 @Component
 struct FileCard {
   @Prop item: FileItem = new FileItem();
+  @Prop badgeText: string = 'NEW';
   onCardClick: () => void = () => {};
 
   build() {
@@ -203,7 +207,7 @@ struct FileCard {
       .layoutWeight(1)
 
       if (this.item.isNew) {
-        Text('NEW')
+        Text(this.badgeText)
           .fontSize(11)
           .fontColor(Theme.warning)
           .alignSelf(ItemAlign.Center)
@@ -227,6 +231,10 @@ export struct LearningPage {
 
   private tr(key: string): string {
     return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
   }
 
   @State activeTab: string = '课程';
@@ -376,7 +384,22 @@ export struct LearningPage {
 
   private getTabCountsSnippet(): string {
     const c: number[] = this.getTabCounts();
-    return `${c[0]} 门课程 · ${c[1]} 项作业 · ${c[2]} 通知 · ${c[3]} 文件`;
+    return this.trp('learning.countsSnippet', {
+      'a': String(c[0]),
+      'b': String(c[1]),
+      'c': String(c[2]),
+      'd': String(c[3])
+    });
+  }
+
+  /** 子标签展示文案（按当前语言；逻辑标识仍用 this.tabs 的中文常量） */
+  private getTabLabels(): string[] {
+    return [
+      this.tr('learning.tabCourses'),
+      this.tr('learning.tabHomework'),
+      this.tr('learning.tabNotifications'),
+      this.tr('learning.tabFiles')
+    ];
   }
 
   @Builder
@@ -413,7 +436,7 @@ export struct LearningPage {
 
           Column() {
             ScreenHeader({
-              eyebrow: 'LEARNING',
+              eyebrow: this.tr('learning.eyebrow'),
               title: this.tr('learning.title'),
               subtitle: this.getTabCountsSnippet(),
               right: (): void => this.addActionButton()
@@ -422,7 +445,7 @@ export struct LearningPage {
           .width('100%')
           .padding({ left: 20, right: 16, top: 12, bottom: 8 })
 
-          SegmentBar({ activeTab: $activeTab, tabs: this.tabs, counts: this.getTabCounts() })
+          SegmentBar({ activeTab: $activeTab, tabs: this.tabs, labels: this.getTabLabels(), counts: this.getTabCounts() })
             .constraintSize({ maxWidth: '100%' })
             .margin({ left: 20, right: 20, bottom: 16 })
 
@@ -467,7 +490,7 @@ export struct LearningPage {
                 }
               })
               if (this.getDisplayHomework().length === 0) {
-                Text('暂无作业')
+                Text(this.tr('learning.emptyHomework'))
                   .fontSize(14)
                   .fontColor(Theme.textMuted)
                   .padding({ top: 16, bottom: 16 })
@@ -483,13 +506,13 @@ export struct LearningPage {
           } else if (this.activeTab === '通知') {
             Column() {
               ForEach(this.getDisplayNotifications(), (item: NotificationItem, index: number) => {
-                NotificationCard({ item: item, onCardClick: () => {
+                NotificationCard({ item: item, badgeText: this.tr('learning.badgeNew'), onCardClick: () => {
                   if (index < this.realCampusNotifications.length) { this.selectedNotification = this.realCampusNotifications[index]; }
                   this.subScreen = 'notification';
                 } })
               })
               if (this.getDisplayNotifications().length === 0) {
-                Text('暂无通知')
+                Text(this.tr('learning.emptyNotifications'))
                   .fontSize(14)
                   .fontColor(Theme.textMuted)
                   .padding({ top: 16, bottom: 16 })
@@ -505,13 +528,13 @@ export struct LearningPage {
           } else {
             Column() {
               ForEach(this.getDisplayFiles(), (item: FileItem, index: number) => {
-                FileCard({ item: item, onCardClick: () => {
+                FileCard({ item: item, badgeText: this.tr('learning.badgeNew'), onCardClick: () => {
                   if (index < this.realCampusFiles.length) { this.selectedFile = this.realCampusFiles[index]; }
                   this.subScreen = 'file';
                 } })
               })
               if (this.getDisplayFiles().length === 0) {
-                Text('暂无文件')
+                Text(this.tr('learning.emptyFiles'))
                   .fontSize(14)
                   .fontColor(Theme.textMuted)
                   .padding({ top: 16, bottom: 16 })
@@ -558,13 +581,13 @@ export struct LearningPage {
   @Builder
   buildDDLSheet() {
     Column() {
-      Text('添加 DDL')
+      Text(this.tr('learning.addDdl'))
         .fontSize(16)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.text)
         .margin({ bottom: 16 })
 
-      TextInput({ placeholder: '标题（必填）', text: this.form.title })
+      TextInput({ placeholder: this.tr('learning.formTitle'), text: this.form.title })
         .width('100%')
         .height(44)
         .fontSize(14)
@@ -576,7 +599,7 @@ export struct LearningPage {
         .onChange((v: string) => { this.form.title = v; })
 
       Row() {
-        TextInput({ placeholder: '日期', text: this.form.date })
+        TextInput({ placeholder: this.tr('learning.formDate'), text: this.form.date })
           .width('48%')
           .height(44)
           .fontSize(14)
@@ -588,7 +611,7 @@ export struct LearningPage {
 
         Blank()
 
-        TextInput({ placeholder: '时间', text: this.form.time })
+        TextInput({ placeholder: this.tr('learning.formTime'), text: this.form.time })
           .width('48%')
           .height(44)
           .fontSize(14)
@@ -601,7 +624,7 @@ export struct LearningPage {
       .width('100%')
       .margin({ bottom: 10 })
 
-      TextInput({ placeholder: '课程（选填）', text: this.form.course })
+      TextInput({ placeholder: this.tr('learning.formCourse'), text: this.form.course })
         .width('100%')
         .height(44)
         .fontSize(14)
@@ -612,7 +635,7 @@ export struct LearningPage {
         .margin({ bottom: 10 })
         .onChange((v: string) => { this.form.course = v; })
 
-      TextInput({ placeholder: '备注（选填）', text: this.form.note })
+      TextInput({ placeholder: this.tr('learning.formNote'), text: this.form.note })
         .width('100%')
         .height(44)
         .fontSize(14)
@@ -624,7 +647,7 @@ export struct LearningPage {
         .onChange((v: string) => { this.form.note = v; })
 
       Row() {
-        Button('取消')
+        Button(this.tr('common.cancel'))
           .type(ButtonType.Normal)
           .width('48%')
           .height(44)
@@ -636,7 +659,7 @@ export struct LearningPage {
 
         Blank()
 
-        Button('保存')
+        Button(this.tr('learning.save'))
           .type(ButtonType.Normal)
           .width('48%')
           .height(44)
@@ -646,12 +669,12 @@ export struct LearningPage {
           .borderRadius(10)
           .onClick(() => {
             if (this.form.title.trim() === '') {
-              promptAction.showToast({ message: '请输入标题', duration: 2000 });
+              this.getUIContext().getPromptAction().showToast({ message: this.tr('learning.titleRequired'), duration: 2000 });
               return;
             }
             const hw: HomeworkItem = new HomeworkItem();
             hw.title = this.form.title;
-            hw.course = this.form.course || '自定义';
+            hw.course = this.form.course || this.tr('learning.customCourse');
             hw.deadline = `${this.form.date} ${this.form.time}`;
             hw.status = '即将截止';
             this.ddls = [hw].concat(this.ddls);
