@@ -1,5 +1,6 @@
 import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
 import { ScreenHeader } from '../../components/Ui';
+import { I18n } from '../../utils/I18n';
 
 class ChatMessage {
   id: string = '';
@@ -121,6 +122,13 @@ struct ModelSelector {
 
 @Component
 export struct AIChatPage {
+  /** 语言订阅：语言切换即时重渲染 */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
   @State messages: ChatMessage[] = [];
   @State inputText: string = '';
   @State selectedModel: number = 0;
@@ -210,7 +218,7 @@ export struct AIChatPage {
       Column() {
         ScreenHeader({
           eyebrow: 'AI ASSISTANT',
-          title: 'AI 助手',
+          title: this.tr('ai.title'),
           right: (): void => this.newChatButton()
         })
       }

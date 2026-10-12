@@ -9,6 +9,7 @@ import {
 } from './LearningData';
 import { promptAction } from '@kit.ArkUI';
 import { Log } from '../utils/Logger';
+import { I18n } from '../utils/I18n';
 import { CourseDetailPage } from './learning/CourseDetailPage';
 import { HomeworkDetailPage } from './learning/HomeworkDetailPage';
 import { NotificationDetailPage } from './learning/NotificationDetailPage';
@@ -221,6 +222,13 @@ struct FileCard {
 
 @Component
 export struct LearningPage {
+  /** 语言订阅：语言切换即时重渲染 */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
   @State activeTab: string = '课程';
   @State showDialog: boolean = false;
   @State ddls: HomeworkItem[] = getHomeworkList();
@@ -406,7 +414,7 @@ export struct LearningPage {
           Column() {
             ScreenHeader({
               eyebrow: 'LEARNING',
-              title: '学习',
+              title: this.tr('learning.title'),
               subtitle: this.getTabCountsSnippet(),
               right: (): void => this.addActionButton()
             })

@@ -12,6 +12,7 @@ import { NewsPage } from './campus/NewsPage';
 import { ProgramPage } from './campus/ProgramPage';
 import { BackDispatcher, BackOwner, BackHandler } from '../state/BackDispatcher';
 import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget } from '../state/UiEvents';
+import { I18n } from '../utils/I18n';
 
 class CampusEntry {
   iconRes: Resource = $r('app.media.campus');
@@ -59,6 +60,17 @@ struct EntryRow {
 
 @Component
 export struct CampusPage {
+  /** 语言订阅：语言切换即时重渲染 */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
+
   @State @Watch('onSubScreenChange') subScreen: string = '';
   private backHandler: BackHandler = () => {
     this.subScreen = '';
@@ -142,7 +154,7 @@ export struct CampusPage {
           SafeTop()
 
           Column() {
-            ScreenHeader({ eyebrow: 'CAMPUS', title: '校园', subtitle: `${this.entries.length} 项校园服务` })
+            ScreenHeader({ eyebrow: 'CAMPUS', title: this.tr('campus.title'), subtitle: this.trp('campus.services', { 'n': String(this.entries.length) }) })
           }
           .width('100%')
           .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.lg })

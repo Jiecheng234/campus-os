@@ -12,6 +12,7 @@ import { emitNavigate, NavTarget } from '../state/UiEvents';
 import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
 import { Log } from '../utils/Logger';
+import { I18n } from '../utils/I18n';
 /**
  * 今日课程行：3px 渐变竖条 + 课程名 + 时间地点（对齐原项目 scheduleRow）。
  * 竖条禁止 height('100%')：父级行高自适应时，百分比按"最近固定高度祖先"解析，
@@ -79,6 +80,13 @@ struct QuickActionButton {
 
 @Component
 export struct HomePage {
+  /** 语言订阅：语言切换即时重渲染 */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
   @State syncStatus: string = '';
   @State realCourseCount: number = 0;
   @State todayCourses: CourseItem[] = [];
@@ -234,7 +242,7 @@ export struct HomePage {
         Row() {
           ScreenHeader({
             eyebrow: `${getGreeting()} · ${getDateString()}`,
-            title: 'CampusOS',
+            title: this.tr('home.title'),
             subtitle: this.weatherSubtitle
           })
         }

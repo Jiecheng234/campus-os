@@ -10,6 +10,7 @@ import { CampusDataService, ScheduleEvent } from '../services/campus/CampusDataS
 import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
 import { Log } from '../utils/Logger';
+import { I18n } from '../utils/I18n';
 
 class ScheduleCell {
   day: number = 0;
@@ -99,6 +100,17 @@ function monthDay(d: Date): string {
 
 @Component
 export struct SchedulePage {
+  /** 语言订阅：语言切换即时重渲染 */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
+
   @State weekOffset: number = 0;
   @State weekNumber: number = 0;
   @State rangeLabel: string = '';
@@ -191,10 +203,12 @@ export struct SchedulePage {
       Column() {
         ScreenHeader({
           eyebrow: 'SCHEDULE',
-          title: '课表',
+          title: this.tr('schedule.title'),
           subtitle: this.rangeLabel.length > 0
-            ? (this.weekNumber > 0 ? `${this.rangeLabel} · 第 ${this.weekNumber} 周` : this.rangeLabel)
-            : '每周课程安排',
+            ? (this.weekNumber > 0
+              ? `${this.rangeLabel} · ${this.trp('schedule.week', { 'n': String(this.weekNumber) })}`
+              : this.rangeLabel)
+            : this.tr('schedule.subtitle'),
         })
       }
       .width('100%')

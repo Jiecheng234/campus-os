@@ -10,6 +10,9 @@
  * 【回退链】t(key)：当前 locale 未命中/空串 → 回退中文 → 仍缺返回可读占位
  *   （PLACEHOLDER），禁止空白或键名外泄。
  *
+ * 【参数化】tp(key, args)：在 t(key) 文案上把 {name} 占位符按 args 安全替换
+ *   （未提供的参数保留占位符原文，不抛错）。
+ *
  * 【locale 运行时状态】AppStorage 键 'locale'（LOCALE_STORAGE_KEY）：
  *   - 页面用 @StorageLink('locale') 订阅即可随切换即时重渲染；
  *   - setLocale() 校验（仅 zh/en，非法回退 zh）→ 写 AppStorage → 经
@@ -36,7 +39,41 @@ interface I18nEntry {
 
 /** 设置页全部文案词典（后续页面迁移时按前缀扩列） */
 const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
+  // ── 通用操作（common.*）──
   'common.cancel': { zh: '取消', en: 'Cancel' },
+  'common.confirm': { zh: '确定', en: 'Confirm' },
+  'common.ok': { zh: '好的', en: 'OK' },
+  'common.more': { zh: '更多', en: 'More' },
+
+  // ── 底部导航（nav.*，对应 Index.tabTitles 6 项）──
+  'nav.home': { zh: '首页', en: 'Home' },
+  'nav.learning': { zh: '学习', en: 'Learning' },
+  'nav.schedule': { zh: '课表', en: 'Schedule' },
+  'nav.campus': { zh: '校园', en: 'Campus' },
+  'nav.ai': { zh: 'AI', en: 'AI' },
+  'nav.settings': { zh: '设置', en: 'Settings' },
+
+  // ── 页面标题（*.title；副标题仅静态文案建词条，动态数据由页面拼接）──
+  'home.title': { zh: 'CampusOS', en: 'CampusOS' },
+  'learning.title': { zh: '学习', en: 'Learning' },
+  'schedule.title': { zh: '课表', en: 'Schedule' },
+  'schedule.subtitle': { zh: '每周课程安排', en: 'Your weekly classes' },
+  'campus.title': { zh: '校园', en: 'Campus' },
+  'campus.services': { zh: '{n} 项校园服务', en: '{n} campus services' },
+  'ai.title': { zh: 'AI 助手', en: 'AI Assistant' },
+  'ai.subtitle': { zh: '你的清华校园智能助手', en: 'Your smart campus assistant' },
+
+  // ── 通用状态（status.*）──
+  'status.loading': { zh: '加载中…', en: 'Loading…' },
+  'status.empty': { zh: '暂无数据', en: 'No data yet' },
+  'status.failed': { zh: '加载失败', en: 'Failed to load' },
+  'status.retry': { zh: '重试', en: 'Retry' },
+  'status.demo': { zh: '演示模式', en: 'Demo mode' },
+
+  // ── 课表（schedule.*，供课表特性复用；week 用 tp 的 {n} 占位符）──
+  'schedule.week': { zh: '第 {n} 周', en: 'Week {n}' },
+  'schedule.today': { zh: '今天', en: 'Today' },
+  'schedule.location': { zh: '地点', en: 'Location' },
 
   'settings.eyebrow': { zh: 'SETTINGS', en: 'SETTINGS' },
   'settings.title': { zh: '设置', en: 'Settings' },
@@ -123,6 +160,24 @@ export class I18n {
       return entry.zh;
     }
     return PLACEHOLDER;
+  }
+
+  /**
+   * 参数化翻译：取 t(key) 文案后，将其中 {name} 形式占位符按 args 安全替换。
+   *
+   * 【安全策略】args 未提供的参数保留占位符原文（不抛错、不吞占位符）；
+   * t(key) 未命中时返回的 PLACEHOLDER 不含 {name}，replace 自然透传。
+   *
+   * 【locale 参数】可选，语义同 t()：传入 @StorageLink('locale') 当前值
+   * 可在渲染期建立状态依赖，语言切换即时刷新。
+   */
+  static tp(key: string, args: Record<string, string>, locale?: string): string {
+    const text: string = I18n.t(key, locale);
+    const placeholderPattern: RegExp = /\{([a-zA-Z0-9_]+)\}/g;
+    return text.replace(placeholderPattern, (match: string, name: string): string => {
+      const value: string | undefined = args[name];
+      return value !== undefined ? value : match;
+    });
   }
 
   /**

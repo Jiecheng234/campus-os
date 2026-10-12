@@ -13,6 +13,7 @@ import { SessionManager } from '../services/auth/SessionManager';
 import { LoginResult, LoginResultType } from '../services/auth/TsinghuaAuthService';
 import { BackDispatcher, BackOwner } from '../state/BackDispatcher';
 import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget } from '../state/UiEvents';
+import { I18n } from '../utils/I18n';
 
 @Entry
 @Component
@@ -20,7 +21,14 @@ struct Index {
   @State currentIndex: number = 0;
   @State isLoggedIn: boolean = false;
   @State isAutoLogging: boolean = true;
+  /** 语言订阅：随设置页语言切换即时重渲染底部导航 */
+  @StorageLink('locale') locale: string = 'zh';
   private navSub: NavigateSubscription = new NavigateSubscription();
+
+  /** 翻译（显式读取 this.locale 以建立渲染依赖） */
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
 
   aboutToAppear(): void {
     // 首页快捷操作等处的跨页导航：切到底部指定 Tab
@@ -70,7 +78,7 @@ struct Index {
     return '';
   }
   private lastBackAt: number = 0;
-  private tabTitles: string[] = ['首页', '学习', '课表', '校园', 'AI', '设置'];
+  private tabKeys: string[] = ['nav.home', 'nav.learning', 'nav.schedule', 'nav.campus', 'nav.ai', 'nav.settings'];
   private tabIcons: Resource[] = [
     $r('app.media.home'), $r('app.media.learning'), $r('app.media.schedule'),
     $r('app.media.campus'), $r('app.media.ai'), $r('app.media.settings')
@@ -114,32 +122,32 @@ struct Index {
       TabContent() {
         HomePage()
       }
-      .tabBar(this.TabBarBuilder(this.tabTitles[0], this.tabIcons[0], 0))
+      .tabBar(this.TabBarBuilder(this.tr(this.tabKeys[0]), this.tabIcons[0], 0))
 
       TabContent() {
         LearningPage()
       }
-      .tabBar(this.TabBarBuilder(this.tabTitles[1], this.tabIcons[1], 1))
+      .tabBar(this.TabBarBuilder(this.tr(this.tabKeys[1]), this.tabIcons[1], 1))
 
       TabContent() {
         SchedulePage()
       }
-      .tabBar(this.TabBarBuilder(this.tabTitles[2], this.tabIcons[2], 2))
+      .tabBar(this.TabBarBuilder(this.tr(this.tabKeys[2]), this.tabIcons[2], 2))
 
       TabContent() {
         CampusPage()
       }
-      .tabBar(this.TabBarBuilder(this.tabTitles[3], this.tabIcons[3], 3))
+      .tabBar(this.TabBarBuilder(this.tr(this.tabKeys[3]), this.tabIcons[3], 3))
 
       TabContent() {
         AIChatPage()
       }
-      .tabBar(this.TabBarBuilder(this.tabTitles[4], this.tabIcons[4], 4))
+      .tabBar(this.TabBarBuilder(this.tr(this.tabKeys[4]), this.tabIcons[4], 4))
 
       TabContent() {
         SettingsPage()
       }
-      .tabBar(this.TabBarBuilder(this.tabTitles[5], this.tabIcons[5], 5))
+      .tabBar(this.TabBarBuilder(this.tr(this.tabKeys[5]), this.tabIcons[5], 5))
     }
     .width('100%')
     .height('100%')
