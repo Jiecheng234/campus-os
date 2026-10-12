@@ -337,6 +337,18 @@ GET  learnStudentHome                   学生首页
 - **未迁移页面（回退中文，无键名外泄）**：`pages/campus/*`（10 个子页）、`pages/learning/*`（4 个详情页 + WebViewer）、`ClassroomPage`/`GradesPage`/`PlaceholderPage`/`common/components/MarkdownText` 均**未引入** `t()/tr()/I18n` 调用（硬编码中文即回退态）。
 - **下批清单**：①校园子页 10 个（邮箱/网课/图书馆座位/研读间/体育/宿舍/财务/资讯/程序/校园网）；②学习子页 4 个（课程/作业/通知/文件详情）；③其它页（Classroom/Grades/Placeholder/MarkdownText）——扩词典 + 同款 `@StorageLink('locale')` + `tr()/trp()` 范式；业务数据（课程名/邮件主题/机构名）不翻译。
 
+### 课表页块状视觉重构（2026-10-13）
+
+参照原项目 `src/features/schedule/`（ScheduleWeekGrid/ScheduleEventBlock/gridProjection）把课表页从"6 节 × 7 天固定单格表格"重构为**块状课表**：跨节课程块高度对应节次数、按课程名稳定配色、地点完整多行展示。
+
+- **新组件 `components/ScheduleGrid.ets`（纯展示）**：输入 `blocks: ScheduleBlock[]` + `axisLabels`（大节"起-止"）+ `dayLabels`（星期，i18n）+ `dateLabels`（MM-DD）+ `cellHeight`/`leftWidth`；不发起请求、不读写存储、不硬编码文案（静态字样全由页面传入）；时间轴"08:00-09:35"按 `-` 拆两行渲染。
+- **节次区间换算（`SchedulePage.mapEventsToBlocks`）**：起始索引沿用既有 `periodIndexFor` 阈值分桶（<585/780/910/1020/1140 分钟）；结束索引按各大节**结束时间**判定（结束时间 ≤ 哪节结束时间即为该节，`PERIOD_END_MINUTES` = 09:35/12:15/15:05/16:55/18:40/21:45，与时间轴同源）；起始时间无法解析 → 跳过并记日志（tag `SchedAct`，`MAP_SKIP*`）；结束时间缺失/非法/不晚于开始 → 兜底单节并记日志（`MAP_FALLBACK_SINGLE`，课程保留可见）。
+- **配色散列**：课程名确定性散列（`h = h*31 + charCode >>> 0`，对齐原项目 `hashTitle`）→ 8 组固定调色板下标，同名恒同色（跨周/跨会话一致）；调色板为柔和底色 + 深色前景 + 同系描边（浅色主题对比度安全），页面算好 `colorIndex` 传入组件。
+- **堆叠/跳过策略（无绝对定位）**：每日列为纵向堆叠容器；按起始节升序遍历——起始节处渲染高 = `跨度×cellHeight` 的块，被跨节块覆盖的节次跳过，其余渲染空占位单元；**同日起始节相同的多个块同槽并列**（`layoutWeight(1)` 均分列宽，各自高度按自身跨度，槽高取最大跨度）；与前面跨节块**部分重叠**的块顺延至下一空节位堆叠（节位游标可越过末节，极端重叠时列高自然增长，不破版）。
+- **空地点与裁剪规则**：地点为空/纯空白 → 不渲染地点行（块布局不塌陷）；块内自上而下"课程名（maxLines 4，优先保证）→ 地点（maxLines 5，多行折行）"，超长文本 `textOverflow` 省略 + 容器 `clip(true)` 安全裁剪（不溢出、不遮挡相邻块）。
+- **演示模式复用**：`getMockBlocks()` 直接产出同构 `ScheduleBlock[]`（含跨两节/空地点/长地点边界样例），与真实数据走同一 `ScheduleGrid` 渲染，视觉一致。
+- **既有行为保持**：周导航 ‹ ›（±12 周钳制）/点中间回本周、加载/空态/错误（可重试）分支、`hint` 存词典键渲染处翻译、`@StorageLink('locale')` 语言订阅全部不变；i18n 既有 `schedule.*` 键足够（时间轴/日期标签为纯数字），本轮**未新增词典键**。
+
 ### 其他待办
 
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）

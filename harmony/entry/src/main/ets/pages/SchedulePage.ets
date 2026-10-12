@@ -1,10 +1,15 @@
 /**
- * SchedulePage — 课表页（周网格 + 周选择器）
+ * SchedulePage — 课表页（块状周网格 + 周选择器）
  * 真实模式：zhjw 周课表（Monday–Sunday JSONP），‹ › 切周、点中间回本周；
- * 演示模式：内置示例课程。
+ * 演示模式：内置示例课程（与真实数据同构的 ScheduleBlock，复用同一渲染）。
+ *
+ * 【节次区间换算】起始索引沿用既有阈值分桶（periodIndexFor 语义）；
+ * 结束索引按各大节结束时间判定（结束时间 ≤ 哪节结束时间即为该节）；
+ * 异常时间跳过/兜底单节并记日志，不阻塞渲染。
  */
 import { Theme, SafeTop, Space, Radius, FontSize } from './Theme';
 import { ScreenHeader } from '../components/Ui';
+import { ScheduleGrid, ScheduleBlock, scheduleColorIndexForTitle, SCHEDULE_PERIOD_STARTS, SCHEDULE_PERIOD_ENDS, SCHEDULE_PERIOD_COUNT } from '../components/ScheduleGrid';
 import { SessionManager } from '../services/auth/SessionManager';
 import { CampusDataService, ScheduleEvent } from '../services/campus/CampusDataService';
 import { AuthManager } from '../state/AuthManager';
@@ -12,65 +17,71 @@ import { StateManager } from '../state/StateManager';
 import { Log } from '../utils/Logger';
 import { I18n } from '../utils/I18n';
 
-class ScheduleCell {
-  day: number = 0;
-  period: number = 0;
-  title: string = '';
-  location: string = '';
-}
-
-const WEEKDAYS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
-/** 大节起始时间（清华：1-2节 08:00 / 3-4节 09:50 / 5-6节 13:30 / 7-8节 15:20 / 9-10节 17:05 / 11-12节 19:20） */
-const PERIODS: string[] = ['08:00', '09:50', '13:30', '15:20', '17:05', '19:20'];
 const MAX_WEEK_OFFSET: number = 12;
+/** 各大节结束时间（分钟）：09:35 / 12:15 / 15:05 / 16:55 / 18:40 / 21:45（结束节次判定 + 与时间轴同源） */
+const PERIOD_END_MINUTES: number[] = [575, 735, 905, 1015, 1120, 1305];
 
-function getMockCells(): ScheduleCell[] {
-  const cells: ScheduleCell[] = [];
-  const defs: number[][] = [
-    [0, 0], [0, 2], [0, 3],
-    [1, 1],
-    [2, 0],
-    [3, 3],
-    [5, 4],
-  ];
-  const titles: string[] = ['高等数学', '线性代数', '体育课', '大学物理', '英语阅读', '实验课', '新生研讨'];
-  const locations: string[] = ['六教6A118', '六教6A215', '东操', '四教4302', '五教5102', '物理楼B1', '三教1301'];
-  for (let i: number = 0; i < defs.length; i++) {
-    const c: ScheduleCell = new ScheduleCell();
-    c.day = defs[i][0];
-    c.period = defs[i][1];
-    c.title = titles[i];
-    c.location = locations[i];
-    cells.push(c);
+/** "HH:mm" → 当日分钟数；解析失败返回 -1 */
+function parseHm(text: string): number {
+  const parts: string[] = text.trim().split(':');
+  if (parts.length < 2) {
+    return -1;
   }
-  return cells;
+  const h: number = Number(parts[0]);
+  const m: number = Number(parts[1]);
+  if (isNaN(h) || isNaN(m)) {
+    return -1;
+  }
+  if (h < 0 || h > 23 || m < 0 || m > 59) {
+    return -1;
+  }
+  return h * 60 + m;
 }
 
-function findCell(cells: ScheduleCell[], day: number, period: number): ScheduleCell | null {
-  for (let i: number = 0; i < cells.length; i++) {
-    if (cells[i].day === day && cells[i].period === period) {
-      return cells[i];
+/** 开始时间（分钟）→ 起始大节 0-5（沿用既有 periodIndexFor 阈值语义） */
+function startPeriodIndex(startMin: number): number {
+  if (startMin < 585) { return 0; }
+  if (startMin < 780) { return 1; }
+  if (startMin < 910) { return 2; }
+  if (startMin < 1020) { return 3; }
+  if (startMin < 1140) { return 4; }
+  return 5;
+}
+
+/** 结束时间（分钟）→ 结束大节：不晚于该节结束时间的最小大节（≥ 起始节；超出末节钳制） */
+function endPeriodIndex(endMin: number, startIdx: number): number {
+  for (let i: number = startIdx; i < PERIOD_END_MINUTES.length; i++) {
+    if (endMin <= PERIOD_END_MINUTES[i]) {
+      return i;
     }
   }
-  return null;
+  return SCHEDULE_PERIOD_COUNT - 1;
 }
 
-/** 事件开始时间（HH:mm）→ 大节序 0-5 */
-function periodIndexFor(start: string): number {
-  const parts: string[] = start.split(':');
-  if (parts.length < 2) {
-    return 0;
+/** 演示示例（与真实数据同构的块模型；含跨两节/空地点/长地点等边界样例） */
+function getMockBlocks(): ScheduleBlock[] {
+  const defs: string[][] = [
+    ['0', '0', '1', '高等数学(1)', '第六教学楼6A118'],
+    ['0', '2', '2', '线性代数', '六教6A215'],
+    ['0', '3', '3', '新生研讨', '三教1301'],
+    ['1', '1', '2', '大学物理B(2)', '四教4302'],
+    ['2', '0', '0', '英语阅读', '五教5102'],
+    ['3', '3', '3', '体育课', ''],
+    ['4', '5', '5', '实验课', '物理楼B1层基础物理实验中心'],
+    ['5', '4', '4', '数据结构', '六教6B201'],
+  ];
+  const blocks: ScheduleBlock[] = [];
+  for (let i: number = 0; i < defs.length; i++) {
+    const b: ScheduleBlock = new ScheduleBlock();
+    b.dayIndex = Number(defs[i][0]);
+    b.startPeriod = Number(defs[i][1]);
+    b.endPeriod = Number(defs[i][2]);
+    b.title = defs[i][3];
+    b.location = defs[i][4];
+    b.colorIndex = scheduleColorIndexForTitle(b.title);
+    blocks.push(b);
   }
-  const t: number = Number(parts[0]) * 60 + Number(parts[1]);
-  if (isNaN(t)) {
-    return 0;
-  }
-  if (t < 585) { return 0; }
-  if (t < 780) { return 1; }
-  if (t < 910) { return 2; }
-  if (t < 1020) { return 3; }
-  if (t < 1140) { return 4; }
-  return 5;
+  return blocks;
 }
 
 function mondayOf(date: Date): Date {
@@ -115,9 +126,38 @@ export struct SchedulePage {
   @State weekOffset: number = 0;
   @State weekNumber: number = 0;
   @State rangeLabel: string = '';
-  @State cells: ScheduleCell[] = [];
+  @State blocks: ScheduleBlock[] = [];
+  @State dateLabels: string[] = [];
   @State loading: boolean = false;
   @State hint: string = '';
+
+  /** 当周周一 → 7 个日列日期标签（MM-DD，随周导航更新） */
+  private buildDateLabels(monday: Date): string[] {
+    const labels: string[] = [];
+    for (let i: number = 0; i < 7; i++) {
+      const d: Date = addDays(monday, i);
+      labels.push(pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()));
+    }
+    return labels;
+  }
+
+  /** 星期标签（schedule.day0-6 经词典翻译） */
+  private dayLabelList(): string[] {
+    const labels: string[] = [];
+    for (let i: number = 0; i < 7; i++) {
+      labels.push(this.tr('schedule.day' + String(i)));
+    }
+    return labels;
+  }
+
+  /** 时间轴标签（各大节"起-止"，纯数字无需 i18n） */
+  private axisLabelList(): string[] {
+    const labels: string[] = [];
+    for (let i: number = 0; i < SCHEDULE_PERIOD_STARTS.length; i++) {
+      labels.push(SCHEDULE_PERIOD_STARTS[i] + '-' + SCHEDULE_PERIOD_ENDS[i]);
+    }
+    return labels;
+  }
 
   aboutToAppear(): void {
     if (AuthManager.isLoggedIn() && !StateManager.isDemoMode()) {
@@ -125,7 +165,8 @@ export struct SchedulePage {
       return;
     }
     const monday: Date = mondayOf(new Date());
-    this.cells = getMockCells();
+    this.blocks = getMockBlocks();
+    this.dateLabels = this.buildDateLabels(monday);
     this.rangeLabel = this.fmtDate(monday) + ' – ' + this.fmtDate(addDays(monday, 6));
     this.hint = 'schedule.demoHint';
   }
@@ -138,6 +179,7 @@ export struct SchedulePage {
     const monday: Date = addDays(mondayOf(new Date()), offset * 7);
     const sunday: Date = addDays(monday, 6);
     this.rangeLabel = this.fmtDate(monday) + ' – ' + this.fmtDate(sunday);
+    this.dateLabels = this.buildDateLabels(monday);
 
     const service: CampusDataService = SessionManager.getCampusDataService();
     const firstDay: string = await service.fetchSemesterInfo();
@@ -152,48 +194,64 @@ export struct SchedulePage {
     try {
       const events: ScheduleEvent[] = await service.fetchScheduleEvents(ymdCompact(monday), ymdCompact(sunday));
       if (service.scheduleStatus !== 'ok') {
-        this.cells = [];
+        this.blocks = [];
         this.hint = 'schedule.fetchFailedSession';
       } else {
-        this.cells = this.mapEventsToCells(events);
-        this.hint = this.cells.length === 0 ? 'schedule.emptyWeek' : '';
+        this.blocks = this.mapEventsToBlocks(events);
+        this.hint = this.blocks.length === 0 ? 'schedule.emptyWeek' : '';
       }
     } catch (e) {
-      this.cells = [];
+      this.blocks = [];
       this.hint = 'schedule.fetchFailed';
       Log.i('SchedAct', 'loadWeek ex=%{public}s', e instanceof Error ? e.message : String(e));
     }
     this.loading = false;
   }
 
-  /** zhjw 事件 → 网格单元（同格多课取最早开始的一门） */
-  private mapEventsToCells(events: ScheduleEvent[]): ScheduleCell[] {
+  /**
+   * zhjw 事件 → 课程块（节次区间换算）：
+   * 起始按既有阈值分桶；结束按大节结束时间判定；异常时间跳过或兜底单节并记日志。
+   */
+  private mapEventsToBlocks(events: ScheduleEvent[]): ScheduleBlock[] {
     const sorted: ScheduleEvent[] = events.slice(0).sort((a: ScheduleEvent, b: ScheduleEvent): number => {
       return a.startTime.localeCompare(b.startTime);
     });
-    const cells: ScheduleCell[] = [];
+    const blocks: ScheduleBlock[] = [];
     for (let i: number = 0; i < sorted.length; i++) {
       const ev: ScheduleEvent = sorted[i];
       if (ev.date.length < 10) {
+        Log.i('SchedAct', 'MAP_SKIP date=%{public}s title=%{public}s', ev.date, ev.title);
         continue;
       }
       const d: Date = new Date(ev.date.substring(0, 10) + 'T00:00:00');
       if (isNaN(d.getTime())) {
+        Log.i('SchedAct', 'MAP_SKIP badDate=%{public}s title=%{public}s', ev.date, ev.title);
         continue;
       }
-      const dayIdx: number = (d.getDay() + 6) % 7;
-      const periodIdx: number = periodIndexFor(ev.startTime);
-      if (findCell(cells, dayIdx, periodIdx) !== null) {
+      const startMin: number = parseHm(ev.startTime);
+      if (startMin < 0) {
+        Log.i('SchedAct', 'MAP_SKIP badStart=%{public}s title=%{public}s', ev.startTime, ev.title);
         continue;
       }
-      const cell: ScheduleCell = new ScheduleCell();
-      cell.day = dayIdx;
-      cell.period = periodIdx;
-      cell.title = ev.title;
-      cell.location = ev.location;
-      cells.push(cell);
+      const startIdx: number = startPeriodIndex(startMin);
+      const endMin: number = parseHm(ev.endTime);
+      let endIdx: number = startIdx;
+      if (endMin < 0 || endMin <= startMin) {
+        // 结束时间缺失/非法/不晚于开始：兜底为单节（保留课程可见），记日志
+        Log.i('SchedAct', 'MAP_FALLBACK_SINGLE end=%{public}s title=%{public}s', ev.endTime, ev.title);
+      } else {
+        endIdx = endPeriodIndex(endMin, startIdx);
+      }
+      const block: ScheduleBlock = new ScheduleBlock();
+      block.dayIndex = (d.getDay() + 6) % 7;
+      block.startPeriod = startIdx;
+      block.endPeriod = endIdx;
+      block.title = ev.title;
+      block.location = ev.location;
+      block.colorIndex = scheduleColorIndexForTitle(ev.title);
+      blocks.push(block);
     }
-    return cells;
+    return blocks;
   }
 
   build() {
@@ -291,75 +349,19 @@ export struct SchedulePage {
       Divider()
         .color(Theme.divider)
 
-      // 星期头（标签经词典翻译：schedule.day0=一/Mon … day6=日/Sun）
-      Row() {
-        Blank().width(56).height(36)
-        ForEach(WEEKDAYS, (day: string, dayIdx: number) => {
-          Text(this.tr('schedule.day' + String(dayIdx)))
-            .fontSize(12)
-            .fontColor(Theme.textMuted)
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
+      // 块状课表网格（时间轴 + 日列头 + 跨节课程块；纯展示，字样经 props 传入）
+      Scroll() {
+        ScheduleGrid({
+          blocks: this.blocks,
+          axisLabels: this.axisLabelList(),
+          dayLabels: this.dayLabelList(),
+          dateLabels: this.dateLabels,
+          cellHeight: 72,
         })
       }
-      .width('100%')
-      .padding({ top: 8, bottom: 4 })
-      .border({ width: { bottom: 1 }, color: Theme.divider })
-
-      // 课程网格
-      Scroll() {
-        Column() {
-          ForEach(PERIODS, (time: string, periodIdx: number) => {
-            Row() {
-              // 时间列
-              Column() {
-                Text(time)
-                  .fontSize(11)
-                  .fontColor(Theme.textMuted)
-                  .textAlign(TextAlign.Center)
-              }
-              .width(56)
-              .height(64)
-              .justifyContent(FlexAlign.Start)
-              .padding({ top: 8 })
-
-              // 每天一列
-              ForEach(WEEKDAYS, (dayName: string, dayIdx: number) => {
-                Column() {
-                  if (findCell(this.cells, dayIdx, periodIdx) !== null) {
-                    Column() {
-                      Text(findCell(this.cells, dayIdx, periodIdx)!.title)
-                        .fontSize(10)
-                        .fontColor(Theme.primaryDark)
-                        .maxLines(1)
-                      Text(findCell(this.cells, dayIdx, periodIdx)!.location)
-                        .fontSize(9)
-                        .fontColor(Theme.primary)
-                        .maxLines(1)
-                    }
-                    .width('90%')
-                    .height('90%')
-                    .padding(3)
-                    .borderRadius(6)
-                    .backgroundColor('rgba(124,92,250,0.12)')
-                    .border({ width: 1, color: 'rgba(124,92,250,0.25)' })
-                    .justifyContent(FlexAlign.Center)
-                    .alignItems(HorizontalAlign.Center)
-                  }
-                }
-                .layoutWeight(1)
-                .height(64)
-                .border({ width: { right: 1, bottom: 1 }, color: Theme.divider })
-                .alignItems(HorizontalAlign.Center)
-                .justifyContent(FlexAlign.Center)
-              })
-            }
-            .width('100%')
-          })
-        }
-        .width('100%')
-      }
       .layoutWeight(1)
+      .width('100%')
+      .align(Alignment.Top)
       .scrollBar(BarState.Off)
     }
     .width('100%')

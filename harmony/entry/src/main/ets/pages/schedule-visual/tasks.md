@@ -25,7 +25,7 @@
 
 **Purpose**: 确认课表现状与可复用数据/令牌
 
-- [ ] T001 核对基线：`harmony/entry/src/main/ets/pages/SchedulePage.ets`（现状：6 节 × 7 天固定 64px 表格、单行地点、统一配色；既有周导航 ‹ ›/回本周、加载/空态/错误、演示分支）；`harmony/entry/src/main/ets/services/campus/CampusDataService.ets` 的 `ScheduleEvent`（`date/title/location/startTime/endTime`，真实 `location` 已解析）；`Theme/Radius/Space/FontSize` 令牌；并确认 `i18n-migration` 已提供 `schedule.*` 词典键（若缺，记录待补键名）
+- [X] T001 核对基线：`harmony/entry/src/main/ets/pages/SchedulePage.ets`（现状：6 节 × 7 天固定 64px 表格、单行地点、统一配色；既有周导航 ‹ ›/回本周、加载/空态/错误、演示分支）；`harmony/entry/src/main/ets/services/campus/CampusDataService.ets` 的 `ScheduleEvent`（`date/title/location/startTime/endTime`，真实 `location` 已解析）；`Theme/Radius/Space/FontSize` 令牌；并确认 `i18n-migration` 已提供 `schedule.*` 词典键（若缺，记录待补键名）
 
 ---
 
@@ -35,7 +35,7 @@
 
 **⚠️ CRITICAL**: 本阶段完成前，任何用户故事均不可开始
 
-- [ ] T002 新建 `harmony/entry/src/main/ets/components/ScheduleGrid.ets`：①节次常量（6 大节的**起止时间**）；②固定**调色板**与课程名**确定性散列**（含对比度安全的前/背景色配对）；③UI 模型 `ScheduleBlock{dayIndex, startPeriod, endPeriod, title, location, colorIndex}`；④渲染：左侧时间轴（大节起止）+ 日列头（星期简称 + `MM-DD`）+ 每列**顺序堆叠**（起始节渲染跨节块，**被覆盖节次跳过**，其余渲染空单元）+ 块内"课程名（多行）→ 地点（多行）"与**安全裁剪**（空地点不渲染）；⑤纯展示、无副作用、**不硬编码中文**（静态字样由调用方传入）
+- [X] T002 新建 `harmony/entry/src/main/ets/components/ScheduleGrid.ets`：①节次常量（6 大节的**起止时间**）；②固定**调色板**与课程名**确定性散列**（含对比度安全的前/背景色配对）；③UI 模型 `ScheduleBlock{dayIndex, startPeriod, endPeriod, title, location, colorIndex}`；④渲染：左侧时间轴（大节起止）+ 日列头（星期简称 + `MM-DD`）+ 每列**顺序堆叠**（起始节渲染跨节块，**被覆盖节次跳过**，其余渲染空单元）+ 块内"课程名（多行）→ 地点（多行）"与**安全裁剪**（空地点不渲染）；⑤纯展示、无副作用、**不硬编码中文**（静态字样由调用方传入）
 
 **Checkpoint**: 组件就绪，页面可接入
 
@@ -47,8 +47,8 @@
 
 **Independent Test**: 打开课表即见块状课表；跨节课程块高明显更大；长地点完整可读
 
-- [ ] T003 [US1] 改造 `harmony/entry/src/main/ets/pages/SchedulePage.ets`：把 `ScheduleEvent[]` 映射为 `ScheduleBlock[]`（**节次区间换算**：起始按节开始阈值、结束按节结束阈值；异常时间**跳过并记日志**）+ 接入 `ScheduleGrid`；**保持**既有周导航、加载/空态/错误行为不变（依赖 T002）
-- [ ] T004 [US1] 同文件：演示示例数据映射为同一 `ScheduleBlock[]` 并复用同一渲染（演示与真实视觉一致）（依赖 T003）
+- [X] T003 [US1] 改造 `harmony/entry/src/main/ets/pages/SchedulePage.ets`：把 `ScheduleEvent[]` 映射为 `ScheduleBlock[]`（**节次区间换算**：起始按节开始阈值、结束按节结束阈值；异常时间**跳过并记日志**）+ 接入 `ScheduleGrid`；**保持**既有周导航、加载/空态/错误行为不变（依赖 T002）
+- [X] T004 [US1] 同文件：演示示例数据映射为同一 `ScheduleBlock[]` 并复用同一渲染（演示与真实视觉一致）（依赖 T003）
 
 **Checkpoint**: US1 可独立验证
 
@@ -60,7 +60,7 @@
 
 **Independent Test**: 时间轴显示 6 大节起止；切周后日列日期同步更新
 
-- [ ] T005 [US2] 在 `harmony/entry/src/main/ets/components/ScheduleGrid.ets` 与 `harmony/entry/src/main/ets/pages/SchedulePage.ets` 完善：时间轴文案（起-止）与日列日期（由当周周一 + 列索引计算，`MM-DD`）随周导航更新（依赖 T004）
+- [X] T005 [US2] 在 `harmony/entry/src/main/ets/components/ScheduleGrid.ets` 与 `harmony/entry/src/main/ets/pages/SchedulePage.ets` 完善：时间轴文案（起-止）与日列日期（由当周周一 + 列索引计算，`MM-DD`）随周导航更新（依赖 T004）
 
 **Checkpoint**: US1 + US2 均可独立验证
 
@@ -72,7 +72,7 @@
 
 **Independent Test**: 构造长地点/空地点/重叠课程场景，界面不溢出、不遮挡、不崩溃
 
-- [ ] T006 [US3] 在 `harmony/entry/src/main/ets/components/ScheduleGrid.ets` 补齐边界处理：空/空白地点不渲染；超长课程名/地点的折行与安全裁剪；**同列同时段重叠课程**的既定策略（并列或顺序堆叠，保证可辨识）；单列宽度自适应不溢出（依赖 T005）
+- [X] T006 [US3] 在 `harmony/entry/src/main/ets/components/ScheduleGrid.ets` 补齐边界处理：空/空白地点不渲染；超长课程名/地点的折行与安全裁剪；**同列同时段重叠课程**的既定策略（并列或顺序堆叠，保证可辨识）；单列宽度自适应不溢出（依赖 T005）
 
 **Checkpoint**: 三个用户故事均可独立验证
 
@@ -82,9 +82,9 @@
 
 **Purpose**: 质量与文档收口
 
-- [ ] T007 [P] 走查 `harmony/entry/src/main/ets/components/ScheduleGrid.ets` 与 `harmony/entry/src/main/ets/pages/SchedulePage.ets`：无横向溢出/无块遮挡；课表静态文案均走 `schedule.*` 键（无硬编码中文）；无弃用提示 API；布局遵循既有约定（全宽元素 `constraintSize` 防溢出）
-- [ ] T008 [P] 更新 `harmony/DEVELOPMENT.md`：新增"课表页块状视觉重构"进展小节（配色散列、节次区间换算、叠加/跳过策略、空地点与裁剪规则）
-- [ ] T009 对 `harmony/entry/src/main/ets/components/ScheduleGrid.ets` 与 `harmony/entry/src/main/ets/pages/SchedulePage.ets` 运行 `arkts_check` 并修复全部 ArkTS 严格模式违规（唯一允许噪声：`Logger.ets` 的 `BuildProfile` 已知误报）
+- [X] T007 [P] 走查 `harmony/entry/src/main/ets/components/ScheduleGrid.ets` 与 `harmony/entry/src/main/ets/pages/SchedulePage.ets`：无横向溢出/无块遮挡；课表静态文案均走 `schedule.*` 键（无硬编码中文）；无弃用提示 API；布局遵循既有约定（全宽元素 `constraintSize` 防溢出）
+- [X] T008 [P] 更新 `harmony/DEVELOPMENT.md`：新增"课表页块状视觉重构"进展小节（配色散列、节次区间换算、叠加/跳过策略、空地点与裁剪规则）
+- [X] T009 对 `harmony/entry/src/main/ets/components/ScheduleGrid.ets` 与 `harmony/entry/src/main/ets/pages/SchedulePage.ets` 运行 `arkts_check` 并修复全部 ArkTS 严格模式违规（唯一允许噪声：`Logger.ets` 的 `BuildProfile` 已知误报）
 
 ---
 
@@ -94,9 +94,9 @@
 
 **Purpose**: 构建、部署并逐用户故事做 UI 验证（含边界场景）
 
-- [ ] T010 构建工程并修复编译错误（`devecocli build --modules entry`，迭代 修复 → 构建 直至成功）
-- [ ] T011 部署到模拟器（`devecocli run --skip-build --device 127.0.0.1:5555`，必要时先唤醒屏幕）
-- [ ] T012 运行 UI 验证（`verify_ui`）：US1 块状课表（块高对应节次数、按课程名配色、课程名 + 完整地点）；US2 时间轴与日列日期随周次更新；US3 边界（空地点/长文本/重叠课程）；并**回归**既有周导航、加载/空态/错误与演示模式
+- [X] T010 构建工程并修复编译错误（`devecocli build --modules entry`，迭代 修复 → 构建 直至成功）
+- [X] T011 部署到模拟器（`devecocli run --skip-build --device 127.0.0.1:5555`，必要时先唤醒屏幕）
+- [X] T012 运行 UI 验证（`verify_ui`）：US1 块状课表（块高对应节次数、按课程名配色、课程名 + 完整地点）；US2 时间轴与日列日期随周次更新；US3 边界（空地点/长文本/重叠课程）；并**回归**既有周导航、加载/空态/错误与演示模式
 
 ---
 
