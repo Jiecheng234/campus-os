@@ -300,8 +300,8 @@ export struct StateBlock {
 export struct MetricPill {
   /** @Prop：父组件 @State 变化时同步刷新（普通成员只初始化一次，不会更新） */
   @Prop value: string = '';
-  label: string = '';
-  tone: BadgeTone = BadgeTone.Default;
+  @Prop label: string = '';
+  @Prop tone: BadgeTone = BadgeTone.Default;
 
   private valueColor(): string {
     if (this.tone === BadgeTone.Success) { return Theme.success; }

@@ -914,7 +914,13 @@ export class CampusDataService {
     if (this.registrarRoamEnsured) {
       return;
     }
-    const ok: boolean = await this.roamByYyfwid('287C0C6D90ABB364CD5FDF1495199962');
+    let ok: boolean = await this.roamByYyfwid('287C0C6D90ABB364CD5FDF1495199962');
+    if (!ok) {
+      // csrf 缺失通常意味着 WebVPN 会话已失效：强制一次完整重登后重试，
+      // 避免用户看到"教务会话未打通"且无法自愈
+      await this.forceSessionRefreshOnce();
+      ok = await this.roamByYyfwid('287C0C6D90ABB364CD5FDF1495199962');
+    }
     if (ok) {
       this.registrarRoamEnsured = true;
     }
@@ -925,9 +931,28 @@ export class CampusDataService {
     if (this.gradesRoamEnsured) {
       return;
     }
-    const ok: boolean = await this.roamByYyfwid('B7EF0ADF9406335AD7905B30CD7B49B1');
+    let ok: boolean = await this.roamByYyfwid('B7EF0ADF9406335AD7905B30CD7B49B1');
+    if (!ok) {
+      await this.forceSessionRefreshOnce();
+      ok = await this.roamByYyfwid('B7EF0ADF9406335AD7905B30CD7B49B1');
+    }
     if (ok) {
       this.gradesRoamEnsured = true;
+    }
+  }
+
+  /**
+   * 会话失效兜底：借统一恢复链触发一次完整重登（层 1 重漫游 → 层 2 完整重登），
+   * 用于 csrf/会话缺失的自愈；失败仅记日志（不抛，交由调用方给出可读提示）。
+   */
+  private async forceSessionRefreshOnce(): Promise<void> {
+    try {
+      const auth: TsinghuaAuthService = SessionManager.getAuthService();
+      await auth.withSessionRecovery(async (): Promise<void> => {
+        throw new Error('csrf-missing');
+      }, undefined, 'session-refresh');
+    } catch (e) {
+      Log.i('LearnAct', 'FORCE_RELOGIN failed: %{public}s', e instanceof Error ? e.message : String(e));
     }
   }
 
