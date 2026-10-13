@@ -294,12 +294,15 @@ export struct SettingsPage {
     this.aiPreset = id;
     if (id === 'custom') {
       this.aiBaseUrl = '';
+      // 选择即持久化 + 广播信号：AI 页胶囊无需再点“保存配置”即时更新
+      SettingsManager.setAIProviderSettings('custom', '', this.aiModel);
       return;
     }
     const preset: LLMProviderPreset | undefined = LLMService.getPreset(id);
     if (preset !== undefined) {
       this.aiBaseUrl = preset.baseUrl;
       this.aiModel = preset.defaultModel;
+      SettingsManager.setAIProviderSettings(id, preset.baseUrl, preset.defaultModel);
     }
     this.closeSettingsSheet();
   }
