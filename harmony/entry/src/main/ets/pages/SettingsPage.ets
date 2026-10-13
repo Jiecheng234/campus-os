@@ -10,15 +10,20 @@
  *  - 数据清理：AI 会话 / 学习缓存（AlertDialog 二次确认 + 结果提示）。
  *  - 版本号读取自身应用包信息（bundleManager，禁止硬编码）。
  *  - "AI 记忆 / 操作记录 / 智能监控"标注"暂不支持"（禁用态，无跳转）。
+ *  - AI 模型配置（ai-chat 特性）：预设/自定义 provider + 掩码 API Key；
+ *    Key 入系统关键资产存储（ApiKeyStore，不落偏好明文），provider 配置
+ *    经 SettingsManager 持久化；保存时校验 baseUrl 形态。
  */
 import { Theme, SafeTop, Space, Radius, FontSize } from './Theme';
 import { ScreenHeader, SectionHeader, InfoRow } from '../components/Ui';
 import { bundleManager } from '@kit.AbilityKit';
-import { SettingsManager } from '../state/SettingsManager';
+import { SettingsManager, AIProviderSettings } from '../state/SettingsManager';
 import { AuthManager } from '../state/AuthManager';
 import { SessionManager } from '../services/auth/SessionManager';
 import { SecureStorage, SecureCredentials } from '../storage/SecureStorage';
 import { LocalDataCleaner } from '../storage/LocalDataCleaner';
+import { ApiKeyStore } from '../services/ai/ApiKeyStore';
+import { LLMService, LLMProviderPreset } from '../services/ai/LLMService';
 import { I18n } from '../utils/I18n';
 
 /** 导航行：label + 右侧值 + › */
@@ -109,12 +114,23 @@ export struct SettingsPage {
   @State accountStudentId: string = '';
   @State versionName: string = '';
 
+  // ── AI 模型配置（ai-chat 特性）──
+  @State showAiPresetSheet: boolean = false;
+  @State aiPreset: string = 'openai';
+  @State aiBaseUrl: string = '';
+  @State aiModel: string = '';
+  @State aiKeyInput: string = '';
+  @State aiKeyVisible: boolean = false;
+  /** 安全存储中已存在 Key（输入留空时保存语义为"保持不变"） */
+  @State aiKeyConfigured: boolean = false;
+
   aboutToAppear(): void {
     this.demoMode = SettingsManager.isDemoMode();
     this.trustDevice = SettingsManager.isTrustDevice();
     this.isSignedIn = AuthManager.isLoggedIn();
     this.loadAccountStudentId();
     this.loadVersionInfo();
+    this.loadAIConfig();
   }
 
   /**
@@ -216,6 +232,145 @@ export struct SettingsPage {
     // 校验 + 写 AppStorage（即时重渲染）+ 经 SettingsManager 持久化
     I18n.setLocale(locale);
     this.showLangDialog = false;
+  }
+
+  // ============================================================
+  // AI 模型配置（ai-chat）：预设/自定义 + Key 入安全存储（ASSET）
+  // ============================================================
+
+  /** 载入持久化 provider 配置与 Key 配置态（Key 内容不进入页面状态） */
+  private loadAIConfig(): void {
+    const settings: AIProviderSettings = SettingsManager.getAIProviderSettings();
+    this.aiPreset = settings.preset;
+    this.aiBaseUrl = settings.baseUrl;
+    this.aiModel = settings.model;
+    // 非自定义预设且未填模型时回填预设默认模型
+    if (this.aiPreset !== 'custom' && this.aiModel.length === 0) {
+      const preset: LLMProviderPreset | undefined = LLMService.getPreset(this.aiPreset);
+      if (preset !== undefined) {
+        this.aiModel = preset.defaultModel;
+      }
+    }
+    ApiKeyStore.get().then((key: string): void => {
+      this.aiKeyConfigured = key.length > 0;
+    }).catch((): void => {
+      this.aiKeyConfigured = false;
+    });
+  }
+
+  /** 预设显示名（i18n 渲染） */
+  private presetLabel(id: string): string {
+    if (id === 'deepseek') {
+      return this.tr('settings.aiPresetDeepseek');
+    }
+    if (id === 'dashscope') {
+      return this.tr('settings.aiPresetDashscope');
+    }
+    if (id === 'moonshot') {
+      return this.tr('settings.aiPresetMoonshot');
+    }
+    if (id === 'custom') {
+      return this.tr('settings.aiPresetCustom');
+    }
+    return this.tr('settings.aiPresetOpenai');
+  }
+
+  /** 选择预设：非自定义回填预设 baseUrl/默认模型；自定义留空由用户填写 */
+  private selectAiPreset(id: string): void {
+    this.aiPreset = id;
+    if (id === 'custom') {
+      this.aiBaseUrl = '';
+      return;
+    }
+    const preset: LLMProviderPreset | undefined = LLMService.getPreset(id);
+    if (preset !== undefined) {
+      this.aiBaseUrl = preset.baseUrl;
+      this.aiModel = preset.defaultModel;
+    }
+    this.showAiPresetSheet = false;
+  }
+
+  /** 保存配置：先入 Key（ASSET，失败可读提示且不落明文），再持久化 provider 配置 */
+  private handleAiSave(): void {
+    const presetId: string = this.aiPreset;
+    const baseUrl: string = this.aiBaseUrl.trim();
+    const model: string = this.aiModel.trim();
+    const key: string = this.aiKeyInput.trim();
+    if (presetId === 'custom') {
+      // 自定义 baseUrl 形态校验：必须带 http(s):// 协议（FR：保存时校验）
+      if (!(baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) || baseUrl.length <= 8) {
+        this.showToast(this.tr('settings.aiBaseUrlInvalid'));
+        return;
+      }
+      if (model.length === 0) {
+        this.showToast(this.tr('settings.aiModelRequired'));
+        return;
+      }
+    }
+    // 输入为空且安全存储无 Key：要求填写（无"保持不变"可回退）
+    if (key.length === 0 && !this.aiKeyConfigured) {
+      this.showToast(this.tr('settings.aiKeyRequired'));
+      return;
+    }
+    if (key.length > 0) {
+      ApiKeyStore.save(key).then((saved: boolean): void => {
+        if (!saved) {
+          this.showToast(this.tr('settings.aiSaveFailed'));
+          return;
+        }
+        this.persistAiProvider(presetId, baseUrl, model);
+      }).catch((): void => {
+        this.showToast(this.tr('settings.aiSaveFailed'));
+      });
+      return;
+    }
+    this.persistAiProvider(presetId, baseUrl, model);
+  }
+
+  private persistAiProvider(presetId: string, baseUrl: string, model: string): void {
+    // 预设的 baseUrl 由服务层按预设解析持久化值只存自定义（避免配置漂移）
+    SettingsManager.setAIProviderSettings(presetId, presetId === 'custom' ? baseUrl : '', model);
+    SettingsManager.flush().then((ok: boolean): void => {
+      if (!ok) {
+        this.showToast(this.tr('settings.aiSaveFailed'));
+        return;
+      }
+      this.aiKeyConfigured = true;
+      // 清空输入态：掩码回占位（已配置 · 留空保持不变），不残留明文
+      this.aiKeyInput = '';
+      this.showToast(this.tr('settings.aiSaveSuccess'));
+    });
+  }
+
+  private confirmAiClear(): void {
+    this.getUIContext().showAlertDialog({
+      title: this.tr('settings.aiClearTitle'),
+      message: this.tr('settings.aiClearMessage'),
+      primaryButton: {
+        value: this.tr('common.cancel'),
+        action: (): void => {}
+      },
+      secondaryButton: {
+        value: this.tr('settings.aiClearOk'),
+        fontColor: Theme.error,
+        action: (): void => { this.doAiClear(); }
+      }
+    });
+  }
+
+  private async doAiClear(): Promise<void> {
+    await ApiKeyStore.clear();
+    SettingsManager.resetAIProviderSettings();
+    this.aiPreset = 'openai';
+    this.aiBaseUrl = '';
+    this.aiModel = '';
+    const preset: LLMProviderPreset | undefined = LLMService.getPreset('openai');
+    if (preset !== undefined) {
+      this.aiModel = preset.defaultModel;
+    }
+    this.aiKeyInput = '';
+    this.aiKeyConfigured = false;
+    this.showToast(this.tr('settings.aiClearSuccess'));
   }
 
   // ============================================================
@@ -381,6 +536,168 @@ export struct SettingsPage {
         .border({ width: 1, color: Theme.borderSubtle })
         .margin({ left: Space.lg, right: Space.lg })
 
+        // ── AI 模型配置（ai-chat：预设/自定义 provider + Key 入安全存储）──
+        SectionHeader({ title: this.tr('settings.sectionAI') })
+          .padding({ left: Space.lg, right: Space.lg })
+
+        Column() {
+          // 预设选择行（弹层选择）
+          Row() {
+            Text(this.tr('settings.aiPreset'))
+              .fontSize(FontSize.body)
+              .fontColor(Theme.text)
+              .layoutWeight(1)
+            Text(this.presetLabel(this.aiPreset))
+              .fontSize(FontSize.caption)
+              .fontColor(Theme.textSecondary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .constraintSize({ maxWidth: '60%' })
+            Text('›')
+              .fontSize(20)
+              .fontWeight(FontWeight.Lighter)
+              .fontColor(Theme.textMuted)
+              .margin({ left: Space.sm })
+          }
+          .width('100%')
+          .padding({ left: Space.md, right: Space.md, top: 14, bottom: 14 })
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => { this.showAiPresetSheet = true; })
+
+          Divider().color(Theme.divider)
+
+          // 自定义 baseUrl 输入（仅自定义预设显示；保存时校验形态）
+          if (this.aiPreset === 'custom') {
+            Column() {
+              Text(this.tr('settings.aiBaseUrl'))
+                .fontSize(FontSize.caption)
+                .fontColor(Theme.textMuted)
+                .margin({ top: Space.md })
+              TextInput({ placeholder: this.tr('settings.aiBaseUrlPlaceholder'), text: this.aiBaseUrl })
+                .type(InputType.Normal)
+                .height(42)
+                .fontSize(FontSize.body)
+                .fontColor(Theme.text)
+                .caretColor(Theme.primary)
+                .backgroundColor(Theme.surfaceAlt)
+                .borderRadius(Radius.sm)
+                .padding({ left: Space.md, right: Space.md })
+                .margin({ top: Space.sm })
+                .onChange((v: string) => { this.aiBaseUrl = v; })
+              Text(this.tr('settings.aiCustomHint'))
+                .fontSize(FontSize.micro)
+                .fontColor(Theme.textMuted)
+                .margin({ top: Space.sm, bottom: Space.md })
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+            .padding({ left: Space.md, right: Space.md })
+
+            Divider().color(Theme.divider)
+          }
+
+          // 模型输入（预设默认模型自动回填，可改）
+          Column() {
+            Text(this.tr('settings.aiModel'))
+              .fontSize(FontSize.caption)
+              .fontColor(Theme.textMuted)
+              .margin({ top: Space.md })
+            TextInput({ placeholder: this.tr('settings.aiModelPlaceholder'), text: this.aiModel })
+              .type(InputType.Normal)
+              .height(42)
+              .fontSize(FontSize.body)
+              .fontColor(Theme.text)
+              .caretColor(Theme.primary)
+              .backgroundColor(Theme.surfaceAlt)
+              .borderRadius(Radius.sm)
+              .padding({ left: Space.md, right: Space.md })
+              .margin({ top: Space.sm, bottom: Space.md })
+              .onChange((v: string) => { this.aiModel = v; })
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .padding({ left: Space.md, right: Space.md })
+
+          Divider().color(Theme.divider)
+
+          // API Key 掩码输入 + 显隐切换（Key 仅入安全存储，不落偏好明文）
+          Column() {
+            Text(this.tr('settings.aiApiKey'))
+              .fontSize(FontSize.caption)
+              .fontColor(Theme.textMuted)
+              .margin({ top: Space.md })
+            Row() {
+              TextInput({
+                placeholder: this.aiKeyConfigured ?
+                  this.tr('settings.aiApiKeyKeep') : this.tr('settings.aiApiKeyPlaceholder'),
+                text: this.aiKeyInput
+              })
+                .type(this.aiKeyVisible ? InputType.Normal : InputType.Password)
+                .height(42)
+                .fontSize(FontSize.body)
+                .fontColor(Theme.text)
+                .caretColor(Theme.primary)
+                .backgroundColor(Theme.surfaceAlt)
+                .borderRadius(Radius.sm)
+                .padding({ left: Space.md, right: Space.md })
+                .layoutWeight(1)
+                .onChange((v: string) => { this.aiKeyInput = v; })
+
+              Text(this.aiKeyVisible ? this.tr('settings.aiHideKey') : this.tr('settings.aiShowKey'))
+                .fontSize(FontSize.caption)
+                .fontColor(Theme.primary)
+                .padding({ left: Space.sm, right: Space.sm, top: Space.sm, bottom: Space.sm })
+                .margin({ left: Space.sm })
+                .onClick(() => { this.aiKeyVisible = !this.aiKeyVisible; })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .margin({ top: Space.sm })
+
+            // 配置状态（已配置/未配置）
+            Text(this.aiKeyConfigured ? this.tr('settings.aiConfigured') : this.tr('settings.aiNotConfigured'))
+              .fontSize(FontSize.micro)
+              .fontColor(this.aiKeyConfigured ? Theme.success : Theme.textMuted)
+              .margin({ top: Space.sm, bottom: Space.md })
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .padding({ left: Space.md, right: Space.md })
+
+          Divider().color(Theme.divider)
+
+          // 保存 / 清除
+          Row() {
+            Button(this.tr('settings.aiSave'))
+              .type(ButtonType.Capsule)
+              .height(40)
+              .fontSize(FontSize.body)
+              .fontColor(Theme.textInvert)
+              .backgroundColor(Theme.primary)
+              .layoutWeight(1)
+              .onClick(() => { this.handleAiSave(); })
+
+            Button(this.tr('settings.aiClear'))
+              .type(ButtonType.Capsule)
+              .height(40)
+              .fontSize(FontSize.body)
+              .fontColor(Theme.error)
+              .backgroundColor(Theme.surface)
+              .border({ width: 1, color: Theme.error })
+              .layoutWeight(1)
+              .margin({ left: Space.md })
+              .onClick(() => { this.confirmAiClear(); })
+          }
+          .width('100%')
+          .padding({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
+        }
+        .width('100%')
+        .constraintSize({ maxWidth: '100%' })
+        .borderRadius(Radius.lg)
+        .backgroundColor(Theme.surface)
+        .border({ width: 1, color: Theme.borderSubtle })
+        .margin({ left: Space.lg, right: Space.lg })
+
         // ── 功能组 ──
         SectionHeader({ title: this.tr('settings.sectionFeatures') })
           .padding({ left: Space.lg, right: Space.lg })
@@ -463,6 +780,38 @@ export struct SettingsPage {
       showClose: true,
       dragBar: true,
     })
+    .bindSheet($$this.showAiPresetSheet, this.aiPresetSheetBuilder(), {
+      height: 340,
+      showClose: true,
+      dragBar: true,
+    })
+  }
+
+  @Builder
+  aiPresetSheetBuilder() {
+    Column() {
+      Text(this.tr('settings.aiSelectPreset'))
+        .fontSize(FontSize.h3)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Theme.text)
+        .margin({ bottom: Space.md })
+
+      ForEach(LLMService.presetIds(), (id: string) => {
+        Button(this.presetLabel(id))
+          .type(ButtonType.Normal)
+          .width('100%')
+          .height(44)
+          .fontSize(FontSize.body)
+          .fontColor(this.aiPreset === id ? Theme.textInvert : Theme.text)
+          .backgroundColor(this.aiPreset === id ? Theme.primary : Theme.surfaceAlt)
+          .borderRadius(Radius.sm)
+          .margin({ top: Space.sm })
+          .onClick(() => { this.selectAiPreset(id); })
+      }, (id: string) => id)
+    }
+    .width('100%')
+    .padding(Space.lg)
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder

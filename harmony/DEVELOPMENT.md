@@ -349,6 +349,26 @@ GET  learnStudentHome                   学生首页
 - **演示模式复用**：`getMockBlocks()` 直接产出同构 `ScheduleBlock[]`（含跨两节/空地点/长地点边界样例），与真实数据走同一 `ScheduleGrid` 渲染，视觉一致。
 - **既有行为保持**：周导航 ‹ ›（±12 周钳制）/点中间回本周、加载/空态/错误（可重试）分支、`hint` 存词典键渲染处翻译、`@StorageLink('locale')` 语言订阅全部不变；i18n 既有 `schedule.*` 键足够（时间轴/日期标签为纯数字），本轮**未新增词典键**。
 
+### AI 真实对话（流式，多 provider）（2026-10-13）
+
+AI 页从本地 mock 应答升级为**真实 OpenAI 兼容 LLM 流式对话**。设计文档见 `entry/src/main/ets/pages/ai-chat/`（spec/plan/tasks）。
+
+- **LLM 客户端**（`services/ai/LLMService.ets`）：
+  - **Provider 预设**：openai（`api.openai.com/v1` / gpt-4o-mini）/ deepseek（`api.deepseek.com/v1` / deepseek-v4-flash）/ dashscope（通义千问兼容模式）/ moonshot（kimi）/ custom（用户自填 baseUrl/model，仅 OpenAI 兼容）；预设表对齐参考实现 `src/services/ai/agentService.ts` 的 `AI_PRESETS`。`resolveBaseUrl/resolveModel` 解析实际请求目标（custom 用填写值，其余预设固定 baseUrl；model 填写优先、缺省回退预设默认）。
+  - **流式实现（无降级）**：系统网络能力 `@ohos.net.http` 的 `requestInStream`（`@kit.NetworkKit`）——响应码经 Promise 返回，响应体经 `on('dataReceive')` 逐块回调；SSE 增量解析（跨块行缓冲 → `data:` 行 → JSON `choices[0].delta.content`，`[DONE]` 收尾）；兼容服务端忽略 `stream:true` 返回整体 JSON 的回退（dataEnd 无任何增量时整体解析 `choices[0].message.content`）。**T001 已用 `devecocli docs search` 查证接口可用，自定义 HTTPS baseUrl 直接可用，未降级非流式**。
+  - **防御性状态机**：`LLMStreamSession` 同步返回取消句柄（`streamChat` 非 Promise，保证"停止"立即可用）；dataEnd 早于响应码时兜底等待 2s 按成功收尾；请求仅携带最近 24 轮历史（载荷上界）。
+  - **取消与错误语义**：`cancel()` 立即 `destroy()` 请求并停止消费流（中断后不再回调，页面保留已生成内容并自行标注）；错误以结构化 `LLMErrorKind` 回调（401/403→AUTH、429→RATE_LIMIT、5xx/4xx→SERVER、2300028 或 timeout 字样→TIMEOUT、传输层其余→NETWORK、成功但空回复→EMPTY），页面经 i18n 映射可读文案；连接超时 15s、读取超时 300s。**日志与错误信息不含 API Key 与鉴权头**。
+- **API Key 安全存储**（`services/ai/ApiKeyStore.ets`）：复用 `SecureStorage` 的 **ASSET 范式**——别名 `campusos.ai.apikey`，Key 仅存加密字段 `SECRET`；保存幂等（DUPLICATED→update）、读取失败/未配置返回空串、清除幂等；`save` 返回 `Promise<boolean>` 供设置页提示保存失败。**禁止写入偏好设置明文**；`SettingsManager.ensureLoaded` 发现历史 `AppSettings.apiKey` 明文残留会立即清除（scrub）。
+- **设置页"AI 模型"配置区**（SettingsPage）：预设弹层选择（bindSheet）、custom baseUrl/model 输入（保存时校验 `http(s)://` 形态）、API Key 掩码输入 + 显隐切换 + "留空保持不变"（已配置时占位提示）、保存/清除（清除 AlertDialog 二次确认）、已配置/未配置状态。provider 配置（preset/baseUrl/model）持久化于独立偏好键 `@campusos/ai_provider_config`（`SettingsManager.get/setAIProviderSettings`）；`getApiProvider/getApiKey/setApiConfig` 保留签名但已弃用（Key 恒不落偏好）。
+- **AI 页**（`pages/ai/AIChatPage.ets`）：
+  - **发送前判定（零请求硬约束）**：①演示模式 → 本地示例应答（关键词命中 `ai.mock*`，零网络请求）；②Key 未配置（ASSET 读空）→ 内联引导卡（可跳设置页 tab=5，经 `emitNavigate`），**不构造请求、不清空输入**；③custom baseUrl 缺失 → 可读提示，不构造请求。
+  - **流式渲染**：增量经页面级 `@State streamingText` 驱动独立"生成中"气泡实时渲染 + 自动滚动跟随；完成/中断/失败后一次性落入会话消息（**消息入列后不变更**，规避 V1 ForEach 同 key 不刷新的限制——气泡用 `@Prop` 基本类型，无 @Observed 依赖）。
+  - **中断**："停止"按钮 / 切换会话 / 离开页面（`aboutToDisappear`）统一走 `cancelGeneration()`：取消句柄、保留已生成内容、消息标注"已停止生成"（aborted）；无悬挂请求。
+  - **错误处理**：`LLMErrorKind` → i18n 可读文案横幅（`ai.error*`）；保留已生成内容（标注"生成失败"）与用户输入（输入框为空时回填上次发送内容便于重试）。
+  - **多会话**：新建/切换/删除（AlertDialog 二次确认）经既有 `AIChatManager`（create/delete 签名不变，`Phase4SelfTest` 兼容）；会话列表 bindSheet；`aboutToAppear` 调 `loadConversations()` 启动恢复；状态胶囊显示 演示模式提示 / provider·model。
+- **会话持久化**（`state/AIChatManager.ets`）：沿用 `StorageKeys.AI_CONVERSATIONS`（偏好 JSON，每次增删改后异步落盘）；消息扩展 `AIChatMessage extends ChatMessage` 带 `status`（ok/streaming/aborted/error），读取旧数据（无 status）归一 'ok'——结构向后兼容；会话标题取首条用户消息摘要（≤20 字符截断）。
+- **启动落盘守卫（验证期修复 2026-10-13）**：`EntryAbility` 冷启动会先跑 `Phase4SelfTest`，其 `createConversation/deleteConversation` 在页面 `loadConversations()` 之前触发，会以"临时空列表"覆盖既有会话（旧实现重启后会话丢失）。现于 `AIChatManager` 增加 `loaded` 标志：`loadConversations()` 完成前 `saveConversations()` 跳过写入，恢复后再正常落盘——用户既有会话不再被启动自检清空（Phase 2 复验：会话+消息重启后恢复、删除持久生效）。
+
 ### 其他待办
 
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）

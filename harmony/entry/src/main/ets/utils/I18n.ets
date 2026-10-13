@@ -198,6 +198,36 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
     en: 'I\'m your CampusOS AI assistant. I can help you:\n\n📚 Check classes and tasks\n🏫 Find free classrooms\n📊 View grades and GPA\n💰 Check campus card balance\n📝 Manage deadlines\n🌐 Check campus network status\n\nWhat can I do for you?'
   },
 
+  // ── AI 真实对话（ai-chat 特性追加：流式/停止/错误/引导/会话）──
+  'ai.stop': { zh: '停止', en: 'Stop' },
+  'ai.generating': { zh: '正在生成…', en: 'Generating…' },
+  'ai.msgAborted': { zh: '已停止生成', en: 'Stopped' },
+  'ai.msgFailed': { zh: '生成失败', en: 'Failed' },
+  'ai.demoNotice': { zh: '演示模式 · 回复来自本地示例', en: 'Demo mode · replies are local samples' },
+  'ai.notConfiguredTitle': { zh: '尚未配置 AI 模型', en: 'AI model not configured' },
+  'ai.notConfiguredHint': {
+    zh: '请先在设置中配置 AI 模型与 API Key',
+    en: 'Set up an AI model and API key in Settings first'
+  },
+  'ai.goSettings': { zh: '去设置', en: 'Go to Settings' },
+  'ai.chats': { zh: '会话', en: 'Chats' },
+
+  'ai.chatListTitle': { zh: '选择会话', en: 'Select a chat' },
+  'ai.deleteChatTitle': { zh: '删除会话', en: 'Delete chat' },
+  'ai.deleteChatMessage': {
+    zh: '将删除该会话及全部消息，不可恢复。',
+    en: 'This deletes the chat and all its messages. This cannot be undone.'
+  },
+  'ai.deleteChatOk': { zh: '删除', en: 'Delete' },
+  'ai.errorAuth': { zh: '密钥无效或已过期，请在设置中重新配置', en: 'Invalid or expired API key. Please reconfigure in Settings.' },
+  'ai.errorRateLimit': { zh: '请求过于频繁，请稍后再试', en: 'Too many requests. Please try again later.' },
+  'ai.errorServer': { zh: 'AI 服务暂时不可用，请稍后再试', en: 'AI service is temporarily unavailable. Please try again later.' },
+  'ai.errorNetwork': { zh: '网络不可用，请检查网络后重试', en: 'Network unavailable. Please check your connection and retry.' },
+  'ai.errorTimeout': { zh: '请求超时，请重试', en: 'Request timed out. Please retry.' },
+  'ai.errorEmpty': { zh: '模型未返回内容，请重试', en: 'The model returned no content. Please retry.' },
+  'ai.errorGeneric': { zh: '请求失败，请重试', en: 'Request failed. Please retry.' },
+  'ai.errorBadBaseUrl': { zh: '接口地址无效，请在设置中检查', en: 'Invalid base URL. Please check Settings.' },
+
   // ── 登录页（login.*）──
   'login.subtitle': { zh: '清华校园 AI 操作系统', en: 'Tsinghua campus AI OS' },
   'login.restoring': { zh: '正在恢复登录…', en: 'Restoring sign-in…' },
@@ -262,6 +292,51 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'settings.langZh': { zh: '中文', en: '中文' },
   'settings.langEn': { zh: 'English', en: 'English' },
   'settings.selectLanguage': { zh: '选择语言', en: 'Select language' },
+
+  // ── AI 模型配置区（ai-chat 特性追加；API Key 不落明文，入 ASSET）──
+  'settings.sectionAI': { zh: 'AI 模型', en: 'AI model' },
+  'settings.aiConfigured': { zh: '已配置', en: 'Configured' },
+  'settings.aiNotConfigured': { zh: '未配置', en: 'Not configured' },
+  'settings.aiPreset': { zh: '预设服务', en: 'Provider' },
+  'settings.aiSelectPreset': { zh: '选择预设服务', en: 'Select a provider' },
+  'settings.aiPresetOpenai': { zh: 'OpenAI', en: 'OpenAI' },
+  'settings.aiPresetDeepseek': { zh: 'DeepSeek', en: 'DeepSeek' },
+  'settings.aiPresetDashscope': { zh: '通义千问', en: 'Qwen' },
+  'settings.aiPresetMoonshot': { zh: 'Moonshot', en: 'Moonshot' },
+  'settings.aiPresetCustom': { zh: '自定义', en: 'Custom' },
+  'settings.aiBaseUrl': { zh: '接口地址', en: 'Base URL' },
+  'settings.aiBaseUrlPlaceholder': { zh: 'https://api.example.com/v1', en: 'https://api.example.com/v1' },
+  'settings.aiModel': { zh: '模型', en: 'Model' },
+  'settings.aiModelPlaceholder': { zh: '模型名，如 gpt-4o-mini', en: 'Model name, e.g. gpt-4o-mini' },
+  'settings.aiApiKey': { zh: 'API Key', en: 'API Key' },
+  'settings.aiApiKeyPlaceholder': { zh: '输入 API Key', en: 'Enter API key' },
+  'settings.aiApiKeyKeep': {
+    zh: '已配置 · 留空保持不变',
+    en: 'Configured — leave blank to keep'
+  },
+  'settings.aiShowKey': { zh: '显示', en: 'Show' },
+  'settings.aiHideKey': { zh: '隐藏', en: 'Hide' },
+  'settings.aiCustomHint': {
+    zh: '自定义仅支持 OpenAI 兼容接口（/chat/completions）',
+    en: 'Custom endpoints must be OpenAI-compatible (/chat/completions)'
+  },
+  'settings.aiSave': { zh: '保存配置', en: 'Save' },
+  'settings.aiClear': { zh: '清除配置', en: 'Clear' },
+  'settings.aiClearTitle': { zh: '清除 AI 配置', en: 'Clear AI config' },
+  'settings.aiClearMessage': {
+    zh: '将清除 provider 配置与 API Key，AI 对话将回到未配置引导状态。',
+    en: 'This clears the provider config and API key. AI chat will return to the unconfigured guide.'
+  },
+  'settings.aiClearOk': { zh: '清除', en: 'Clear' },
+  'settings.aiSaveSuccess': { zh: 'AI 配置已保存', en: 'AI config saved' },
+  'settings.aiClearSuccess': { zh: '已清除 AI 配置', en: 'AI config cleared' },
+  'settings.aiSaveFailed': { zh: 'AI 配置保存失败，请重试', en: 'Failed to save AI config. Please try again.' },
+  'settings.aiBaseUrlInvalid': {
+    zh: '接口地址需以 http:// 或 https:// 开头',
+    en: 'Base URL must start with http:// or https://'
+  },
+  'settings.aiModelRequired': { zh: '请填写模型名', en: 'Model name is required' },
+  'settings.aiKeyRequired': { zh: '请输入 API Key', en: 'Enter an API key' },
 
   'settings.sectionFeatures': { zh: '功能', en: 'Features' },
   'settings.aiMemory': { zh: 'AI 记忆', en: 'AI memory' },
