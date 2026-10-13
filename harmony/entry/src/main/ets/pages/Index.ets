@@ -36,7 +36,12 @@ struct Index {
 
   /** 登录态门控信号变化（退出登录/会话失效/登录成功）→ 立即重算整应用门控 */
   onAuthGateChange(): void {
-    this.isLoggedIn = AuthManager.isLoggedIn();
+    const now: boolean = AuthManager.isLoggedIn();
+    // “未登录 → 已登录”时回到首页 Tab：避免重新登录后停留在上一次的 Tab（如设置页）
+    if (now && !this.isLoggedIn) {
+      this.currentIndex = 0;
+    }
+    this.isLoggedIn = now;
   }
 
   aboutToAppear(): void {

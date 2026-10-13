@@ -161,7 +161,11 @@ export class SessionManager {
    * 不改变"退出不清 Cookie"的既有会话复用语义（FR-012）。
    */
   private static resetSessionState(): void {
-    SessionManager.getAuthService().resetSessionState();
+    // 注意：**不在此复位认证服务的 learn csrf**。
+    //   - login() 首步已自行复位 csrfToken 并重新激活 learn 会话；
+    //   - 本方法会在“登录成功后（门控广播前）”被调用，若此处再复位，
+    //     会把刚激活得到的 csrf 清空 → 学习页 `UI_FETCH_COURSES trace=no_csrf`（实测）。
+    // 这里只复位校园子系统的“已确保/缓存”标志（消除跨会话残留：课表/成绩/电费等）。
     if (SessionManager.campusDataService !== undefined) {
       SessionManager.campusDataService.resetSessionState();
     }
