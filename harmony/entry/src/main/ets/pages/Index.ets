@@ -11,6 +11,7 @@ import { LearningPage } from './LearningPage';
 import { CampusPage } from './CampusPage';
 import { SessionManager } from '../services/auth/SessionManager';
 import { LoginResult, LoginResultType } from '../services/auth/TsinghuaAuthService';
+import { AuthManager } from '../state/AuthManager';
 import { BackDispatcher, BackOwner } from '../state/BackDispatcher';
 import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget } from '../state/UiEvents';
 import { I18n } from '../utils/I18n';
@@ -23,6 +24,9 @@ struct Index {
   @State isAutoLogging: boolean = true;
   /** 语言订阅：随设置页语言切换即时重渲染底部导航 */
   @StorageLink('locale') locale: string = 'zh';
+  /** 登录态门控信号（AuthManager 广播）：登录成功/退出登录/需 2FA/会话失效
+   *  时立即按 AuthManager.isLoggedIn() 重算门控——整应用切换 Tabs ↔ 登录页 */
+  @StorageLink('authGateTick') @Watch('onAuthGateChange') authGateTick: number = 0;
   private navSub: NavigateSubscription = new NavigateSubscription();
 
   /** 翻译（显式读取 this.locale 以建立渲染依赖） */
@@ -30,7 +34,13 @@ struct Index {
     return I18n.t(key, this.locale);
   }
 
+  /** 登录态门控信号变化（退出登录/会话失效/登录成功）→ 立即重算整应用门控 */
+  onAuthGateChange(): void {
+    this.isLoggedIn = AuthManager.isLoggedIn();
+  }
+
   aboutToAppear(): void {
+    this.isLoggedIn = AuthManager.isLoggedIn();
     // 首页快捷操作等处的跨页导航：切到底部指定 Tab
     this.navSub = subscribeNavigate((target: NavTarget) => {
       if (target.tab >= 0 && target.tab <= 5) {
@@ -42,6 +52,8 @@ struct Index {
       if (result !== undefined && result.type === LoginResultType.SUCCESS) {
         this.isLoggedIn = true;
       }
+      // 非 SUCCESS（需 2FA / 失败）保持未登录门控：渲染登录页——
+      // LoginPage 挂载时按 AuthManager 状态直接进入 2FA 视图或展示失败原因
     }).catch((e: Object) => {
       this.isAutoLogging = false;
     });
@@ -160,6 +172,8 @@ struct Index {
   }
 
   build() {
+    // 登录态唯一门控：未登录/需 2FA → 登录页（不渲染 Tabs，底部导航不可访问）；
+    // 已登录 → Tabs。退出登录/会话失效经 authGateTick 立即切换。
     if (this.isAutoLogging) {
       Column() {
         LoadingProgress()

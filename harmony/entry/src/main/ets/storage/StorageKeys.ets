@@ -9,6 +9,10 @@ const AI_MEMORY_KEY: string = STORAGE_KEY_PREFIX + 'ai_memory';
 const WORKFLOW_KEY: string = STORAGE_KEY_PREFIX + 'workflows';
 const ACTION_AUDIT_KEY: string = STORAGE_KEY_PREFIX + 'action_audit';
 const SETTINGS_KEY: string = STORAGE_KEY_PREFIX + 'settings';
+/** 是否曾显式选择过"信任此设备"（trust-device 特性：决定登录页开关默认值） */
+const TRUST_CHOICE_MADE_KEY: string = STORAGE_KEY_PREFIX + 'trust_choice_made';
+/** "待清除"标记（trust-device 特性：取消信任后置位，退出/启动兜底清除凭证后复位） */
+const TRUST_PENDING_CLEAR_KEY: string = STORAGE_KEY_PREFIX + 'trust_pending_clear';
 
 interface StorageKeysMap {
   WEBVPN_COOKIES: string;
@@ -20,6 +24,8 @@ interface StorageKeysMap {
   WORKFLOWS: string;
   ACTION_AUDIT: string;
   SETTINGS: string;
+  TRUST_CHOICE_MADE: string;
+  TRUST_PENDING_CLEAR: string;
 }
 
 export const StorageKeys: StorageKeysMap = {
@@ -32,4 +38,6 @@ export const StorageKeys: StorageKeysMap = {
   'WORKFLOWS': WORKFLOW_KEY,
   'ACTION_AUDIT': ACTION_AUDIT_KEY,
   'SETTINGS': SETTINGS_KEY,
+  'TRUST_CHOICE_MADE': TRUST_CHOICE_MADE_KEY,
+  'TRUST_PENDING_CLEAR': TRUST_PENDING_CLEAR_KEY,
 };

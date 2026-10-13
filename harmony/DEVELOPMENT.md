@@ -371,14 +371,35 @@ AI 页从本地 mock 应答升级为**真实 OpenAI 兼容 LLM 流式对话**。
 - **会话持久化**（`state/AIChatManager.ets`）：沿用 `StorageKeys.AI_CONVERSATIONS`（偏好 JSON，每次增删改后异步落盘）；消息扩展 `AIChatMessage extends ChatMessage` 带 `status`（ok/streaming/aborted/error），读取旧数据（无 status）归一 'ok'——结构向后兼容；会话标题取首条用户消息摘要（≤20 字符截断）。
 - **启动落盘守卫（验证期修复 2026-10-13）**：`EntryAbility` 冷启动会先跑 `Phase4SelfTest`，其 `createConversation/deleteConversation` 在页面 `loadConversations()` 之前触发，会以"临时空列表"覆盖既有会话（旧实现重启后会话丢失）。现于 `AIChatManager` 增加 `loaded` 标志：`loadConversations()` 完成前 `saveConversations()` 跳过写入，恢复后再正常落盘——用户既有会话不再被启动自检清空（Phase 2 复验：会话+消息重启后恢复、删除持久生效）。
 
+### 信任此设备与会话门控（2026-10-13）
+
+登录页"信任此设备"开关 + 整应用登录态门控。设计文档见 `entry/src/main/ets/pages/trust-device/`（spec/plan/tasks）。
+
+- **语义**：未勾选＝不信任设备，登录凭证**仅内存会话**（不落盘，退出即失效）；勾选＝持久化凭证（ASSET），支持下次启动自动登录。开关初值＝用户上次登录时的选择（无历史默认不勾选）。
+- **凭证落盘判定**（唯一写入点在 `TsinghuaAuthService`，清理点在 `SecureStorage.clearCredentials`）：
+
+| 场景 | 凭证 ASSET | 行为 |
+|---|---|---|
+| 登录（不信任） | 不写入 | 正常会话 + trace 日志，自动登录不发生 |
+| 登录（信任） | 写入 | 下次启动 `tryAutoLogin` |
+| 设置页取消信任 | **不清**（仅标记） | 退出应用时清除；下次启动兜底清除 |
+| 退出登录 | 清除 | 既有行为（清凭证+清会话），与信任无关 |
+
+- **分工**：`SecureStorage`（不在本特性改动清单）只管 ASSET 读写；`SettingsManager` 管信任偏好标记（`trustDevice`/`trust_choice_made`/`trust_pending_clear` 三键）与两处兜底清理（`purgeCredentialsIfPendingClear`＝退出钩子，`purgeCredentialsIfUntrusted`＝启动兜底）；`TsinghuaAuthService` 持 `persistCredentials` 实例字段门控两个写入点；`SessionManager.login` 第三参 `trustDevice?: boolean` 缺省取 `SettingsManager.isTrustDevice()`（签名向后兼容）。
+- **门控信号**：`AuthManager` 状态迁移时写 AppStorage 时间戳 `authGateTick`；`Index.ets` 以 `@StorageLink('authGateTick') @Watch` 响应——**退出登录/会话失效整应用立即回登录页，未登录不渲染 Tabs**（修复了此前"设置页退出后仅冷启动回登录页"的缺口）。自动登录遇 2FA 时 `LoginPage.aboutToAppear` 经 `AuthManager.needs2FA()` 直接进 2FA 视图（复用既有验证链路）；其它失败经 `getLastError()` 显示可读原因。
+- **清理时机双保险**：设置页切换只置 `trust_pending_clear` 标记（不触会话/不清 Cookie）；`EntryAbility.onDestroy` 执行 pending 清理（正常退出），强杀场景由下次启动 `purgeCredentialsIfUntrusted()` 兜底（`loadContent` 前完成，避免 `tryAutoLogin` 读到应清除的残留）。
+- **已知限制**：不信任设备时**每次启动都需重新登录**（预期行为）；"信任"仅控制本机凭证落盘，不与服务端 2FA 策略/指纹复用联动（见"其他待办"）。
+- **与参考实现的对照结论**：原 React 项目（`src/services/auth/tsinghuaAuth.ts`）**未实现本能力**——其 `trustDevice` 参数仅控制 2FA 成功后是否调服务端 `saveFinger` 收藏"可信浏览器"（服务端指纹白名单，另一概念）；本特性的"登录页信任开关＋本机凭证落盘门控＋取消信任清理＋会话门控"在参考实现中均不存在，为 HarmonyOS 端新增能力。
+
 ### 其他待办
 
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）
 - i18n 其余页面双语化（下一批次：校园子页/学习子页/其它页——见上方"i18n 核心骨架 + 高频页迁移"节的下批清单）
-- "信任此设备"后续是否与指纹复用/2FA 策略真正联动（本轮仅持久化，UI 文案已准确表述）
-- SettingsPage 退出登录后整应用回登录页需 Index 门控联动（本轮受"不改导航装配"约束，仅清会话+凭证+页内状态刷新；冷启动正确回登录页）
+- "信任此设备"后续是否与指纹复用/2FA 策略真正联动（2026-10-13 已完成本机凭证落盘门控与会话门控，见上方"信任此设备与会话门控"节；服务端策略联动仍待定）
 
 ### 已修复待办
+
+- ~~SettingsPage 退出登录后整应用回登录页需 Index 门控联动~~ **已修复（2026-10-13，信任此设备与会话门控特性）**：`AuthManager` 状态迁移写 AppStorage 信号 `authGateTick`，`Index.ets` 以 `@StorageLink @Watch` 响应——退出登录/会话失效**运行期立即**整应用回登录页（未登录不渲染 Tabs），不再依赖冷启动。
 
 - ~~修复 #3 密码明文存储~~ **已修复（2026-10-11，凭证安全存储特性）**：`storage/SecureStorage.ets` 内部改为**系统关键资产存储**（Asset Store Kit）——单条关键资产：固定别名 `campusos.credentials` + 凭证三项（学号/密码/指纹）沿用既有格式序列化进唯一加密字段 `SECRET`（严禁放入别名或 DATA_LABEL 类明文字段）；访问条件"设备开机后可用"（不设"需用户认证"，保证静默自动登录）；保存幂等（新增命中"已存在"错误码则更新）。读取路径**惰性自动迁移**：关键资产未命中 → 读偏好设置旧明文键 `@secure:credentials` → 写入新存储**成功后**才清除旧明文（失败保留、不丢数据、下次读取重试）；注销双清（关键资产 + 旧明文键，各自容错、幂等）。保存失败只记日志不阻断登录；读取失败/ASSET 不可用返回空值，**绝不回退明文写入**。日志不含明文（tag `SecureStore`：`CRED_SAVE`/`CRED_QUERY`/`CRED_MIGRATE`/`CRED_CLEAR`，仅步骤/命中布尔/长度/错误码）。对外三方法（保存/读取/清除）签名与语义不变，调用方零改动。
 - 备注：`turbomodules/SecureStorageTurboModule.ets` 为 HUKS 桥接**桩**（`getGenericPassword` 恒返回 `null`），未接入凭证链路；本特性未改动它，保持现状、不在凭证安全存储范围内。

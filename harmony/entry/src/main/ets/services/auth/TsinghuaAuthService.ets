@@ -92,6 +92,9 @@ export class TsinghuaAuthService {
   private reloginInflight: Promise<void> | undefined = undefined;
   private twoFactorHandler: TwoFactorHandler | undefined = undefined;
   private twoFactorMethod: string = 'mobile';
+  /** 是否持久化凭证（信任此设备 → 写 ASSET；不信任 → 不写，仅内存会话）。
+   *  由 login(credentials, persistCredentials?) 设置；verify2FACode 续链时遵循同一决定。 */
+  private persistCredentials: boolean = true;
   private http: HttpClient;
 
   constructor() {
@@ -139,10 +142,27 @@ export class TsinghuaAuthService {
     return false;
   }
 
-  async login(credentials: CampusCredentials): Promise<LoginResult> {
+  /**
+   * 登录（完整认证链路，见类头注释）。
+   *
+   * @param persistCredentials 可选：是否持久化凭证到安全存储（信任此设备）。
+   *        - true  → 登录成功后写 ASSET（既有行为，支持下次自动登录）；
+   *        - false → 不写（仅内存会话，应用退出/强杀自然失效）；
+   *        - 缺省 → 沿用本实例上一次的设置（初始 true，既有调用行为不变）。
+   *        该决定同时约束 verify2FACode 续链（2FA 通过后同样不落盘）。
+   */
+  async login(credentials: CampusCredentials, persistCredentials?: boolean): Promise<LoginResult> {
     this.trace = [];
     this.addTrace('login_start');
     this.http.clearSession();
+    // 复位上一会话的 learn csrf：logout() 现已不再调用 service.logout()，
+    // 若不清这里，"退出登录→再次登录"会复用陈旧 csrfToken 导致课表/成绩 403
+    // （现象：教务会话未打通 / SEMESTER 403 / FETCH_COURSES Invalid Token）
+    this.csrfToken = '';
+
+    if (persistCredentials !== undefined) {
+      this.persistCredentials = persistCredentials;
+    }
 
     this.cachedCredentials = credentials;
 
@@ -269,7 +289,13 @@ export class TsinghuaAuthService {
     successResult.message = '登录成功';
     successResult.trace = this.trace;
 
-    await SecureStorage.saveCredentials(credentials.studentId, credentials.password, credentials.fingerprint);
+    // 信任此设备 → 持久化凭证（ASSET）；不信任 → 不写（仅内存会话，
+    // 应用退出/强杀自然失效，不产生可自动登录的残留）
+    if (this.persistCredentials) {
+      await SecureStorage.saveCredentials(credentials.studentId, credentials.password, credentials.fingerprint);
+    } else {
+      this.addTrace('cred_persist_skipped_untrusted');
+    }
 
     // 先建立 info 门户会话（校园通用门户漫游），再激活 learn
     try {
@@ -771,13 +797,18 @@ export class TsinghuaAuthService {
         }
       }
 
-      // 继续主登录链：先建立 info 门户会话，再激活 learn
+      // 继续主登录链：凭证持久化遵循登录时的信任决定（不信任 → 不落盘）；
+      // 先建立 info 门户会话，再激活 learn
       if (this.cachedCredentials !== undefined) {
-        await SecureStorage.saveCredentials(
-          this.cachedCredentials.studentId,
-          this.cachedCredentials.password,
-          this.cachedCredentials.fingerprint
-        );
+        if (this.persistCredentials) {
+          await SecureStorage.saveCredentials(
+            this.cachedCredentials.studentId,
+            this.cachedCredentials.password,
+            this.cachedCredentials.fingerprint
+          );
+        } else {
+          this.addTrace('cred_persist_skipped_untrusted_2fa');
+        }
         try {
           await this.roamIdPolicy(this.cachedCredentials, INFO_PORTAL_YYFWID);
           this.addTrace('info_roam_ok_2fa');

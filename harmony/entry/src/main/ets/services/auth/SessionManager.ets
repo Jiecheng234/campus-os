@@ -7,9 +7,13 @@
  *   - 持有 TsinghuaAuthService / CampusDataService 单例（懒加载）。
  *   - login()：组装凭证（复用 SecureStorage 持久化的 fingerprint，避免设备信任超限），
  *     驱动 TsinghuaAuthService.login，并同步 AuthManager 状态 + 写 SESSION_SAVED_KEY。
+ *     可选 trustDevice 参数决定凭证是否持久化（信任→写 ASSET；不信任→仅内存会话；
+ *     缺省沿用设置值——既有调用零改动）。
  *   - tryAutoLogin()：自动登录——读保存的凭证并执行完整 login() 静默重建 WebVPN 会话
  *     （fingerprint 持久化使 2FA 可跳过）。由 Index.aboutToAppear 在冷启动时调用。
  *   - demoLogin()：演示模式（无需账号，用本地 Mock 数据）。
+ *   - logout()：退出登录——仅清会话态（复位登录态 + 自动登录标记；不清 Cookie、
+ *     不重置运行期会话复用状态）；凭证按信任策略处理（信任→保留；未信任→清除）。
  *
  * 注意：
  *   - fingerprint 格式为 32 位无横线 UUID（generateUUID().replace(/-/g,'')）。
@@ -22,6 +26,7 @@ import { PreferencesStorage } from '../../storage/PreferencesStorage';
 import { StorageKeys } from '../../storage/StorageKeys';
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
+import { SettingsManager } from '../../state/SettingsManager';
 import { CampusDataService } from '../campus/CampusDataService';
 import { CampusCardService } from '../campus/CampusCardService';
 import { CampusNetworkService } from '../campus/CampusNetworkService';
@@ -143,9 +148,19 @@ export class SessionManager {
     return result;
   }
 
-  static async login(studentId: string, password: string): Promise<LoginResult> {
+  /**
+   * 登录（组装凭证 → 驱动 TsinghuaAuthService.login → 同步 AuthManager 状态）。
+   *
+   * @param trustDevice 可选：是否信任此设备（决定凭证是否持久化）。
+   *        - true  → 登录成功后凭证写 ASSET（支持下次自动登录）；
+   *        - false → 不写（仅内存会话，退出/强杀自然失效）；
+   *        - 缺省 → 沿用设置值（SettingsManager.isTrustDevice，既有调用零改动）。
+   */
+  static async login(studentId: string, password: string, trustDevice?: boolean): Promise<LoginResult> {
     const service: TsinghuaAuthService = SessionManager.getAuthService();
     AuthManager.startLogin();
+
+    const trust: boolean = trustDevice !== undefined ? trustDevice : SettingsManager.isTrustDevice();
 
     const credentials: CampusCredentials = new CampusCredentials();
     credentials.studentId = studentId;
@@ -159,7 +174,7 @@ export class SessionManager {
       credentials.fingerprint = generateUUID().replace(/-/g, '');
     }
 
-    const result: LoginResult = await service.login(credentials);
+    const result: LoginResult = await service.login(credentials, trust);
 
     if (result.type === LoginResultType.SUCCESS) {
       AuthManager.loginSuccess();
@@ -199,11 +214,23 @@ export class SessionManager {
     return service.send2FACode(method);
   }
 
+  /**
+   * 退出登录（2026-10-13 修订，FR-012）：仅清"会话/登录态"，凭证按信任策略处理。
+   *
+   * - 只复位登录态（AuthManager → 门控信号广播，整应用回登录页）与自动登录标记；
+   *   不清 Cookie、不重置运行期会话复用相关状态（不打断进行中的请求与漫游）。
+   *   故不再透传 service.logout()——其内部会 clearSession（清 Cookie）并无条件
+   *   清除凭证，与修订语义冲突（服务层保持不动，重新登录时 login 首步自会清旧会话）。
+   * - 凭证策略：信任开启 → 保留 ASSET 凭证（登录页回填 + 一键直达主页/自动登录可用）；
+   *   未信任 → 清除凭证并复位"待清除"标记（不得留残留，含历史遗留）。
+   */
   static async logout(): Promise<void> {
-    const service: TsinghuaAuthService = SessionManager.getAuthService();
-    await service.logout();
     AuthManager.logout();
     await PreferencesStorage.setBoolean(SESSION_SAVED_KEY, false);
+    if (!SettingsManager.isTrustDevice()) {
+      await SecureStorage.clearCredentials();
+      await SettingsManager.setPendingClear(false);
+    }
   }
 
   static demoLogin(): void {

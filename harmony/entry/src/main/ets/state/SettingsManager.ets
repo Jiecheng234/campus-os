@@ -26,6 +26,8 @@
  */
 import { StateManager } from './StateManager';
 import { PreferencesStorage } from '../storage/PreferencesStorage';
+import { StorageKeys } from '../storage/StorageKeys';
+import { SecureStorage } from '../storage/SecureStorage';
 import { Log } from '../utils/Logger';
 
 const LOG_TAG: string = 'SettingsMgr';
@@ -113,6 +115,86 @@ export class SettingsManager {
   static setTrustDevice(enabled: boolean): void {
     StateManager.settings.trustDevice = enabled;
     SettingsManager.persist('trustDevice');
+  }
+
+  // ============================================================
+  // 信任此设备（trust-device 特性）：曾选择标记 + 待清除标记 + 双保险清理
+  //
+  // 【语义】复用既有 settings.trustDevice 作为"当前信任/上次选择"；
+  //  TRUST_CHOICE_MADE 区分"无历史"（登录页开关默认不勾选）与"上次选择"；
+  //  TRUST_PENDING_CLEAR 表示"取消信任后需清除已持久化凭证"。
+  // 【边界】清理只触碰凭证（SecureStorage/ASSET），绝不触会话/Cookie/请求。
+  // ============================================================
+
+  /** 是否曾显式选择过"信任此设备"（登录页开关默认值判定；无历史默认不勾选） */
+  static hasTrustChoice(): Promise<boolean> {
+    return PreferencesStorage.getBoolean(StorageKeys.TRUST_CHOICE_MADE, false);
+  }
+
+  /** 标记"已做出过信任选择"（登录成功 / 设置页切换信任开关时写回；失败只记日志不抛） */
+  static markTrustChoiceMade(): Promise<void> {
+    return PreferencesStorage.setBoolean(StorageKeys.TRUST_CHOICE_MADE, true).then((): void => {
+      Log.i(LOG_TAG, 'TRUST choice marked');
+    }).catch((): void => {
+      Log.e(LOG_TAG, 'TRUST choice mark failed');
+    });
+  }
+
+  /** 读取"待清除"标记（取消信任后置位；凭证清除完成后复位） */
+  static isPendingClear(): Promise<boolean> {
+    return PreferencesStorage.getBoolean(StorageKeys.TRUST_PENDING_CLEAR, false);
+  }
+
+  /** 写入"待清除"标记（失败只记日志不抛；不触发任何会话操作） */
+  static setPendingClear(pending: boolean): Promise<void> {
+    return PreferencesStorage.setBoolean(StorageKeys.TRUST_PENDING_CLEAR, pending).then((): void => {
+      Log.i(LOG_TAG, 'TRUST pending_clear=%{public}s', pending);
+    }).catch((): void => {
+      Log.e(LOG_TAG, 'TRUST pending_clear save failed');
+    });
+  }
+
+  /**
+   * 退出钩子（EntryAbility.onDestroy 调用）：
+   * 仅当"待清除"为真时清除已持久化凭证并复位标记。
+   * 异步操作可能在进程结束时未完成——强杀场景由启动兜底
+   * （purgeCredentialsIfUntrusted）覆盖，两者共同构成双保险。
+   */
+  static async purgeCredentialsIfPendingClear(): Promise<void> {
+    try {
+      const pending: boolean = await SettingsManager.isPendingClear();
+      if (!pending) {
+        return;
+      }
+      await SecureStorage.clearCredentials();
+      await SettingsManager.setPendingClear(false);
+      Log.i(LOG_TAG, 'TRUST exit purge done');
+    } catch (e) {
+      Log.e(LOG_TAG, 'TRUST exit purge failed');
+    }
+  }
+
+  /**
+   * 启动兜底（EntryAbility 在设置加载后、装载首页前调用）：
+   * 若"未信任"或"待清除" → 清除可能残留的已持久化凭证并复位标记。
+   * 覆盖强杀/异常退出导致的退出钩子未执行场景（不信任时本就不落盘，
+   * 此处清理的是历史/遗留残留）。内部全捕获，绝不抛出、不阻断启动。
+   */
+  static async purgeCredentialsIfUntrusted(): Promise<void> {
+    try {
+      const pending: boolean = await SettingsManager.isPendingClear();
+      const trusted: boolean = SettingsManager.isTrustDevice();
+      if (!pending && trusted) {
+        return;
+      }
+      await SecureStorage.clearCredentials();
+      if (pending) {
+        await SettingsManager.setPendingClear(false);
+      }
+      Log.i(LOG_TAG, 'TRUST startup purge done pending=%{public}s trusted=%{public}s', pending, trusted);
+    } catch (e) {
+      Log.e(LOG_TAG, 'TRUST startup purge failed');
+    }
   }
 
   // ============================================================

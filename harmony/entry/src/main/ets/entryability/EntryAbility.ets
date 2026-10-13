@@ -32,6 +32,11 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy(): void {
     hilog.info(DOMAIN, 'CampusOS', 'CampusOS EntryAbility onDestroy');
+    // 退出钩子：取消信任（"待清除"标记为真）→ 清除已持久化凭证并复位标记。
+    // 异步清除可能未及完成即进程结束——强杀场景由启动兜底（下方 purgeCredentialsIfUntrusted）覆盖。
+    SettingsManager.purgeCredentialsIfPendingClear().catch((): void => {
+      hilog.error(DOMAIN, 'CampusOS', 'TRUST exit purge failed');
+    });
     // TODO(Phase 4): Destroy RN instance
   }
 
@@ -53,8 +58,13 @@ export default class EntryAbility extends UIAbility {
     });
 
     // 设置加载完成后才装载首页：保证偏好（演示模式/信任设备/语言）重启后保持，
-    // 且 AppStorage('locale') 在任何页面的 @StorageLink 绑定前就绪
-    SettingsManager.ensureLoaded().then((): void => {
+    // 且 AppStorage('locale') 在任何页面的 @StorageLink 绑定前就绪。
+    // 启动兜底（信任策略）：装载首页前，若"未信任"或"待清除" → 清除可能残留的
+    // 已持久化凭证并复位标记——覆盖强杀/异常退出时退出钩子未执行的场景，
+    // 同时保证 Index.tryAutoLogin 不会读到应被清除的残留凭证。
+    SettingsManager.ensureLoaded().then((): Promise<void> => {
+      return SettingsManager.purgeCredentialsIfUntrusted();
+    }).then((): void => {
       I18n.init();
       // Currently loads native ArkUI page; will be replaced with RN ReactRootView
       windowStage.loadContent('pages/Index', (err: BusinessError) => {

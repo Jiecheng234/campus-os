@@ -3,6 +3,8 @@ import { AuthState, AuthStatus, TwoFactorMethod, getDefaultTwoFactorMethods } fr
 import { SessionManager } from '../services/auth/SessionManager';
 import { LoginResult, LoginResultType } from '../services/auth/TsinghuaAuthService';
 import { AuthManager } from '../state/AuthManager';
+import { SettingsManager } from '../state/SettingsManager';
+import { SecureStorage, SecureCredentials } from '../storage/SecureStorage';
 import { I18n } from '../utils/I18n';
 
 @Component
@@ -24,8 +26,62 @@ export struct LoginPage {
   @State twoFactorCode: string = '';
   @State isSubmitting: boolean = false;
   @State loggedIn: boolean = false;
+  /** 信任此设备（初值 = 用户上次的选择；无历史默认不勾选） */
+  @State trustDevice: boolean = false;
+  /** 已回填已保存凭证（FR-017：信任开启且存在凭证时回填学号与密码） */
+  @State credentialsPrefilled: boolean = false;
+  /** 用户是否已手动操作过信任开关（避免异步加载的"上次选择"覆盖用户操作） */
+  private trustTouched: boolean = false;
 
   onLoginSuccess: () => void = () => {};
+
+  aboutToAppear(): void {
+    // 信任开关初值 = 上次的选择（无历史默认不勾选；异步加载不覆盖用户已做的操作）
+    SettingsManager.hasTrustChoice().then((made: boolean): void => {
+      if (!this.trustTouched) {
+        this.trustDevice = made ? SettingsManager.isTrustDevice() : false;
+      }
+    }).catch((): void => {
+      // 读取失败保持默认不勾选
+    });
+    // FR-017：信任开启且存在已保存凭证 → 回填学号与密码（异步读取；
+    // 未信任或无凭证时保持空白）。点击登录仍走完整 SessionManager.login，
+    // 不因回填跳过服务端校验
+    SecureStorage.getCredentials().then((creds: SecureCredentials | undefined): void => {
+      if (!SettingsManager.isTrustDevice() || creds === undefined) {
+        return;
+      }
+      // 异步返回时不覆盖用户已输入的内容
+      if (this.studentId.length === 0 && this.password.length === 0) {
+        this.studentId = creds.studentId;
+        this.password = creds.password;
+        this.credentialsPrefilled = true;
+      }
+    }).catch((): void => {
+      // 凭证读取失败：保持空白（不回填）
+    });
+    // 自动登录遇服务端要求 2FA（信任浏览器数量超限/过期等）→ 直接进入 2FA 视图
+    // （复用既有 2FA 流程与待验证上下文——服务层已缓存凭证，verify2FACode 可续链）
+    if (AuthManager.needs2FA()) {
+      this.auth.status = AuthStatus.TWO_FACTOR;
+      this.auth.twoFactorMethods = getDefaultTwoFactorMethods();
+      this.auth.twoFactorHint = this.tr('login.twoFactorRequired');
+      this.auth.selectedMethod = 'wechat';
+    } else {
+      // 自动登录因其它原因失败（网络/凭证无效等）→ 回登录页并提示可读原因
+      const lastError: string = AuthManager.getLastError();
+      if (lastError.length > 0) {
+        this.auth.status = AuthStatus.ERROR;
+        this.auth.error = lastError;
+      }
+    }
+  }
+
+  /** 登录成功后写回"上次选择/曾选择"（复用既有 trustDevice 持久化） */
+  private rememberTrustChoice(): void {
+    SettingsManager.setTrustDevice(this.trustDevice);
+    SettingsManager.markTrustChoiceMade();
+  }
 
   handleLogin(): void {
     if (this.isSubmitting) {
@@ -41,10 +97,11 @@ export struct LoginPage {
     this.auth.status = AuthStatus.AUTHENTICATING;
     this.auth.error = '';
 
-    SessionManager.login(this.studentId.trim(), this.password).then((result: LoginResult) => {
+    SessionManager.login(this.studentId.trim(), this.password, this.trustDevice).then((result: LoginResult) => {
       this.isSubmitting = false;
       if (result.type === LoginResultType.SUCCESS) {
         this.auth.status = AuthStatus.AUTHENTICATED;
+        this.rememberTrustChoice();
         this.getUIContext().getPromptAction().showToast({ message: result.message, duration: 3000 });
         this.onLoginSuccess();
       } else if (result.type === LoginResultType.TWO_FACTOR) {
@@ -92,6 +149,7 @@ export struct LoginPage {
       this.isSubmitting = false;
       if (result.type === LoginResultType.SUCCESS) {
         this.auth.status = AuthStatus.AUTHENTICATED;
+        this.rememberTrustChoice();
         this.onLoginSuccess();
       } else {
         this.auth.status = AuthStatus.ERROR;
@@ -251,11 +309,40 @@ export struct LoginPage {
               .border({ width: 1, color: Theme.border })
               .borderRadius(14)
               .padding({ left: 16, right: 16 })
-              .margin({ bottom: 24 })
+              .margin({ bottom: 12 })
               .enabled(!this.isSubmitting)
               .onChange((value: string) => {
                 this.password = value;
               })
+
+            if (this.credentialsPrefilled) {
+              Text(this.tr('login.savedCredentialsHint'))
+                .fontSize(11)
+                .fontColor(Theme.success)
+                .maxLines(2)
+                .margin({ bottom: 12 })
+            }
+
+            Row() {
+              Text(this.tr('login.trustDevice'))
+                .fontSize(14)
+                .fontColor(Theme.textSecondary)
+                .layoutWeight(1)
+
+              Toggle({ type: ToggleType.Switch, isOn: $$this.trustDevice })
+                .onChange((isOn: boolean) => {
+                  this.trustTouched = true;
+                })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .margin({ bottom: 4 })
+
+            Text(this.tr('login.trustDeviceHint'))
+              .fontSize(11)
+              .fontColor(Theme.textMuted)
+              .maxLines(2)
+              .margin({ bottom: 20 })
 
             Button(this.auth.status === AuthStatus.AUTHENTICATING ? this.tr('login.loggingIn') : this.tr('login.loginButton'))
               .type(ButtonType.Normal)

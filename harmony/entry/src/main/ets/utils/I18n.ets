@@ -256,6 +256,21 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'login.verifyFailed': { zh: '验证失败', en: 'Verification failed' },
   'login.errorRetry': { zh: '网络错误，请重试', en: 'Network error. Please try again.' },
 
+  // ── 登录页（login.*，trust-device 特性追加：信任开关 + 需二次认证提示）──
+  'login.trustDevice': { zh: '信任此设备', en: 'Trust this device' },
+  'login.trustDeviceHint': {
+    zh: '勾选后将在本设备安全保存登录凭证，下次启动自动登录；不勾选则仅本次运行内保持登录',
+    en: 'Checked, credentials are kept on this device for automatic sign-in next time; unchecked, you stay signed in only for this run'
+  },
+  'login.twoFactorRequired': {
+    zh: '需要二次认证，请完成验证后继续',
+    en: 'Two-factor authentication is required. Please verify to continue.'
+  },
+  'login.savedCredentialsHint': {
+    zh: '已填入本设备保存的凭证，点击「登录」即可继续',
+    en: 'Saved credentials are filled in. Tap Sign in to continue.'
+  },
+
   // ── 课表页正文（schedule.*，第二批追加；day0=周一 … day6=周日，对应页内 WEEKDAYS 下标）──
   'schedule.thisWeek': { zh: '本周', en: 'This week' },
   'schedule.offSemester': { zh: '非本学期周次', en: 'Outside semester' },
@@ -364,11 +379,25 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
     zh: '退出后将清除本机会话与登录凭证，下次使用需重新登录。',
     en: 'This will sign out and clear saved credentials on this device. You will need to sign in again.'
   },
+  'settings.logoutConfirmKeepMessage': {
+    zh: '退出后将结束本次登录并返回登录页；已信任此设备，登录凭证将保留，可直接一键登录。',
+    en: 'This ends the current session and returns to the sign-in page. This device is trusted, so your saved credentials remain for one-tap sign-in.'
+  },
   'settings.logoutConfirmOk': { zh: '确认退出', en: 'Sign out' },
   'settings.logoutSuccess': { zh: '已退出登录', en: 'Signed out' },
   'settings.logoutFailed': { zh: '退出登录失败，请重试', en: 'Failed to sign out. Please try again.' },
 
   'settings.saveFailed': { zh: '设置保存失败，请重试', en: 'Failed to save settings. Please try again.' },
+
+  // ── 信任此设备（trust-device 特性：设置页切换信任的明示提示）──
+  'settings.trustOnNotice': {
+    zh: '已信任此设备：登录时勾选"信任此设备"将保存登录凭证，下次可自动登录',
+    en: 'Trusted: with "Trust this device" checked at sign-in, credentials are kept for automatic sign-in'
+  },
+  'settings.trustOffNotice': {
+    zh: '已取消信任此设备：本次使用不受影响，退出应用后将清除已保存的登录凭证，下次需重新登录',
+    en: 'Trust removed: you can keep using the app. Saved credentials will be cleared when the app exits and you will need to sign in again'
+  },
 
   'settings.appName': { zh: 'CampusOS', en: 'CampusOS' },
   'settings.platformLine': { zh: 'HarmonyOS ArkTS', en: 'HarmonyOS ArkTS' },

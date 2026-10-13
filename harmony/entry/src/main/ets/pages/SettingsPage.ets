@@ -6,7 +6,8 @@
  *    演示模式写内存即全应用生效（状态对象为单一事实源）。
  *  - 全部文案走 I18n（@StorageLink('locale') 订阅语言即时重渲染）。
  *  - 账号信息只读展示（学号取自本地凭证）；未登录/演示模式展示状态文案。
- *  - 退出登录：AlertDialog 二次确认 → 注销会话 + 清除本地凭证。
+ *  - 退出登录：AlertDialog 二次确认 → 注销会话（凭证按信任策略：信任→保留，
+ *    登录页可回填一键直达；未信任→清除，不留残留）。
  *  - 数据清理：AI 会话 / 学习缓存（AlertDialog 二次确认 + 结果提示）。
  *  - 版本号读取自身应用包信息（bundleManager，禁止硬编码）。
  *  - "AI 记忆 / 操作记录 / 智能监控"标注"暂不支持"（禁用态，无跳转）。
@@ -219,6 +220,18 @@ export struct SettingsPage {
   private handleTrustToggle(enabled: boolean): void {
     this.trustDevice = enabled;
     SettingsManager.setTrustDevice(enabled);
+    SettingsManager.markTrustChoiceMade();
+    if (enabled) {
+      // 重新开启信任 → 复位"待清除"标记（后续登录恢复凭证持久化）
+      SettingsManager.setPendingClear(false);
+      this.showToast(this.tr('settings.trustOnNotice'));
+    } else {
+      // 取消信任 → 仅置"待清除"标记：本次运行内会话继续可用（不清会话、
+      // 不清 Cookie、不打断任何请求/漫游）；已持久化凭证在应用退出时清除
+      // （EntryAbility 退出钩子），被强杀则由下次启动兜底清除
+      SettingsManager.setPendingClear(true);
+      this.showToast(this.tr('settings.trustOffNotice'));
+    }
     this.confirmPersisted();
   }
 
@@ -391,13 +404,18 @@ export struct SettingsPage {
   }
 
   // ============================================================
-  // 退出登录：二次确认 → 注销会话 + 清除本地凭证 → 可读提示
+  // 退出登录：二次确认 → 仅注销会话 → 可读提示
+  // （凭证策略由 SessionManager.logout 按信任态处理：信任→保留凭证，
+  //   登录页回填后可一键直达主页；未信任→清除，不留残留）
   // ============================================================
 
   private confirmLogout(): void {
+    // 确认文案按信任态区分：信任开启时明示"凭证将保留，可直接一键登录"
+    const keepCreds: boolean = SettingsManager.isTrustDevice();
     this.getUIContext().showAlertDialog({
       title: this.tr('settings.logoutConfirmTitle'),
-      message: this.tr('settings.logoutConfirmMessage'),
+      message: keepCreds ?
+        this.tr('settings.logoutConfirmKeepMessage') : this.tr('settings.logoutConfirmMessage'),
       primaryButton: {
         value: this.tr('common.cancel'),
         action: (): void => {}
@@ -412,8 +430,9 @@ export struct SettingsPage {
 
   private async doLogout(): Promise<void> {
     try {
+      // 信任开启 → 仅清会话态（凭证保留，FR-012 修订）；
+      // 未信任 → 由 logout 内部清除凭证并复位"待清除"标记
       await SessionManager.logout();
-      await SecureStorage.clearCredentials();
       this.isSignedIn = false;
       this.accountStudentId = '';
       this.showToast(this.tr('settings.logoutSuccess'));
