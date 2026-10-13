@@ -68,11 +68,14 @@ struct QuickActionButton {
         .fontSize(FontSize.caption)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.primary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
     .borderRadius(Radius.pill)
     .backgroundColor(Theme.primaryMuted)
-    .margin({ right: Space.sm })
+    .margin({ right: Space.sm, bottom: Space.sm })
+    .constraintSize({ maxWidth: '100%' })
     .onClick(() => {
       this.onTap();
     })
@@ -345,7 +348,7 @@ export struct HomePage {
         .width('100%')
         .alignItems(HorizontalAlign.Start)
 
-        Row() {
+        Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(getQuickActions(), (action: QuickAction) => {
             QuickActionButton({
               iconText: action.icon,
