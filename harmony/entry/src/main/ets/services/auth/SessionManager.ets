@@ -149,6 +149,25 @@ export class SessionManager {
   }
 
   /**
+   * 统一会话复位入口：清认证服务与校园数据服务的瞬态会话态/缓存标志
+   * （learn csrf、trace、教务/成绩/电费等子系统"已确保"标志、课表/学期缓存）。
+   *
+   * 触发点（两处，缺一不可）：
+   *   - logout()：退出登录即复位——进程内重登不残留上一会话的标志/缓存；
+   *   - login()/verify2FACode() 成功后、AuthManager.loginSuccess() 广播门控前：
+   *     页面随门控重新挂载后的首次自动加载依赖全新会话态。
+   *
+   * 【边界】只清瞬态会话态：不清 Cookie、不动凭证（信任策略由调用方处理），
+   * 不改变"退出不清 Cookie"的既有会话复用语义（FR-012）。
+   */
+  private static resetSessionState(): void {
+    SessionManager.getAuthService().resetSessionState();
+    if (SessionManager.campusDataService !== undefined) {
+      SessionManager.campusDataService.resetSessionState();
+    }
+  }
+
+  /**
    * 登录（组装凭证 → 驱动 TsinghuaAuthService.login → 同步 AuthManager 状态）。
    *
    * @param trustDevice 可选：是否信任此设备（决定凭证是否持久化）。
@@ -177,6 +196,9 @@ export class SessionManager {
     const result: LoginResult = await service.login(credentials, trust);
 
     if (result.type === LoginResultType.SUCCESS) {
+      // 会话复位须在门控广播（loginSuccess）前完成：页面重新挂载后的首次
+      // 自动加载（HomePage/LearningPage aboutToAppear）依赖全新的 csrf 与子系统标志
+      SessionManager.resetSessionState();
       AuthManager.loginSuccess();
       StateManager.settings.demoMode = false;
       // 持久化 demoMode=false：否则冷启动 ensureLoaded 会读回旧的演示模式，
@@ -197,6 +219,8 @@ export class SessionManager {
     const result: LoginResult = await service.verify2FACode(code);
 
     if (result.type === LoginResultType.SUCCESS) {
+      // 同 login()：门控广播前复位会话瞬态态，保证页面重挂载后首次加载可用
+      SessionManager.resetSessionState();
       AuthManager.loginSuccess();
       StateManager.settings.demoMode = false;
       // 同上：2FA 通过后同样持久化，保证重启可自动登录
@@ -217,14 +241,19 @@ export class SessionManager {
   /**
    * 退出登录（2026-10-13 修订，FR-012）：仅清"会话/登录态"，凭证按信任策略处理。
    *
-   * - 只复位登录态（AuthManager → 门控信号广播，整应用回登录页）与自动登录标记；
-   *   不清 Cookie、不重置运行期会话复用相关状态（不打断进行中的请求与漫游）。
+   * - 先统一复位会话瞬态态（learn csrf/trace + 各子系统"已确保"标志/缓存——
+   *   进程内"退出→再登录"不得复用陈旧态），再复位登录态（AuthManager → 门控
+   *   信号广播，整应用回登录页）与自动登录标记；不清 Cookie、不重置运行期
+   *   会话复用相关状态（不打断进行中的请求与漫游）。
    *   故不再透传 service.logout()——其内部会 clearSession（清 Cookie）并无条件
    *   清除凭证，与修订语义冲突（服务层保持不动，重新登录时 login 首步自会清旧会话）。
    * - 凭证策略：信任开启 → 保留 ASSET 凭证（登录页回填 + 一键直达主页/自动登录可用）；
    *   未信任 → 清除凭证并复位"待清除"标记（不得留残留，含历史遗留）。
    */
   static async logout(): Promise<void> {
+    // 退出即复位会话瞬态态：learn csrf 缓存、教务/成绩/电费"已确保"标志等
+    // 均指向旧会话，进程内重登前必须复位，否则重登后首次数据拉取静默失败
+    SessionManager.resetSessionState();
     AuthManager.logout();
     await PreferencesStorage.setBoolean(SESSION_SAVED_KEY, false);
     if (!SettingsManager.isTrustDevice()) {

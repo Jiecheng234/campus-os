@@ -118,6 +118,17 @@ export class TsinghuaAuthService {
   }
 
   /**
+   * 会话瞬态复位（SessionManager 在退出登录 / 登录成功两处统一调用）：
+   * 清 learn csrf 与 trace 等瞬态会话态，避免进程内"退出→再登录"残留上一会话状态。
+   * 【边界】不清 Cookie（保持"退出不清 Cookie"的会话复用语义，FR-012）、
+   * 不动 cachedCredentials / persistCredentials（凭证信任策略由调用方处理）。
+   */
+  resetSessionState(): void {
+    this.csrfToken = '';
+    this.trace = [];
+  }
+
+  /**
    * 从 SecureStorage 恢复凭证到内存（hydrate）。
    * 【关键】fingerprint 复用已持久化值（服务器已信任的设备指纹）；
    * 若无则生成 32 位无横线 UUID（与 SessionManager.login 格式一致）。
@@ -307,12 +318,16 @@ export class TsinghuaAuthService {
 
     this.addTrace('activating_learn');
     try {
-      await this.activateLearnSession(credentials);
+      await this.activateLearnWithRetry(credentials);
       this.addTrace('learn_activated');
       successResult.message = '登录成功 (learn已激活)';
     } catch (e) {
-      this.addTrace('learn_fail:' + (e instanceof Error ? e.message : ''));
-      successResult.message = '登录成功 (learn未激活: ' + (e instanceof Error ? e.message : '') + ')';
+      // learn 激活失败不再静默：已在 activateLearnWithRetry 内重试一次并留痕，
+      // 这里补最终失败日志 + 结果 message 标注，避免"登录成功但学习链路不可用"无感知
+      const learnErrMsg: string = e instanceof Error ? e.message : '';
+      this.addTrace('learn_fail:' + learnErrMsg);
+      Log.i('LearnAct', 'LEARN_ACTIVATE final_fail (learn APIs unavailable): %{public}s', learnErrMsg);
+      successResult.message = '登录成功 (learn未激活: ' + learnErrMsg + ')';
     }
 
     return successResult;
@@ -364,6 +379,31 @@ export class TsinghuaAuthService {
     Log.i('LearnAct', 'ROAM_LB code=%{public}d len=%{public}d has_sm2=%{public}s',
       lbResp.statusCode, lbResp.body.length, lbResp.body.indexOf('sm2publicKey') >= 0);
     Log.i('LearnAct', 'ROAM_LB_FULL=%{public}s', lbResp.body);
+  }
+
+  /**
+   * learn 激活（失败重试一次 + 可读日志）：
+   * 之前 login()/verify2FACode() 内激活失败被静默吞掉，进程内"退出→重登"后
+   * 学习链路可能未重新激活且无任何感知（学习页始终无数据）。现失败先重试一次，
+   * 仍失败抛出（调用方记录最终日志并在结果 message 标注"learn未激活"）。
+   */
+  private async activateLearnWithRetry(credentials: CampusCredentials): Promise<void> {
+    let lastErrMsg: string = '';
+    for (let attempt: number = 1; attempt <= 2; attempt++) {
+      try {
+        await this.activateLearnSession(credentials);
+        if (attempt > 1) {
+          this.addTrace('learn_retry_ok');
+          Log.i('LearnAct', 'LEARN_ACTIVATE retry_ok');
+        }
+        return;
+      } catch (e) {
+        lastErrMsg = e instanceof Error ? e.message : String(e);
+        this.addTrace('learn_fail_' + String(attempt) + ':' + lastErrMsg);
+        Log.i('LearnAct', 'LEARN_ACTIVATE attempt=%{public}d fail: %{public}s', attempt, lastErrMsg);
+      }
+    }
+    throw new Error(lastErrMsg);
   }
 
   /**
@@ -816,10 +856,12 @@ export class TsinghuaAuthService {
           this.addTrace('info_roam_fail_2fa:' + (e instanceof Error ? e.message : ''));
         }
         try {
-          await this.activateLearnSession(this.cachedCredentials);
+          await this.activateLearnWithRetry(this.cachedCredentials);
           this.addTrace('learn_activated_after_2fa');
         } catch (e) {
-          this.addTrace('learn_fail_after_2fa:' + (e instanceof Error ? e.message : ''));
+          const learnErrMsg: string = e instanceof Error ? e.message : '';
+          this.addTrace('learn_fail_after_2fa:' + learnErrMsg);
+          Log.i('LearnAct', 'LEARN_ACTIVATE final_fail (2fa): %{public}s', learnErrMsg);
         }
       }
 

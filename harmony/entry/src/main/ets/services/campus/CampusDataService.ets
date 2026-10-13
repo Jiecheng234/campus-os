@@ -762,7 +762,6 @@ const NEWS_CHANNEL_LABELS: Record<string, string> = {
 
 export class CampusDataService {
   private http: HttpClient;
-  private csrfToken: string = '';
   private learnReady: boolean = false;
   public trace: string = '';
   public currentSemester: string = '';
@@ -779,16 +778,28 @@ export class CampusDataService {
     this.http = http;
   }
 
+  /**
+   * 会话瞬态复位（SessionManager 在退出登录 / 登录成功两处统一调用）：
+   * 清各子系统"已确保"标志与课表/学期缓存，避免进程内"退出→再登录"复用
+   * 上一会话的陈旧标志（registrar/grades/ele 会话已随重登失效）导致
+   * 重登后首次拉取失败且不再自动重试。Cookie/凭证不在本层管理，不涉及。
+   */
+  resetSessionState(): void {
+    this.learnReady = false;
+    this.registrarRoamEnsured = false;
+    this.gradesRoamEnsured = false;
+    this.eleSessionEnsured = false;
+    this.scheduleStatus = 'unknown';
+    this.semesterFirstDay = '';
+    this.currentSemester = '';
+    this.trace = '';
+  }
+
   async getCsrfToken(): Promise<string> {
-    if (this.csrfToken.length > 0) {
-      return this.csrfToken;
-    }
-    const authCsrf: string = SessionManager.getAuthService().getCsrfToken();
-    if (authCsrf.length > 0) {
-      this.csrfToken = authCsrf;
-      return authCsrf;
-    }
-    return '';
+    // 【不本地缓存】始终以认证服务的 learn csrf 为准：完整重登录（用户"退出→重登"
+    // 或 withSessionRecovery 会话恢复兜底）会换发新 _csrf，本地缓存跨会话必陈旧
+    // → learn API 全量 403/Invalid Token（曾致"进程内重登后学习页始终无数据"）。
+    return SessionManager.getAuthService().getCsrfToken();
   }
 
   /** WebVPN 的 XSRF-TOKEN（用于 webvpn 漫游，与 learn csrf 不同）。
