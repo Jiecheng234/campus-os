@@ -19,6 +19,14 @@
  *
  * 【会话（FR-007）】新建/切换/删除（二次确认）经 AIChatManager；
  *   消息区随会话切换；aboutToAppear 恢复既有会话（loadConversations）。
+ *
+ * 【状态胶囊即时刷新】设置页保存/清除配置（或切换演示模式）后，经
+ *   SettingsManager 写入 AppStorage 'aiConfigTick' 时间戳信号，本页
+ *   @StorageLink + @Watch 订阅并实时重读 SettingsManager 重算胶囊文案，
+ *   无需重启即可更新 provider · model 展示（Tabs 切换不触发生命周期）。
+ *
+ * 【消息布局】用户消息右对齐（主色底白字、纯文本）；助手消息左对齐
+ *   （灰底、MarkdownText 渲染、无头像）。
  * ============================================================================
  */
 import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
@@ -29,6 +37,7 @@ import { LLMService, LLMStreamSession, LLMStreamHandlers, LLMProviderConfig,
 import { ApiKeyStore } from '../../services/ai/ApiKeyStore';
 import { AIChatManager, AIChatMessage, AIChatMessageStatus } from '../../state/AIChatManager';
 import { SettingsManager, AIProviderSettings } from '../../state/SettingsManager';
+import { MarkdownText } from '../common/components/MarkdownText';
 import { ChatMessage, Conversation } from '../../domain/AIAgentTypes';
 import { emitNavigate, NavTarget } from '../../state/UiEvents';
 
@@ -69,6 +78,10 @@ function formatDate(iso: string): string {
     `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/**
+ * 消息气泡：用户消息右对齐（主色底白字、纯文本）、助手消息左对齐
+ * （灰底、Markdown 渲染）；助手无头像（无占位空间）。
+ */
 @Component
 struct MessageBubble {
   @Prop content: string = '';
@@ -94,55 +107,57 @@ struct MessageBubble {
   }
 
   build() {
-    Row() {
-      if (this.role === 'assistant') {
-        Column() {
-          Text('🤖')
-            .fontSize(14)
-            .width(32)
-            .height(32)
-            .textAlign(TextAlign.Center)
-            .borderRadius(16)
-            .backgroundColor('rgba(124,92,250,0.10)')
-        }
-        .margin({ right: 8 })
-      }
-      Column() {
+    Column() {
+      if (this.role === 'user') {
+        // 用户消息：右对齐、主色底白字、纯文本（长词/长链接可断行）
         Text(this.content)
           .fontSize(14)
-          .fontColor(Theme.text)
+          .fontColor(Theme.textInvert)
           .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-          .borderRadius(16)
-          .backgroundColor(this.role === 'user' ? Theme.primary : Theme.surfaceAlt)
-          .constraintSize({ maxWidth: '75%' })
+          .borderRadius({ topLeft: 16, topRight: 16, bottomLeft: 16, bottomRight: 4 })
+          .backgroundColor(Theme.primary)
+          .constraintSize({ maxWidth: '80%' })
           .wordBreak(WordBreak.BREAK_WORD)
-        if (this.statusLabel().length > 0) {
-          Text(this.statusLabel())
-            .fontSize(10)
-            .fontColor(this.status === AIChatMessageStatus.ERROR ? Theme.error : Theme.textMuted)
-            .margin({ top: 2, left: 4 })
+      } else {
+        // 助手消息：左对齐、灰底、Markdown 渲染（无头像及其占位）
+        Column() {
+          MarkdownText({ content: this.content })
         }
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .borderRadius({ topLeft: 16, topRight: 16, bottomLeft: 4, bottomRight: 16 })
+        .backgroundColor(Theme.surfaceAlt)
+        .constraintSize({ maxWidth: '88%' })
+      }
+
+      if (this.statusLabel().length > 0) {
+        Text(this.statusLabel())
+          .fontSize(10)
+          .fontColor(this.status === AIChatMessageStatus.ERROR ? Theme.error : Theme.textMuted)
+          .margin({ top: 2 })
+      }
+      if (this.timeText.length > 0) {
         Text(this.timeText)
           .fontSize(10)
           .fontColor(Theme.textMuted)
-          .margin({ top: 2, left: this.role === 'user' ? 0 : 4, right: this.role === 'user' ? 4 : 0 })
-      }
-      .alignItems(this.role === 'user' ? HorizontalAlign.End : HorizontalAlign.Start)
-
-      if (this.role === 'user') {
-        Blank()
+          .margin({ top: 2 })
       }
     }
     .width('100%')
+    .alignItems(this.role === 'user' ? HorizontalAlign.End : HorizontalAlign.Start)
     .padding({ left: 16, right: 16, top: 6, bottom: 6 })
-    .justifyContent(this.role === 'user' ? FlexAlign.End : FlexAlign.Start)
   }
 }
 
 @Component
 export struct AIChatPage {
-  /** 语言订阅：语言切换即时重渲染 */
-  @StorageLink('locale') locale: string = 'zh';
+  /** 语言订阅：语言切换即时重渲染（胶囊文案经 refreshChip 联动重算） */
+  @StorageLink('locale') @Watch('refreshChip') locale: string = 'zh';
+  /**
+   * AI 配置变更信号（设置页保存/清除/演示开关时由 SettingsManager 写入
+   * AppStorage 时间戳）：订阅后无需重启即时刷新状态胶囊，解决 Tabs 切换
+   * 不触发页面生命周期导致的 provider·model 展示滞后。
+   */
+  @StorageLink('aiConfigTick') @Watch('refreshChip') aiConfigTick: number = 0;
 
   /** 当前会话消息（渲染副本；消息入列后不再原地变更） */
   @State messages: ChatMessage[] = [];
@@ -157,6 +172,8 @@ export struct AIChatPage {
   @State showNotConfigured: boolean = false;
   /** 会话列表半模态 */
   @State showChatList: boolean = false;
+  /** 状态胶囊文案（演示提示 / provider · model；实时读 SettingsManager 重算，不缓存 provider/model） */
+  @State chipLabel: string = '';
 
   /** 流式请求取消句柄（busy 时有效） */
   private session: LLMStreamSession | undefined = undefined;
@@ -178,6 +195,8 @@ export struct AIChatPage {
   // ============================================================
 
   aboutToAppear(): void {
+    // 初始化状态胶囊（实时读 SettingsManager；重启后同路径取到持久化配置）
+    this.refreshChip();
     // 启动恢复既有会话（含旧数据归一），完成后刷新消息区
     AIChatManager.loadConversations().then((): void => {
       this.refreshMessages();
@@ -486,10 +505,15 @@ export struct AIChatPage {
     emitNavigate(target);
   }
 
-  /** 状态胶囊：演示模式提示 / 当前 provider · model */
-  private chipText(): string {
+  /**
+   * 重算状态胶囊文案（语言/配置信号变化时触发；实时读 SettingsManager
+   * 与 LLMService 解析，不缓存 provider/model 到普通成员）：
+   * 演示模式提示 / 当前 provider · model。
+   */
+  private refreshChip(): void {
     if (SettingsManager.isDemoMode()) {
-      return this.tr('ai.demoNotice');
+      this.chipLabel = this.tr('ai.demoNotice');
+      return;
     }
     const settings: AIProviderSettings = SettingsManager.getAIProviderSettings();
     const config: LLMProviderConfig = new LLMProviderConfig();
@@ -498,10 +522,7 @@ export struct AIChatPage {
     config.model = settings.model;
     const model: string = LLMService.resolveModel(config);
     const label: string = this.presetLabel(settings.preset);
-    if (model.length > 0) {
-      return label + ' · ' + model;
-    }
-    return label;
+    this.chipLabel = model.length > 0 ? label + ' · ' + model : label;
   }
 
   private presetLabel(id: string): string {
@@ -575,18 +596,7 @@ export struct AIChatPage {
 
   @Builder
   typingIndicator() {
-    Row() {
-      Column() {
-        Text('🤖')
-          .fontSize(14)
-          .width(32)
-          .height(32)
-          .textAlign(TextAlign.Center)
-          .borderRadius(16)
-          .backgroundColor('rgba(124,92,250,0.10)')
-      }
-      .margin({ right: 8 })
-
+    Column() {
       Row() {
         Text('●').fontSize(6).fontColor(Theme.textMuted).margin({ right: 4 })
         Text('●').fontSize(6).fontColor(Theme.textMuted).margin({ right: 4 })
@@ -597,8 +607,8 @@ export struct AIChatPage {
       .backgroundColor(Theme.surfaceAlt)
     }
     .width('100%')
+    .alignItems(HorizontalAlign.Start)
     .padding({ left: 16, right: 16, top: 10 })
-    .justifyContent(FlexAlign.Start)
   }
 
   @Builder
@@ -675,9 +685,10 @@ export struct AIChatPage {
 
       Divider().color(Theme.divider)
 
-      // 状态胶囊：演示模式提示 / provider · model（点击跳设置）
+      // 状态胶囊：演示模式提示 / provider · model（点击跳设置；
+      // 文案随语言与 aiConfigTick 配置信号即时重算，无需重启）
       Row() {
-        Text(this.chipText())
+        Text(this.chipLabel)
           .fontSize(FontSize.micro)
           .fontColor(Theme.textSecondary)
           .maxLines(1)
@@ -706,37 +717,24 @@ export struct AIChatPage {
 
             if (this.busy) {
               if (this.streamingText.length > 0) {
-                Row() {
+                // 流式增量：助手气泡（左对齐、灰底、Markdown 渲染、无头像）
+                Column() {
                   Column() {
-                    Text('🤖')
-                      .fontSize(14)
-                      .width(32)
-                      .height(32)
-                      .textAlign(TextAlign.Center)
-                      .borderRadius(16)
-                      .backgroundColor('rgba(124,92,250,0.10)')
+                    MarkdownText({ content: this.streamingText })
                   }
-                  .margin({ right: 8 })
+                  .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+                  .borderRadius({ topLeft: 16, topRight: 16, bottomLeft: 4, bottomRight: 16 })
+                  .backgroundColor(Theme.surfaceAlt)
+                  .constraintSize({ maxWidth: '88%' })
 
-                  Column() {
-                    Text(this.streamingText)
-                      .fontSize(14)
-                      .fontColor(Theme.text)
-                      .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-                      .borderRadius(16)
-                      .backgroundColor(Theme.surfaceAlt)
-                      .constraintSize({ maxWidth: '75%' })
-                      .wordBreak(WordBreak.BREAK_WORD)
-                    Text(this.tr('ai.generating'))
-                      .fontSize(10)
-                      .fontColor(Theme.textMuted)
-                      .margin({ top: 2, left: 4 })
-                  }
-                  .alignItems(HorizontalAlign.Start)
+                  Text(this.tr('ai.generating'))
+                    .fontSize(10)
+                    .fontColor(Theme.textMuted)
+                    .margin({ top: 2 })
                 }
                 .width('100%')
+                .alignItems(HorizontalAlign.Start)
                 .padding({ left: 16, right: 16, top: 6, bottom: 6 })
-                .justifyContent(FlexAlign.Start)
               } else {
                 this.typingIndicator()
               }

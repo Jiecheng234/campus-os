@@ -13,6 +13,9 @@
  * 【AI provider 配置（ai-chat 特性）】preset/baseUrl/model 持久化于独立
  * 偏好键（AI_PROVIDER_SETTINGS_KEY），与 AppSettings 解耦：
  *  - getAIProviderSettings() / setAIProviderSettings() / resetAIProviderSettings()
+ *  - 【配置变更信号】setAIProviderSettings / resetAIProviderSettings / setDemoMode
+ *    会向 AppStorage 写 'aiConfigTick' 时间戳信号（AI 页 @StorageLink 订阅，
+ *    设置页保存后对话页胶囊无需重启即时刷新）。
  *  - 【apiKey 字段已弃用】AppSettings.apiKey 不再承载真实 Key：
  *    API Key 一律经 services/ai/ApiKeyStore（系统关键资产存储 ASSET）读写，
  *    禁止写入偏好设置明文（FR-002 / SC-008）；ensureLoaded 若发现历史
@@ -28,6 +31,8 @@ import { Log } from '../utils/Logger';
 const LOG_TAG: string = 'SettingsMgr';
 /** AI provider 配置持久化键（沿用 StorageKeys 的 @campusos/ 前缀约定） */
 const AI_PROVIDER_SETTINGS_KEY: string = '@campusos/ai_provider_config';
+/** AppStorage 配置变更信号键（AI 页 @StorageLink 订阅：保存/清除/演示开关后无需重启即时刷新 provider·model 胶囊） */
+const AI_CONFIG_TICK_KEY: string = 'aiConfigTick';
 
 /** AI provider 配置（预设标识 + 自定义 baseUrl/model；不含 API Key） */
 export class AIProviderSettings {
@@ -98,6 +103,7 @@ export class SettingsManager {
   static setDemoMode(enabled: boolean): void {
     StateManager.settings.demoMode = enabled;
     SettingsManager.persist('demoMode');
+    SettingsManager.notifyAiConfigChanged();
   }
 
   static isTrustDevice(): boolean {
@@ -122,18 +128,20 @@ export class SettingsManager {
     return copy;
   }
 
-  /** 写入 AI provider 配置（内存即生效 + 异步持久化） */
+  /** 写入 AI provider 配置（内存即生效 + 异步持久化 + 配置变更信号广播） */
   static setAIProviderSettings(preset: string, baseUrl: string, model: string): void {
     SettingsManager.aiProvider.preset = preset;
     SettingsManager.aiProvider.baseUrl = baseUrl;
     SettingsManager.aiProvider.model = model;
     SettingsManager.persistAIProvider();
+    SettingsManager.notifyAiConfigChanged();
   }
 
   /** 重置 AI provider 配置为默认（openai 预设、空 baseUrl/model） */
   static resetAIProviderSettings(): void {
     SettingsManager.aiProvider = new AIProviderSettings();
     SettingsManager.persistAIProvider();
+    SettingsManager.notifyAiConfigChanged();
   }
 
   /** 从持久化键加载 AI provider 配置（字段缺失回退默认；失败保持默认） */
@@ -171,6 +179,11 @@ export class SettingsManager {
       Log.e(LOG_TAG, 'AI_PROVIDER save failed');
       return false;
     });
+  }
+
+  /** 广播 AI 配置变更（AppStorage 时间戳信号；不承载配置内容，仅驱动订阅页重算） */
+  private static notifyAiConfigChanged(): void {
+    AppStorage.setOrCreate<number>(AI_CONFIG_TICK_KEY, Date.now());
   }
 
   // ============================================================

@@ -107,7 +107,10 @@ struct UnsupportedRow {
 export struct SettingsPage {
   /** 语言运行时状态（AppStorage）：切换即时重渲染整页文案 */
   @StorageLink('locale') locale: string = 'zh';
-  @State showLangDialog: boolean = false;
+  /** 设置弹层驱动：单节点单 bindSheet + 模式枚举（'language' | 'ai' | ''），
+   *  避免同节点多次 bindSheet 后者覆盖前者导致的"点击无响应/延迟弹出" */
+  @State sheetMode: string = '';
+  @State sheetVisible: boolean = false;
   @State demoMode: boolean = false;
   @State trustDevice: boolean = false;
   @State isSignedIn: boolean = false;
@@ -115,7 +118,6 @@ export struct SettingsPage {
   @State versionName: string = '';
 
   // ── AI 模型配置（ai-chat 特性）──
-  @State showAiPresetSheet: boolean = false;
   @State aiPreset: string = 'openai';
   @State aiBaseUrl: string = '';
   @State aiModel: string = '';
@@ -231,7 +233,19 @@ export struct SettingsPage {
   private selectLanguage(locale: string): void {
     // 校验 + 写 AppStorage（即时重渲染）+ 经 SettingsManager 持久化
     I18n.setLocale(locale);
-    this.showLangDialog = false;
+    this.closeSettingsSheet();
+  }
+
+  /** 打开设置弹层（语言/AI 预设共用单弹层，模式互斥） */
+  private openSettingsSheet(mode: string): void {
+    this.sheetMode = mode;
+    this.sheetVisible = true;
+  }
+
+  /** 关闭设置弹层并复位模式（所有关闭路径统一走此处，两入口互不串扰） */
+  private closeSettingsSheet(): void {
+    this.sheetVisible = false;
+    this.sheetMode = '';
   }
 
   // ============================================================
@@ -287,7 +301,7 @@ export struct SettingsPage {
       this.aiBaseUrl = preset.baseUrl;
       this.aiModel = preset.defaultModel;
     }
-    this.showAiPresetSheet = false;
+    this.closeSettingsSheet();
   }
 
   /** 保存配置：先入 Key（ASSET，失败可读提示且不落明文），再持久化 provider 配置 */
@@ -526,7 +540,7 @@ export struct SettingsPage {
           SettingRow({
             label: this.tr('settings.language'),
             value: this.locale === 'en' ? this.tr('settings.langEn') : this.tr('settings.langZh'),
-            onItemClick: () => { this.showLangDialog = true; }
+            onItemClick: () => { this.openSettingsSheet('language'); }
           })
         }
         .width('100%')
@@ -562,7 +576,7 @@ export struct SettingsPage {
           .width('100%')
           .padding({ left: Space.md, right: Space.md, top: 14, bottom: 14 })
           .alignItems(VerticalAlign.Center)
-          .onClick(() => { this.showAiPresetSheet = true; })
+          .onClick(() => { this.openSettingsSheet('ai'); })
 
           Divider().color(Theme.divider)
 
@@ -775,77 +789,73 @@ export struct SettingsPage {
     .height('100%')
     .backgroundColor(Theme.background)
     .scrollBar(BarState.Off)
-    .bindSheet($$this.showLangDialog, this.langSheetBuilder(), {
-      height: 260,
+    .bindSheet($$this.sheetVisible, this.settingsSheetBuilder(), {
+      height: this.sheetMode === 'ai' ? 340 : 260,
       showClose: true,
       dragBar: true,
-    })
-    .bindSheet($$this.showAiPresetSheet, this.aiPresetSheetBuilder(), {
-      height: 340,
-      showClose: true,
-      dragBar: true,
+      onDisappear: () => { this.sheetMode = ''; }
     })
   }
 
+  /** 设置弹层内容：同一稳定节点上唯一一次 bindSheet，按模式切换 builder 内容 */
   @Builder
-  aiPresetSheetBuilder() {
-    Column() {
-      Text(this.tr('settings.aiSelectPreset'))
-        .fontSize(FontSize.h3)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Theme.text)
-        .margin({ bottom: Space.md })
+  settingsSheetBuilder() {
+    if (this.sheetMode === 'ai') {
+      Column() {
+        Text(this.tr('settings.aiSelectPreset'))
+          .fontSize(FontSize.h3)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Theme.text)
+          .margin({ bottom: Space.md })
 
-      ForEach(LLMService.presetIds(), (id: string) => {
-        Button(this.presetLabel(id))
+        ForEach(LLMService.presetIds(), (id: string) => {
+          Button(this.presetLabel(id))
+            .type(ButtonType.Normal)
+            .width('100%')
+            .height(44)
+            .fontSize(FontSize.body)
+            .fontColor(this.aiPreset === id ? Theme.textInvert : Theme.text)
+            .backgroundColor(this.aiPreset === id ? Theme.primary : Theme.surfaceAlt)
+            .borderRadius(Radius.sm)
+            .margin({ top: Space.sm })
+            .onClick(() => { this.selectAiPreset(id); })
+        }, (id: string) => id)
+      }
+      .width('100%')
+      .padding(Space.lg)
+      .alignItems(HorizontalAlign.Start)
+    } else {
+      Column() {
+        Text(this.tr('settings.selectLanguage'))
+          .fontSize(FontSize.h3)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Theme.text)
+          .margin({ bottom: Space.md })
+
+        Button(this.tr('settings.langZh'))
           .type(ButtonType.Normal)
           .width('100%')
           .height(44)
           .fontSize(FontSize.body)
-          .fontColor(this.aiPreset === id ? Theme.textInvert : Theme.text)
-          .backgroundColor(this.aiPreset === id ? Theme.primary : Theme.surfaceAlt)
+          .fontColor(this.locale === 'zh' ? Theme.textInvert : Theme.text)
+          .backgroundColor(this.locale === 'zh' ? Theme.primary : Theme.surfaceAlt)
           .borderRadius(Radius.sm)
-          .margin({ top: Space.sm })
-          .onClick(() => { this.selectAiPreset(id); })
-      }, (id: string) => id)
+          .onClick(() => { this.selectLanguage('zh'); })
+
+        Button(this.tr('settings.langEn'))
+          .type(ButtonType.Normal)
+          .width('100%')
+          .height(44)
+          .fontSize(FontSize.body)
+          .fontColor(this.locale === 'en' ? Theme.textInvert : Theme.text)
+          .backgroundColor(this.locale === 'en' ? Theme.primary : Theme.surfaceAlt)
+          .borderRadius(Radius.sm)
+          .margin({ top: Space.md })
+          .onClick(() => { this.selectLanguage('en'); })
+      }
+      .width('100%')
+      .padding(Space.lg)
+      .alignItems(HorizontalAlign.Start)
     }
-    .width('100%')
-    .padding(Space.lg)
-    .alignItems(HorizontalAlign.Start)
-  }
-
-  @Builder
-  langSheetBuilder() {
-    Column() {
-      Text(this.tr('settings.selectLanguage'))
-        .fontSize(FontSize.h3)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Theme.text)
-        .margin({ bottom: Space.md })
-
-      Button(this.tr('settings.langZh'))
-        .type(ButtonType.Normal)
-        .width('100%')
-        .height(44)
-        .fontSize(FontSize.body)
-        .fontColor(this.locale === 'zh' ? Theme.textInvert : Theme.text)
-        .backgroundColor(this.locale === 'zh' ? Theme.primary : Theme.surfaceAlt)
-        .borderRadius(Radius.sm)
-        .onClick(() => { this.selectLanguage('zh'); })
-
-      Button(this.tr('settings.langEn'))
-        .type(ButtonType.Normal)
-        .width('100%')
-        .height(44)
-        .fontSize(FontSize.body)
-        .fontColor(this.locale === 'en' ? Theme.textInvert : Theme.text)
-        .backgroundColor(this.locale === 'en' ? Theme.primary : Theme.surfaceAlt)
-        .borderRadius(Radius.sm)
-        .margin({ top: Space.md })
-        .onClick(() => { this.selectLanguage('en'); })
-    }
-    .width('100%')
-    .padding(Space.lg)
-    .alignItems(HorizontalAlign.Start)
   }
 }
