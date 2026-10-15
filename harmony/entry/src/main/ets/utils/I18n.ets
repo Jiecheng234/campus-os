@@ -402,6 +402,45 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'settings.appName': { zh: 'CampusOS', en: 'CampusOS' },
   'settings.platformLine': { zh: 'HarmonyOS ArkTS', en: 'HarmonyOS ArkTS' },
   'settings.versionUnknown': { zh: '版本未知', en: 'Version unknown' },
+
+  // ── 体测页（pe.*，PETestPage 视觉改版追加；数据 label/value 来自教务原样不翻译）──
+  'pe.title': { zh: '体测成绩', en: 'Fitness test' },
+  'pe.refresh': { zh: '刷新', en: 'Refresh' },
+  'pe.demoHint': { zh: '演示数据 · 登录后显示真实成绩', en: 'Demo data · Sign in to see real results' },
+  'pe.loading': { zh: '正在加载体测成绩...', en: 'Loading fitness results…' },
+  'pe.errorTitle': { zh: '体测成绩加载失败', en: 'Failed to load fitness results' },
+  'pe.retry': { zh: '重试', en: 'Retry' },
+  'pe.emptyTitle': { zh: '暂无体测数据', en: 'No fitness data yet' },
+  'pe.emptyMessage': {
+    zh: '教务系统暂未返回体测记录，可以稍后刷新。',
+    en: 'The registrar has not returned fitness records yet. Try refreshing later.'
+  },
+  'pe.groupSummary': { zh: '总览', en: 'Overview' },
+  'pe.groupDetails': { zh: '单项成绩', en: 'Individual events' },
+
+  // ── 首页建议操作（home.suggest.*，对齐原项目 homeWorkbench task_plan 语义）──
+  'home.suggest.title': { zh: '建议操作', en: 'Suggested actions' },
+  'home.suggest.subtitle': { zh: '按紧急度和上下文排序', en: 'Sorted by urgency and context' },
+  'home.suggest.nextClass': { zh: '下一节：{title}', en: 'Next: {title}' },
+  'home.suggest.openSchedule': { zh: '看日程', en: 'Schedule' },
+  'home.suggest.nextDdl': { zh: '优先处理：{title}', en: 'Prioritize: {title}' },
+  'home.suggest.open': { zh: '查看', en: 'Open' },
+  'home.suggest.unread': { zh: '{n} 条未读课程通知', en: '{n} unread course notices' },
+  'home.suggest.unreadDetail': {
+    zh: '先看课程通知，再决定是否添加 DDL 或日程。',
+    en: 'Review notices first, then add deadlines or events if needed.'
+  },
+  'home.suggest.openNotices': { zh: '看通知', en: 'Open' },
+  'home.suggest.quietTitle': { zh: '今天节奏比较轻', en: 'A lighter day' },
+  'home.suggest.quietDetail': {
+    zh: '可以安排复习、整理资料，或让 AI 帮你规划下一阶段。',
+    en: 'Good time to review, organize files, or plan the next block.'
+  },
+  'home.suggest.overdue': { zh: '已经逾期', en: 'Overdue' },
+  'home.suggest.dueToday': { zh: '今天截止', en: 'Due today' },
+  'home.suggest.dueTomorrow': { zh: '明天截止', en: 'Due tomorrow' },
+  'home.suggest.dueInDays': { zh: '{n} 天后截止', en: 'Due in {n} days' },
+  'home.suggest.noDeadline': { zh: '未设置截止时间', en: 'No deadline' },
 };
 
 export class I18n {

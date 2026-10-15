@@ -109,9 +109,18 @@ export struct SettingsPage {
   /** 语言运行时状态（AppStorage）：切换即时重渲染整页文案 */
   @StorageLink('locale') locale: string = 'zh';
   /** 设置弹层驱动：单节点单 bindSheet + 模式枚举（'language' | 'ai' | ''），
-   *  避免同节点多次 bindSheet 后者覆盖前者导致的"点击无响应/延迟弹出" */
+   *  避免同节点多次 bindSheet 后者覆盖前者导致的"点击无响应/延迟弹出"。
+   *  visible 采用单向绑定（不用 $$）：交互关闭统一经 shouldDismiss 进入
+   *  本页关闭流程，框架不再回写 visible，杜绝上一轮关闭的过期 false
+   *  回写把新一轮弹层"连坐关闭"的竞态。 */
   @State sheetMode: string = '';
   @State sheetVisible: boolean = false;
+  /** 打开序号令牌：每次打开递增。用于识别过期的关闭事件——
+   *  onDisappear 仅在令牌未被更新的打开刷新时才复位模式。 */
+  private sheetOpenToken: number = 0;
+  /** 当前关闭流程所属令牌（进入关闭流程时记录为当时的打开令牌）；
+   *  -1 表示无在途关闭流程（新打开时复位，使旧 onDisappear 必然失配）。 */
+  private sheetClosingToken: number = -1;
   @State demoMode: boolean = false;
   @State trustDevice: boolean = false;
   @State isSignedIn: boolean = false;
@@ -249,16 +258,22 @@ export struct SettingsPage {
     this.closeSettingsSheet();
   }
 
-  /** 打开设置弹层（语言/AI 预设共用单弹层，模式互斥） */
+  /** 打开设置弹层（语言/AI 预设共用单弹层，模式互斥）。
+   *  时序：先递增令牌并作废在途关闭标记 → 写入新模式 → 最后由 visible 驱动弹出。
+   *  打开不依赖上一轮残留状态（无论上一轮关闭动画/onDisappear 是否走完均立即生效）。 */
   private openSettingsSheet(mode: string): void {
+    this.sheetOpenToken += 1;
+    this.sheetClosingToken = -1;
     this.sheetMode = mode;
     this.sheetVisible = true;
   }
 
-  /** 关闭设置弹层并复位模式（所有关闭路径统一走此处，两入口互不串扰） */
+  /** 关闭设置弹层：关闭流程开始即记录令牌（所有关闭路径统一走此处，两入口互不串扰）。
+   *  模式不在此时复位，交由 onDisappear 按令牌守卫复位——若关闭期间发生了新的
+   *  打开（令牌已变），过期 onDisappear 不会清掉新一轮的模式/状态。 */
   private closeSettingsSheet(): void {
+    this.sheetClosingToken = this.sheetOpenToken;
     this.sheetVisible = false;
-    this.sheetMode = '';
   }
 
   // ============================================================
@@ -811,11 +826,23 @@ export struct SettingsPage {
     .height('100%')
     .backgroundColor(Theme.background)
     .scrollBar(BarState.Off)
-    .bindSheet($$this.sheetVisible, this.settingsSheetBuilder(), {
+    .bindSheet(this.sheetVisible, this.settingsSheetBuilder(), {
       height: this.sheetMode === 'ai' ? 340 : 260,
       showClose: true,
       dragBar: true,
-      onDisappear: () => { this.sheetMode = ''; }
+      // 交互关闭（蒙层/下拉/关闭图标/返回）统一拦截：先进入本页关闭流程
+      // （记录令牌 + visible=false），再执行关闭；框架不回写 visible
+      shouldDismiss: (sheetDismiss: SheetDismiss) => {
+        this.closeSettingsSheet();
+        sheetDismiss.dismiss();
+      },
+      onDisappear: () => {
+        // 令牌守卫：仅当本轮关闭未被更新的打开打断时才复位模式；
+        // 过期关闭事件的 onDisappear 直接丢弃，不触碰新一轮弹层状态
+        if (this.sheetClosingToken === this.sheetOpenToken) {
+          this.sheetMode = '';
+        }
+      }
     })
   }
 

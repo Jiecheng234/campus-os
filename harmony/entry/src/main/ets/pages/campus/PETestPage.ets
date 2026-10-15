@@ -1,13 +1,17 @@
 /**
  * PETestPage — 体测成绩（真实模式：教务 zhjw 体测 JSON；演示模式：内置示例）
  * 拆成"总览 / 单项成绩"两组展示（对齐原项目 PEtestScreen summaryKeys 拆分）。
+ * 视觉层级（对齐参考实现 styles.section/row）：总览 = 独立卡片 + 主色分组标题 +
+ * 更强字号/配色（总分/参考成绩 h2 主色强调）；单项 = 次级底色列表行 + 分隔线 +
+ * 次要文字色。数据流（请求/解析/分组键）不变。
  */
-import { Theme, SafeTop, Space } from '../Theme';
+import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
 import { SessionManager } from '../../services/auth/SessionManager';
 import { CampusDataService, PETestItem } from '../../services/campus/CampusDataService';
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
+import { I18n } from '../../utils/I18n';
 
 /** 总览组标签（对齐原项目 summaryKeys） */
 const SUMMARY_LABELS: string[] = [
@@ -65,12 +69,18 @@ function getMockPETest(): PETestItem[] {
 @Component
 export struct PETestPage {
   onBack: () => void = () => {};
+  /** 语言订阅：语言切换即时重渲染 */
+  @StorageLink('locale') locale: string = 'zh';
   @State items: PETestItem[] = [];
   @State summary: PETestItem[] = [];
   @State details: PETestItem[] = [];
   @State loading: boolean = false;
   @State errorText: string = '';
   private isReal: boolean = false;
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
 
   aboutToAppear(): void {
     this.isReal = AuthManager.isLoggedIn() && !StateManager.isDemoMode();
@@ -128,7 +138,7 @@ export struct PETestPage {
         .height(20)
         .color(Theme.primary)
     } else {
-      Text('刷新')
+      Text(this.tr('pe.refresh'))
         .fontSize(14)
         .fontColor(Theme.primary)
         .padding({ left: 12, right: 4, top: 8, bottom: 8 })
@@ -136,35 +146,57 @@ export struct PETestPage {
     }
   }
 
-  @Builder SectionHeader(title: string) {
-    Text(title)
-      .fontSize(13)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(Theme.textSecondary)
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 16, bottom: 8 })
-  }
-
-  @Builder ItemRow(item: PETestItem) {
-    Row() {
+  /** 总览行：label 次要色 + value 主层级（总分/参考成绩 h2 主色加粗强调） */
+  @Builder SummaryRow(item: PETestItem) {
+    Row({ space: Space.md }) {
       Text(item.label)
-        .fontSize(14)
+        .fontSize(FontSize.caption)
         .fontColor(Theme.textSecondary)
         .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
       if (isAccentLabel(item.label)) {
         Text(item.value)
-          .fontSize(18)
+          .fontSize(FontSize.h2)
           .fontWeight(FontWeight.Bold)
           .fontColor(Theme.primary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .constraintSize({ maxWidth: '60%' })
       } else {
         Text(item.value)
-          .fontSize(14)
+          .fontSize(FontSize.body)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.text)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .constraintSize({ maxWidth: '60%' })
       }
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: Space.md, right: Space.md, top: 13, bottom: 13 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  /** 单项行：次要文字色 + 更紧凑行距（对齐参考实现 styles.label/value 次级层） */
+  @Builder DetailRow(item: PETestItem) {
+    Row({ space: Space.md }) {
+      Text(item.label)
+        .fontSize(FontSize.caption)
+        .fontColor(Theme.textMuted)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(item.value)
+        .fontSize(FontSize.caption)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Theme.textSecondary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: '60%' })
+    }
+    .width('100%')
+    .padding({ left: Space.md, right: Space.md, top: 11, bottom: 11 })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -173,7 +205,7 @@ export struct PETestPage {
       SafeTop()
 
       DetailHeader({
-        title: '体测成绩',
+        title: this.tr('pe.title'),
         onBack: () => { this.onBack(); },
         right: (): void => { this.RightAction(); },
       })
@@ -181,7 +213,7 @@ export struct PETestPage {
       Divider().color(Theme.divider)
 
       if (!this.isReal) {
-        Text('演示数据 · 登录后显示真实成绩')
+        Text(this.tr('pe.demoHint'))
           .fontSize(12)
           .fontColor(Theme.textMuted)
           .width('100%')
@@ -195,7 +227,7 @@ export struct PETestPage {
             .width(32)
             .height(32)
             .color(Theme.primary)
-          Text('正在加载体测成绩...')
+          Text(this.tr('pe.loading'))
             .fontSize(13)
             .fontColor(Theme.textMuted)
         }
@@ -204,7 +236,7 @@ export struct PETestPage {
         .justifyContent(FlexAlign.Center)
       } else if (this.errorText.length > 0) {
         Column({ space: Space.sm }) {
-          Text('体测成绩加载失败')
+          Text(this.tr('pe.errorTitle'))
             .fontSize(15)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
@@ -212,7 +244,7 @@ export struct PETestPage {
             .fontSize(13)
             .fontColor(Theme.textMuted)
             .textAlign(TextAlign.Center)
-          Text('重试')
+          Text(this.tr('pe.retry'))
             .fontSize(13)
             .fontColor(Theme.primary)
             .padding({ left: Space.md, right: Space.md, top: Space.xs, bottom: Space.xs })
@@ -227,11 +259,11 @@ export struct PETestPage {
         .padding({ left: Space.lg, right: Space.lg })
       } else if (this.items.length === 0) {
         Column({ space: Space.sm }) {
-          Text('暂无体测数据')
+          Text(this.tr('pe.emptyTitle'))
             .fontSize(15)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
-          Text('教务系统暂未返回体测记录，可以稍后刷新。')
+          Text(this.tr('pe.emptyMessage'))
             .fontSize(13)
             .fontColor(Theme.textMuted)
         }
@@ -240,27 +272,77 @@ export struct PETestPage {
         .justifyContent(FlexAlign.Center)
         .alignItems(HorizontalAlign.Center)
       } else {
-        List() {
-          if (this.summary.length > 0) {
-            ListItemGroup({ header: this.SectionHeader('总览') }) {
-              ForEach(this.summary, (item: PETestItem) => {
-                ListItem() {
-                  this.ItemRow(item)
+        Scroll() {
+          Column() {
+            // ── 总览：独立卡片（主色竖条分组标题 + 更强字号/配色层级）──
+            if (this.summary.length > 0) {
+              Column() {
+                Row({ space: Space.sm }) {
+                  Column()
+                    .width(4)
+                    .height(16)
+                    .borderRadius(2)
+                    .backgroundColor(Theme.primary)
+                  Text(this.tr('pe.groupSummary'))
+                    .fontSize(FontSize.h3)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(Theme.text)
                 }
-              }, (item: PETestItem) => item.label)
+                .width('100%')
+                .alignItems(VerticalAlign.Center)
+                .padding({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.sm })
+
+                ForEach(this.summary, (item: PETestItem, index: number) => {
+                  if (index > 0) {
+                    Divider()
+                      .color(Theme.divider)
+                      .margin({ left: Space.md, right: Space.md })
+                  }
+                  this.SummaryRow(item)
+                }, (item: PETestItem) => item.label)
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: '100%' })
+              .alignItems(HorizontalAlign.Start)
+              .borderRadius(Radius.lg)
+              .backgroundColor(Theme.surface)
+              .border({ width: 1, color: Theme.borderSubtle })
+              .margin({ left: Space.lg, right: Space.lg, top: Space.md })
             }
-            .divider({ strokeWidth: 0.5, color: Theme.divider })
-          }
-          if (this.details.length > 0) {
-            ListItemGroup({ header: this.SectionHeader('单项成绩') }) {
-              ForEach(this.details, (item: PETestItem) => {
-                ListItem() {
-                  this.ItemRow(item)
-                }
-              }, (item: PETestItem) => item.label)
+
+            // ── 单项成绩：次级底色列表卡（分隔线 + 次要文字色）──
+            if (this.details.length > 0) {
+              Column() {
+                Text(this.tr('pe.groupDetails'))
+                  .fontSize(FontSize.h3)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(Theme.textSecondary)
+                  .width('100%')
+                  .padding({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.xs })
+
+                ForEach(this.details, (item: PETestItem, index: number) => {
+                  if (index > 0) {
+                    Divider()
+                      .color(Theme.divider)
+                      .margin({ left: Space.md, right: Space.md })
+                  }
+                  this.DetailRow(item)
+                }, (item: PETestItem) => item.label)
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: '100%' })
+              .alignItems(HorizontalAlign.Start)
+              .borderRadius(Radius.lg)
+              .backgroundColor(Theme.surfaceAlt)
+              .border({ width: 1, color: Theme.borderSubtle })
+              .margin({ left: Space.lg, right: Space.lg, top: Space.md })
             }
-            .divider({ strokeWidth: 0.5, color: Theme.divider })
+
+            Blank().height(Space.lg)
           }
+          .width('100%')
+          .constraintSize({ maxWidth: '100%' })
+          .alignItems(HorizontalAlign.Start)
         }
         .width('100%')
         .layoutWeight(1)
