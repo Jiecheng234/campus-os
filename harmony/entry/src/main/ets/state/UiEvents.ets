@@ -16,7 +16,27 @@ export class NavTarget {
   learningTab: string = '';
 }
 
+/**
+ * 待处理导航目标（进程内内存态，不持久化）。
+ *
+ * 背景：emitNavigate 为即发即弃事件，冷启动时目标页（TabContent 惰性创建）
+ * 尚未挂载、未订阅事件 → 首次点击丢失下钻目标。emitNavigate 在 emit 的同时
+ * 将下钻目标记录于此；目标页挂载（aboutToAppear）时经 takePendingXxx() 消费。
+ *
+ * 语义：
+ * - 每次 emitNavigate 覆盖写入（含空串），新目标自然覆盖旧目标；
+ * - 字段级消费/清除：CampusPage 只消费 campusSub，LearningPage 只消费 learningTab；
+ * - 取值即清除，避免目标页后续挂载时陈旧误触发。
+ */
+let pendingCampusSub: string = '';
+let pendingLearningTab: string = '';
+
 export function emitNavigate(target: NavTarget): void {
+  // 先记录待处理下钻目标、后 emit：目标页未挂载时由其挂载后消费（FR-005/FR-006）；
+  // 已挂载时订阅回调应用后会清除对应字段——若 emit 在前，回调清除会被随后的
+  // 记录覆盖，留下陈旧目标（下次挂载误触发），故记录必须先于 emit。
+  pendingCampusSub = target.campusSub;
+  pendingLearningTab = target.learningTab;
   emitter.emit({ eventId: EVT_NAVIGATE }, {
     data: {
       'tab': target.tab,
@@ -24,6 +44,20 @@ export function emitNavigate(target: NavTarget): void {
       'learningTab': target.learningTab
     } as Record<string, Object>
   });
+}
+
+/** 返回待处理的校园子页目标并将其清空（取值即清除） */
+export function takePendingCampusSub(): string {
+  const sub: string = pendingCampusSub;
+  pendingCampusSub = '';
+  return sub;
+}
+
+/** 返回待处理的学习子标签目标并将其清空（取值即清除） */
+export function takePendingLearningTab(): string {
+  const tab: string = pendingLearningTab;
+  pendingLearningTab = '';
+  return tab;
 }
 
 /** 从 emitter EventData.data 解析 NavTarget（字段缺失时保持默认值） */

@@ -11,7 +11,7 @@ import { ReservationPage } from './campus/ReservationPage';
 import { NewsPage } from './campus/NewsPage';
 import { ProgramPage } from './campus/ProgramPage';
 import { BackDispatcher, BackOwner, BackHandler } from '../state/BackDispatcher';
-import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget } from '../state/UiEvents';
+import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget, takePendingCampusSub } from '../state/UiEvents';
 import { I18n } from '../utils/I18n';
 
 class CampusEntry {
@@ -99,6 +99,10 @@ export struct CampusPage {
   }
 
   aboutToAppear(): void {
+    // 「培养方案」入口暂时隐藏（不删除）：makeEntry 定义、i18n 键（campus.program.*）、
+    // ProgramPage 路由分支与导入均保留。
+    // 恢复方式：将 SHOW_PROGRAM_ENTRY 改回 true 即可（原为列表末位，顺序不变）。
+    const SHOW_PROGRAM_ENTRY: boolean = false;
     this.entries = [
       this.makeEntry($r('app.media.news'), 'campus.news.title', 'campus.news.subtitle', 'news'),
       this.makeEntry($r('app.media.classroom'), 'campus.classroom.title', 'campus.classroom.subtitle', 'classroom'),
@@ -109,15 +113,25 @@ export struct CampusPage {
       this.makeEntry($r('app.media.network'), 'campus.network.title', 'campus.network.subtitle', 'network'),
       this.makeEntry($r('app.media.reservation'), 'campus.reservation.title', 'campus.reservation.subtitle', 'reservation'),
       this.makeEntry($r('app.media.mail'), 'campus.mail.title', 'campus.mail.subtitle', 'mail'),
-      this.makeEntry($r('app.media.campus'), 'campus.program.title', 'campus.program.subtitle', 'program'),
     ];
+    if (SHOW_PROGRAM_ENTRY) {
+      this.entries.push(this.makeEntry($r('app.media.campus'), 'campus.program.title', 'campus.program.subtitle', 'program'));
+    }
 
     // 跨页导航（如首页"查空教室"）：切到校园 Tab 后直接打开子页
     this.navSub = subscribeNavigate((target: NavTarget) => {
       if (target.campusSub.length > 0) {
         this.subScreen = target.campusSub;
       }
+      // 已挂载时实时生效后清除本页负责的待处理字段，避免后续挂载陈旧误触发（字段级）
+      takePendingCampusSub();
     });
+    // 冷启动补偿：本页挂载前发起的跨页导航（emit 即发即弃、当时本页尚未挂载未订阅）
+    // 已被记录为待处理目标，此处消费一次（取值即清除）
+    const pendingSub: string = takePendingCampusSub();
+    if (pendingSub.length > 0) {
+      this.subScreen = pendingSub;
+    }
   }
 
   handleEntryClick(entry: CampusEntry): void {

@@ -767,6 +767,10 @@ export class CampusDataService {
   public currentSemester: string = '';
   private registrarRoamEnsured: boolean = false;
   private gradesRoamEnsured: boolean = false;
+  /** 空教室子系统（zhjw 漫游）会话是否已确保 */
+  private classroomRoamEnsured: boolean = false;
+  /** 体测子系统会话是否已确保 */
+  private petestRoamEnsured: boolean = false;
   /** 电费子系统会话是否已通过 id-roam 建立 */
   private eleSessionEnsured: boolean = false;
   /** 课表拉取状态：'unknown' 未拉过 / 'ok' JSONP 正常（可能为空）/ 'error' 拿到非 JSONP（会话失效等） */
@@ -788,6 +792,8 @@ export class CampusDataService {
     this.learnReady = false;
     this.registrarRoamEnsured = false;
     this.gradesRoamEnsured = false;
+    this.classroomRoamEnsured = false;
+    this.petestRoamEnsured = false;
     this.eleSessionEnsured = false;
     this.scheduleStatus = 'unknown';
     this.semesterFirstDay = '';
@@ -1701,6 +1707,26 @@ export class CampusDataService {
   }
 
   /**
+   * 空教室子系统会话激活（对齐 ensureGradesRoam 的自愈模式）：
+   * !force 时命中 ensured 标志直接跳过；roam 失败 → forceSessionRefreshOnce()
+   * （借统一恢复链触发一次完整重登）→ 重试一次 roam；成功置标志。
+   * 不抛：失败交由外层 withSessionRecovery 兜底（roam 失败静默返回 false）。
+   */
+  private async ensureClassroomRoam(force: boolean): Promise<void> {
+    if (this.classroomRoamEnsured && !force) {
+      return;
+    }
+    let ok: boolean = await this.roamByYyfwid(CLASSROOM_YYFWID);
+    if (!ok) {
+      await this.forceSessionRefreshOnce();
+      ok = await this.roamByYyfwid(CLASSROOM_YYFWID);
+    }
+    if (ok) {
+      this.classroomRoamEnsured = true;
+    }
+  }
+
+  /**
    * 教学楼列表：漫游 + 拉取包在 withSessionRecovery 内（会话失效自动恢复），
    * 解析在兜底之外（解析错误不是会话错误）。
    */
@@ -1709,13 +1735,14 @@ export class CampusDataService {
     const html: string = await auth.withSessionRecovery((): Promise<string> => {
       return this.doFetchClassroomListHtml();
     }, async (): Promise<void> => {
-      await this.roamByYyfwid(CLASSROOM_YYFWID);
+      this.classroomRoamEnsured = false;
+      await this.ensureClassroomRoam(true);
     }, 'campus-classroom-list');
     return parseClassroomList(html);
   }
 
   private async doFetchClassroomListHtml(): Promise<string> {
-    await this.roamByYyfwid(CLASSROOM_YYFWID);
+    await this.ensureClassroomRoam(false);
     const resp: HttpResponse = await this.http.get(CLASSROOM_LIST_URL);
     Log.i('LearnAct', 'CLASSROOM_LIST code=%{public}d len=%{public}d head=%{public}s',
       resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
@@ -1732,7 +1759,8 @@ export class CampusDataService {
     const html: string = await auth.withSessionRecovery((): Promise<string> => {
       return this.doFetchClassroomStateHtml(searchName, week);
     }, async (): Promise<void> => {
-      await this.roamByYyfwid(CLASSROOM_YYFWID);
+      this.classroomRoamEnsured = false;
+      await this.ensureClassroomRoam(true);
     }, 'campus-classroom-state');
     return parseClassroomState(html, week);
   }
@@ -1740,13 +1768,33 @@ export class CampusDataService {
   private async doFetchClassroomStateHtml(searchName: string, week: number): Promise<string> {
     // 每次状态查询都重新漫游 zhjw 子系统：与上游 roamingWrapper 等价，
     // 避免 UI 停留较久后切换周次遇到"用户登陆超时"
-    await this.roamByYyfwid(CLASSROOM_YYFWID);
+    // （故此处始终 force=true，绕过 ensured 标志的跳过语义）
+    await this.ensureClassroomRoam(true);
     const url: string = CLASSROOM_STATE_PREFIX + gb2312PercentEncode(searchName) + '&weeknumber=' + week;
     const resp: HttpResponse = await this.http.get(url);
     Log.i('LearnAct', 'CLASSROOM_STATE week=%{public}d code=%{public}d len=%{public}d head=%{public}s',
       week, resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));
     this.ensureNotZhjwTimeout(resp.body);
     return resp.body;
+  }
+
+  /**
+   * 体测子系统会话激活（对齐 ensureGradesRoam 的自愈模式）：
+   * !force 时命中 ensured 标志直接跳过；roam 失败 → forceSessionRefreshOnce()
+   * → 重试一次 roam；成功置标志。不抛：失败交由外层 withSessionRecovery 兜底。
+   */
+  private async ensurePetestRoam(force: boolean): Promise<void> {
+    if (this.petestRoamEnsured && !force) {
+      return;
+    }
+    let ok: boolean = await this.roamByYyfwid(PETEST_YYFWID);
+    if (!ok) {
+      await this.forceSessionRefreshOnce();
+      ok = await this.roamByYyfwid(PETEST_YYFWID);
+    }
+    if (ok) {
+      this.petestRoamEnsured = true;
+    }
   }
 
   /**
@@ -1757,13 +1805,14 @@ export class CampusDataService {
     const text: string = await auth.withSessionRecovery((): Promise<string> => {
       return this.doFetchPEResultText();
     }, async (): Promise<void> => {
-      await this.roamByYyfwid(PETEST_YYFWID);
+      this.petestRoamEnsured = false;
+      await this.ensurePetestRoam(true);
     }, 'campus-petest');
     return parsePEResult(text);
   }
 
   private async doFetchPEResultText(): Promise<string> {
-    await this.roamByYyfwid(PETEST_YYFWID);
+    await this.ensurePetestRoam(false);
     const resp: HttpResponse = await this.http.get(PETEST_URL);
     Log.i('LearnAct', 'PETEST code=%{public}d len=%{public}d head=%{public}s',
       resp.statusCode, resp.body.length, resp.body.trim().substring(0, 80));

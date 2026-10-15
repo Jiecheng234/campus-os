@@ -18,7 +18,7 @@ import { CampusCourse, CampusDataService, CampusHomework, CampusNotification, Ca
 import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
 import { BackDispatcher, BackOwner, BackHandler } from '../state/BackDispatcher';
-import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget } from '../state/UiEvents';
+import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget, takePendingLearningTab } from '../state/UiEvents';
 
 @Component
 struct SegmentBar {
@@ -272,7 +272,14 @@ export struct LearningPage {
       if (target.learningTab.length > 0 && this.tabs.indexOf(target.learningTab) >= 0) {
         this.activeTab = target.learningTab;
       }
+      // 已挂载时实时生效后清除本页负责的待处理字段，避免后续挂载陈旧误触发（字段级）
+      takePendingLearningTab();
     });
+    // 冷启动补偿：本页挂载前发起的跨页导航已记录为待处理目标，此处消费一次（取值即清除）
+    const pendingTab: string = takePendingLearningTab();
+    if (pendingTab.length > 0 && this.tabs.indexOf(pendingTab) >= 0) {
+      this.activeTab = pendingTab;
+    }
   }
 
   onSubScreenChange(): void {
