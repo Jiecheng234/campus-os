@@ -95,3 +95,7 @@ ui-*.xml
 # IDE
 .vscode/
 .cursor/
+
+# DevEco 本地工具目录（.deveco/）与本地 ACL 备份产物（脚本生成，不入库）
+.deveco/
+dsh-acl-backup/

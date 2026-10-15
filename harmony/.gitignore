@@ -11,3 +11,11 @@
 **/.test
 /.appanalyzer
 /.deveco
+
+# 本地临时验证产物 / 本地 DevEco 配置 / 构建缓存（不入库）
+/.tmp-ui-verify
+/deveco.jsonc
+/.cache
+
+# agent 说明文件（不入库）
+/AGENTS.md
