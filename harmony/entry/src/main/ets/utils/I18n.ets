@@ -150,6 +150,8 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'campus.petest.subtitle': { zh: '查看体测结果', en: 'View fitness results' },
   'campus.dormitory.title': { zh: '宿舍服务', en: 'Dormitory' },
   'campus.dormitory.subtitle': { zh: '电费 · 洗衣机', en: 'Power · laundry' },
+  'campus.dormitory.tabPower': { zh: '电费', en: 'Power' },
+  'campus.dormitory.tabLaundry': { zh: '洗衣机', en: 'Laundry' },
   'campus.finance.title': { zh: '财务缴费', en: 'Payments' },
   'campus.finance.subtitle': { zh: '校园卡 · 消费记录', en: 'Campus card · spending' },
   'campus.network.title': { zh: '校园网', en: 'Campus network' },
@@ -441,6 +443,197 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'home.suggest.dueTomorrow': { zh: '明天截止', en: 'Due tomorrow' },
   'home.suggest.dueInDays': { zh: '{n} 天后截止', en: 'Due in {n} days' },
   'home.suggest.noDeadline': { zh: '未设置截止时间', en: 'No deadline' },
+
+  // ── 图书馆座位（libseat.*，预约/取消/首页直达增量；既有层级文案沿用页内硬编码中文）──
+  'libseat.libraryHint': {
+    zh: '浏览楼层与区域，对可用座位可直接预约',
+    en: 'Browse floors and sections; available seats can be booked directly'
+  },
+  'libseat.sectionHint': {
+    zh: '选择区域查看座位，可用座位支持在线预约',
+    en: 'Pick a section to view seats; available ones can be booked'
+  },
+  'libseat.seatHint': {
+    zh: '对"可用"座位点击"预约"，二次确认后提交',
+    en: 'Tap "Book" on an available seat and confirm to submit'
+  },
+  'libseat.bookingsHint': {
+    zh: '可取消的记录提供"取消预约"操作',
+    en: 'Cancellable bookings offer a cancel action'
+  },
+  'libseat.bookingsEmptyMessage': {
+    zh: '在座位列表中对可用座位点击"预约"',
+    en: 'Book an available seat from the seat list'
+  },
+  'libseat.book': { zh: '预约', en: 'Book' },
+  'libseat.cancelBooking': { zh: '取消预约', en: 'Cancel booking' },
+  'libseat.submitting': { zh: '提交中…', en: 'Submitting…' },
+  'libseat.bookTitle': { zh: '预约此座位？', en: 'Book this seat?' },
+  'libseat.cancelTitle': { zh: '取消此预约？', en: 'Cancel this booking?' },
+  'libseat.confirmSeat': { zh: '座位：{name}', en: 'Seat: {name}' },
+  'libseat.confirmDate': { zh: '日期：{name}', en: 'Date: {name}' },
+  'libseat.confirmSegment': { zh: '时段：{name}', en: 'Time: {name}' },
+  'libseat.confirmTime': { zh: '时间：{name}', en: 'Time: {name}' },
+  'libseat.confirmStatus': { zh: '状态：{name}', en: 'Status: {name}' },
+  'libseat.today': { zh: '今天', en: 'Today' },
+  'libseat.tomorrow': { zh: '明天', en: 'Tomorrow' },
+  'libseat.segmentFallback': {
+    zh: '以区域当日时段为准',
+    en: 'Per the section\'s daily schedule'
+  },
+  'libseat.confirmBook': { zh: '确认预约', en: 'Confirm' },
+  'libseat.confirmCancel': { zh: '确认取消', en: 'Confirm' },
+  'libseat.demoWriteBlocked': {
+    zh: '演示模式下不可提交，登录后可预约/取消座位',
+    en: 'Demo mode: sign in to book or cancel a seat'
+  },
+  'libseat.bookSuccess': { zh: '预约成功', en: 'Booked' },
+  'libseat.bookFailed': { zh: '预约失败：{msg}', en: 'Failed to book: {msg}' },
+  'libseat.cancelSuccess': { zh: '已取消预约', en: 'Booking cancelled' },
+  'libseat.cancelFailed': { zh: '取消失败：{msg}', en: 'Failed to cancel: {msg}' },
+  'libseat.unknownError': { zh: '未知错误', en: 'Unknown error' },
+
+  // ── 研读间（libroom.*，预约/取消/成员邀请增量；既有层级文案沿用页内硬编码中文）──
+  'libroom.kindHint': {
+    zh: '浏览研读间类型，选择日期即可查看资源并在线预约',
+    en: 'Browse room types, pick a date to view and book rooms'
+  },
+  'libroom.resourceHint': {
+    zh: '对房间点击"预约"，按房间规则选择时段与成员',
+    en: 'Tap "Book" on a room, then pick a time slot and members per its rules'
+  },
+  'libroom.bookingsHint': {
+    zh: '我的预约记录支持在线取消（已开始的记录不可取消）',
+    en: 'Bookings can be cancelled online (started ones cannot)'
+  },
+  'libroom.bookingsEmptyMessage': {
+    zh: '在资源列表中对房间点击"预约"',
+    en: 'Book a room from the resource list'
+  },
+  'libroom.book': { zh: '预约', en: 'Book' },
+  'libroom.cancelBooking': { zh: '取消预约', en: 'Cancel booking' },
+  'libroom.submit': { zh: '提交预约', en: 'Submit booking' },
+  'libroom.submitting': { zh: '提交中…', en: 'Submitting…' },
+  'libroom.bookTitle': { zh: '确认预约研读间？', en: 'Book this room?' },
+  'libroom.cancelTitle': { zh: '取消此预约？', en: 'Cancel this booking?' },
+  'libroom.confirmRoom': { zh: '房间：{name}', en: 'Room: {name}' },
+  'libroom.confirmDate': { zh: '日期：{name}', en: 'Date: {name}' },
+  'libroom.confirmTime': { zh: '时段：{name}', en: 'Time: {name}' },
+  'libroom.confirmMembers': { zh: '人数：{name}', en: 'People: {name}' },
+  'libroom.confirmMembersMulti': {
+    zh: '{n} 人（本人 + {m} 名成员）',
+    en: '{n} people (you + {m} members)'
+  },
+  'libroom.confirmMembersSolo': { zh: '1 人（本人）', en: '1 person (you)' },
+  'libroom.confirmBook': { zh: '确认预约', en: 'Confirm' },
+  'libroom.confirmCancel': { zh: '确认取消', en: 'Confirm' },
+  'libroom.formDate': { zh: '日期：{name}', en: 'Date: {name}' },
+  'libroom.formStartTime': { zh: '开始时间（HH:mm，分钟为 5 的倍数）', en: 'Start time (HH:mm, 5-min steps)' },
+  'libroom.formEndTime': { zh: '结束时间（HH:mm，分钟为 5 的倍数）', en: 'End time (HH:mm, 5-min steps)' },
+  'libroom.memberSection': { zh: '邀请成员', en: 'Invite members' },
+  'libroom.memberSearchPlaceholder': { zh: '姓名或学号', en: 'Name or student ID' },
+  'libroom.search': { zh: '搜索', en: 'Search' },
+  'libroom.searching': { zh: '搜索中…', en: 'Searching…' },
+  'libroom.noCandidates': { zh: '未找到匹配成员', en: 'No matching members' },
+  'libroom.memberSearchFailed': { zh: '成员搜索失败：{msg}', en: 'Member search failed: {msg}' },
+  'libroom.add': { zh: '添加', en: 'Add' },
+  'libroom.remove': { zh: '移除', en: 'Remove' },
+  'libroom.memberCount': {
+    zh: '当前 {n} 人（含本人）· 需 {min}~{max} 人',
+    en: '{n} people (incl. you) · requires {min}–{max}'
+  },
+  'libroom.memberCountMin': {
+    zh: '当前 {n} 人（含本人）· 至少 {min} 人',
+    en: '{n} people (incl. you) · at least {min}'
+  },
+  'libroom.memberCountNoLimit': {
+    zh: '当前 {n} 人（含本人）',
+    en: '{n} people (incl. you)'
+  },
+  'libroom.ruleOpen': { zh: '开放 {start}–{end}', en: 'Open {start}–{end}' },
+  'libroom.ruleDuration': { zh: '时长 {min}–{max} 分钟', en: '{min}–{max} minutes' },
+  'libroom.ruleDurationMin': { zh: '时长不少于 {min} 分钟', en: 'At least {min} minutes' },
+  'libroom.ruleDurationMax': { zh: '时长不超过 {max} 分钟', en: 'At most {max} minutes' },
+  'libroom.ruleUsers': { zh: '{min}~{max} 人（含本人）', en: '{min}–{max} people (incl. you)' },
+  'libroom.ruleUsersMin': { zh: '至少 {min} 人（含本人）', en: 'At least {min} people (incl. you)' },
+  'libroom.ruleUsersMax': { zh: '最多 {max} 人（含本人）', en: 'At most {max} people (incl. you)' },
+  'libroom.ruleHintFallback': {
+    zh: '以房间当日开放规则为准',
+    en: 'Per the room\'s daily rules'
+  },
+  'libroom.errTimeFormat': {
+    zh: '请输入有效的 HH:mm 时间（分钟须为 5 的倍数）',
+    en: 'Enter a valid HH:mm time (minutes in 5-min steps)'
+  },
+  'libroom.errEndAfterStart': {
+    zh: '结束时间需晚于开始时间',
+    en: 'End time must be after start time'
+  },
+  'libroom.errOpenTime': {
+    zh: '时段须在开放时间 {start}–{end} 内',
+    en: 'The slot must be within opening hours {start}–{end}'
+  },
+  'libroom.errDurationShort': {
+    zh: '预约时长不能少于 {min} 分钟',
+    en: 'Booking must be at least {min} minutes'
+  },
+  'libroom.errDurationLong': {
+    zh: '预约时长不能超过 {max} 分钟',
+    en: 'Booking must be at most {max} minutes'
+  },
+  'libroom.errUserMin': {
+    zh: '该研读间至少需要 {n} 人（含本人），请在成员区邀请成员',
+    en: 'This room needs at least {n} people (incl. you); invite members above'
+  },
+  'libroom.errUserMax': {
+    zh: '该研读间最多 {n} 人（含本人），请移除部分成员',
+    en: 'This room allows at most {n} people (incl. you); remove some members'
+  },
+  'libroom.errOverlap': {
+    zh: '所选时段已被占用，请更换时段',
+    en: 'That slot is already taken; pick another time'
+  },
+  'libroom.bookSuccess': { zh: '预约成功', en: 'Booked' },
+  'libroom.bookFailed': { zh: '预约失败：{msg}', en: 'Failed to book: {msg}' },
+  'libroom.cancelSuccess': { zh: '已取消预约', en: 'Booking cancelled' },
+  'libroom.cancelFailed': { zh: '取消失败：{msg}', en: 'Failed to cancel: {msg}' },
+  'libroom.demoWriteBlocked': {
+    zh: '演示模式下不可提交，登录后可预约/取消研读间',
+    en: 'Demo mode: sign in to book or cancel a room'
+  },
+  'libroom.unknownError': { zh: '未知错误', en: 'Unknown error' },
+
+  // ── 宿舍洗衣机（campus-laundry 特性追加：楼宇分组/楼层机台/状态/容错）──
+  'laundry.title': { zh: '洗衣机', en: 'Laundry' },
+  'laundry.platformJieli': { zh: '洁力', en: 'Jieli' },
+  'laundry.platformHaile': { zh: '海乐生活', en: 'Haile Life' },
+  'laundry.demoHint': { zh: '演示数据 · 登录后显示真实洗衣机状态', en: 'Demo data · Sign in for live machine status' },
+  'laundry.hintBuildings': {
+    zh: '选择楼宇查看楼层与洗衣机、洗鞋机、烘干机的实时状态',
+    en: 'Pick a building to see live washer, shoe-washer and dryer status by floor'
+  },
+  'laundry.errorBuildings': { zh: '楼宇列表加载失败', en: 'Failed to load buildings' },
+  'laundry.emptyBuildings': { zh: '暂无洗衣机楼宇', en: 'No laundry buildings' },
+  'laundry.emptyBuildingsHint': {
+    zh: '两个平台均未返回楼宇数据，可稍后重试',
+    en: 'Neither platform returned buildings; try again later'
+  },
+  'laundry.errorFloors': { zh: '机台状态加载失败', en: 'Failed to load machine status' },
+  'laundry.emptyFloors': { zh: '暂无机台状态', en: 'No machine status' },
+  'laundry.emptyFloorsHint': {
+    zh: '该楼宇暂未返回机台数据，可稍后重试',
+    en: 'This building returned no machine data; try again later'
+  },
+  'laundry.statIdle': { zh: '空闲', en: 'Idle' },
+  'laundry.statWorking': { zh: '使用中', en: 'In use' },
+  'laundry.statError': { zh: '异常', en: 'Error' },
+  'laundry.remaining': { zh: '剩余 {n} 分钟', en: '{n} min left' },
+  'laundry.updatedAt': { zh: '更新于 {name}', en: 'Updated {name}' },
+  'laundry.floorFallback': { zh: '楼层', en: 'Floor' },
+  'laundry.thirdPartyNote': {
+    zh: '状态由第三方洗衣平台提供，仅供参考',
+    en: 'Status is provided by third-party laundry platforms, for reference only'
+  },
 };
 
 export class I18n {

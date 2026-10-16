@@ -128,6 +128,18 @@ export class CampusCardService {
   }
 
   /**
+   * 会话瞬态复位（SessionManager.resetSessionState() 统一扇出调用）：
+   * 清卡系统会话标识与卡号缓存，避免进程内"退出→再登录"复用上一会话的
+   * 陈旧账号缓存。
+   * 契约：无参、同步、幂等、不抛；仅清本服务进程内瞬态态，
+   * 不触及 Cookie/凭证/网络。
+   */
+  resetSessionState(): void {
+    this.accountUser = '';
+    this.accountCardId = '';
+  }
+
+  /**
    * 卡系统 JSON API（对齐原项目 cardFetchParsed）：
    * 无 body → GET，有 body → POST JSON。响应解析：
    *   - success===true → resultData

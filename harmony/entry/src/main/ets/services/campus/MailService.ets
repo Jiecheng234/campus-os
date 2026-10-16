@@ -1164,6 +1164,17 @@ export class MailService {
     this.auth = auth;
   }
 
+  /**
+   * 会话瞬态复位（SessionManager.resetSessionState() 统一扇出调用）：
+   * 清 Coremail 会话缓存（sid/baseUrl），避免进程内"退出→再登录"复用
+   * 上一会话的陈旧邮箱会话。
+   * 契约：无参、同步、幂等、不抛；仅清本服务进程内瞬态态，
+   * 不触及 Cookie/凭证/网络。
+   */
+  resetSessionState(): void {
+    this.session = undefined;
+  }
+
   /** 建立邮箱会话（缓存未过期且未强制时直接返回；供外部预热/手动刷新用） */
   async ensureMailSession(force?: boolean): Promise<void> {
     await this.obtainSession(force === true);

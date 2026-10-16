@@ -1,16 +1,17 @@
 /**
  * ============================================================================
- * LibrarySeatPage — 图书馆座位只读查询（馆/楼层使用率 → 区域 → 座位 + 我的预约）
+ * LibrarySeatPage — 图书馆座位查询与预约（馆/楼层使用率 → 区域 → 座位 + 我的预约）
  * ============================================================================
  *
  * 层级（页内状态切换，不走路由）：
  *   LIBRARY（馆 chips + 今天/明天切换 + 楼层使用率 + 我的预约入口）
  *     → SECTION（区域：可用/总数/已预约）
- *       → SEAT（座位：名称 + 状态标签与着色）
- *   LIBRARY → BOOKINGS（我的预约记录/空态）
+ *       → SEAT（座位：状态标签；"可用"座位提供"预约"动作）
+ *   LIBRARY → BOOKINGS（我的预约记录/空态；可取消记录提供"取消预约"动作）
  *
- * 只读边界：座位数据仅供查询，预约引导至官方小程序；
- * 演示模式零网络请求（内置示例数据）。
+ * 写操作（预约/取消）均为二次确认后提交，提交中以 busyKey 禁用防重复；
+ * 成功后刷新"我的预约"（预约再刷新当前区域座位状态）并提示。
+ * 演示模式读写零网络请求（内置示例数据；写操作仅提示）。
  * ============================================================================
  */
 import { Theme, Space, Radius, FontSize } from '../Theme';
@@ -23,11 +24,15 @@ import {
   LibrarySectionInfo,
   LibrarySeatInfo,
   LibraryBookingRecord,
+  LibraryBookResult,
+  LibraryDaySegment,
   seatStatusLabel,
+  dateForChoice,
 } from '../../services/campus/LibrarySeatService';
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
 import { BackDispatcher, BackOwner, BackHandler } from '../../state/BackDispatcher';
+import { I18n } from '../../utils/I18n';
 
 /** 页内层级（不走路由） */
 const LEVEL_LIBRARY: number = 0;
@@ -123,6 +128,8 @@ function getDemoBookings(): LibraryBookingRecord[] {
   r1.pos = '主馆二层 A 区 · 015 号座位';
   r1.time = '10月12日 08:00 - 12:00';
   r1.status = '使用中';
+  // 演示"可取消"记录（演示模式点取消仅提示，不发起请求）
+  r1.cancelId = 'demo-cancel-1';
   list.push(r1);
   const r2: LibraryBookingRecord = new LibraryBookingRecord();
   r2.id = '20261011008';
@@ -141,11 +148,26 @@ function getDemoBookings(): LibraryBookingRecord[] {
 export struct LibrarySeatPage {
   onBack: () => void = () => {};
 
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
+
   @State level: number = LEVEL_LIBRARY;
   @State dateChoice: number = 0;
   @State titleText: string = '图书馆座位';
   @State loading: boolean = false;
   @State errorMessage: string = '';
+  /** 写操作提交中标识（'seat-{id}' / 'cancel-{cancelId}'；非空时禁用全部写动作防重复提交） */
+  @State busyKey: string = '';
+  /** 当前区域目标日时段简述（预约确认框展示；空串回退兜底文案） */
+  @State segmentBrief: string = '';
 
   // LIBRARY 层
   @State libraries: LibraryInfo[] = [];
@@ -322,12 +344,16 @@ export struct LibrarySeatPage {
     this.errorMessage = '';
     if (this.isDemo) {
       this.seats = getDemoSeats();
+      this.segmentBrief = '08:00 - 22:00';
       return;
     }
     this.loading = true;
     try {
-      this.seats = await SessionManager.getLibrarySeatService()
-        .getLibrarySeatList(section.id, this.dateChoice);
+      const service: LibrarySeatService = SessionManager.getLibrarySeatService();
+      this.seats = await service.getLibrarySeatList(section.id, this.dateChoice);
+      // 目标日时段简述（预约确认框展示；空串回退兜底文案）
+      const seg: LibraryDaySegment | undefined = service.getLastDaySegment();
+      this.segmentBrief = seg !== undefined ? (seg.startTime + ' - ' + seg.endTime) : '';
     } catch (e) {
       this.errorMessage = this.extractError(e);
     }
@@ -372,6 +398,174 @@ export struct LibrarySeatPage {
       this.selectedLibraryId = 0;
       await this.loadLibraryLevel();
     }
+  }
+
+  // ── 写操作（预约 / 取消）：二次确认 + 防重复 + 成功刷新（演示模式零请求） ────────────────────────
+
+  /** 馆 id → 名称（预约确认框展示；未命中回退"图书馆"） */
+  private libraryNameOf(id: number): string {
+    for (let i: number = 0; i < this.libraries.length; i++) {
+      if (this.libraries[i].id === id) {
+        const zh: string = this.libraries[i].zhName;
+        return zh.length > 0 ? zh : this.libraries[i].enName;
+      }
+    }
+    return '图书馆';
+  }
+
+  /** 成功预约后静默刷新当前区域座位状态（保留层级与加载态；失败保留原列表） */
+  private async reloadSeatsSilently(): Promise<void> {
+    if (this.isDemo || this.level !== LEVEL_SEAT) {
+      return;
+    }
+    try {
+      this.seats = await SessionManager.getLibrarySeatService()
+        .getLibrarySeatList(this.currentSectionId, this.dateChoice);
+    } catch (e) {
+      // 静默刷新失败保留原列表
+    }
+  }
+
+  /** 成功预约后静默刷新"我的预约"数据（打开 BOOKINGS 层时会重新拉取，此处仅预取） */
+  private async reloadBookingsSilently(): Promise<void> {
+    if (this.isDemo) {
+      return;
+    }
+    try {
+      this.bookings = await SessionManager.getLibrarySeatService().getLibraryBookingRecords();
+    } catch (e) {
+      // 静默刷新失败保留原列表
+    }
+  }
+
+  /** 预约座位：二次确认（馆/楼层/区域/座位/日期/时段）→ 提交（FR-014） */
+  private confirmBookSeat(seat: LibrarySeatInfo): void {
+    if (this.busyKey.length > 0 || seat.status !== 1) {
+      return;
+    }
+    const dateText: string = this.tr(this.dateChoice === 0 ? 'libseat.today' : 'libseat.tomorrow')
+      + '（' + dateForChoice(this.dateChoice) + '）';
+    const segText: string = this.segmentBrief.length > 0
+      ? this.segmentBrief : this.tr('libseat.segmentFallback');
+    const message: string = this.libraryNameOf(this.selectedLibraryId) + '\n'
+      + this.currentFloorName + ' · ' + this.currentSectionName + '\n'
+      + this.trp('libseat.confirmSeat', { 'name': seat.name }) + '\n'
+      + this.trp('libseat.confirmDate', { 'name': dateText }) + '\n'
+      + this.trp('libseat.confirmSegment', { 'name': segText });
+    AlertDialog.show({
+      title: this.tr('libseat.bookTitle'),
+      message: message,
+      primaryButton: {
+        value: this.tr('common.cancel'),
+        action: (): void => {},
+      },
+      secondaryButton: {
+        value: this.tr('libseat.confirmBook'),
+        action: (): void => {
+          this.doBookSeat(seat);
+        },
+      },
+    });
+  }
+
+  private async doBookSeat(seat: LibrarySeatInfo): Promise<void> {
+    if (this.busyKey.length > 0) {
+      return;
+    }
+    if (this.isDemo) {
+      // 演示模式：不发起网络请求，仅可读提示（FR-010/SC-006）
+      this.getUIContext().getPromptAction()
+        .showToast({ message: this.tr('libseat.demoWriteBlocked'), duration: 2000 });
+      return;
+    }
+    this.busyKey = 'seat-' + String(seat.id);
+    try {
+      const result: LibraryBookResult = await SessionManager.getLibrarySeatService()
+        .bookLibrarySeat(this.currentSectionId, seat.id, seat.type, this.dateChoice);
+      if (result.status === 0) {
+        this.getUIContext().getPromptAction()
+          .showToast({ message: this.tr('libseat.bookSuccess'), duration: 2000 });
+        // 成功：刷新"我的预约"与该区域座位状态（FR-017）
+        this.reloadSeatsSilently();
+        this.reloadBookingsSilently();
+      } else {
+        const msgText: string = result.msg.length > 0
+          ? result.msg : this.tr('libseat.unknownError');
+        this.getUIContext().getPromptAction().showToast({
+          message: this.trp('libseat.bookFailed', { 'msg': msgText }),
+          duration: 2500,
+        });
+        // 失败（如座位已被他人占用/时段失效）：刷新座位状态（Edge Cases）
+        this.reloadSeatsSilently();
+      }
+    } catch (e) {
+      this.getUIContext().getPromptAction().showToast({
+        message: this.trp('libseat.bookFailed', { 'msg': this.extractError(e) }),
+        duration: 2500,
+      });
+    }
+    this.busyKey = '';
+  }
+
+  /** 取消预约：二次确认（座位/时间/状态）→ 提交（仅可取消记录，FR-016） */
+  private confirmCancelBooking(record: LibraryBookingRecord): void {
+    if (this.busyKey.length > 0 || record.cancelId.length === 0) {
+      return;
+    }
+    const message: string = this.trp('libseat.confirmSeat', { 'name': record.pos }) + '\n'
+      + this.trp('libseat.confirmTime', { 'name': record.time }) + '\n'
+      + this.trp('libseat.confirmStatus', { 'name': record.status.length > 0 ? record.status : '—' });
+    AlertDialog.show({
+      title: this.tr('libseat.cancelTitle'),
+      message: message,
+      primaryButton: {
+        value: this.tr('common.cancel'),
+        action: (): void => {},
+      },
+      secondaryButton: {
+        value: this.tr('libseat.confirmCancel'),
+        fontColor: Theme.error,
+        action: (): void => {
+          this.doCancelBooking(record);
+        },
+      },
+    });
+  }
+
+  private async doCancelBooking(record: LibraryBookingRecord): Promise<void> {
+    if (this.busyKey.length > 0 || record.cancelId.length === 0) {
+      return;
+    }
+    if (this.isDemo) {
+      // 演示模式：不发起网络请求，仅可读提示（FR-010/SC-006）
+      this.getUIContext().getPromptAction()
+        .showToast({ message: this.tr('libseat.demoWriteBlocked'), duration: 2000 });
+      return;
+    }
+    this.busyKey = 'cancel-' + record.cancelId;
+    try {
+      const result: LibraryBookResult = await SessionManager.getLibrarySeatService()
+        .cancelLibraryBooking(record.cancelId);
+      if (result.status === 0) {
+        this.getUIContext().getPromptAction()
+          .showToast({ message: this.tr('libseat.cancelSuccess'), duration: 2000 });
+        // 成功：刷新列表（FR-017）
+        await this.openBookings();
+      } else {
+        const msgText: string = result.msg.length > 0
+          ? result.msg : this.tr('libseat.unknownError');
+        this.getUIContext().getPromptAction().showToast({
+          message: this.trp('libseat.cancelFailed', { 'msg': msgText }),
+          duration: 2500,
+        });
+      }
+    } catch (e) {
+      this.getUIContext().getPromptAction().showToast({
+        message: this.trp('libseat.cancelFailed', { 'msg': this.extractError(e) }),
+        duration: 2500,
+      });
+    }
+    this.busyKey = '';
   }
 
   /** 座位状态 → 徽标色调 */
@@ -603,10 +797,10 @@ export struct LibrarySeatPage {
           this.openBookings();
         })
 
-        // 只读引导
+        // 使用引导（可预约语义）
         StateBlock({
           tone: StateTone.Info,
-          message: '座位数据仅供查询，预约请前往官方小程序完成',
+          message: this.tr('libseat.libraryHint'),
         })
         .margin({ left: Space.md, right: Space.md, bottom: Space.md })
 
@@ -671,7 +865,7 @@ export struct LibrarySeatPage {
       Column() {
         StateBlock({
           tone: StateTone.Info,
-          message: '区域座位实时查询，预约请前往官方小程序完成',
+          message: this.tr('libseat.sectionHint'),
         })
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
@@ -699,6 +893,25 @@ export struct LibrarySeatPage {
         .fontColor(Theme.text)
         .layoutWeight(1)
       StatusBadge({ text: seatStatusLabel(seat.status), tone: this.seatTone(seat.status) })
+
+      // 仅"可用"座位提供"预约"动作；提交中按钮转"提交中…"防重复（FR-014/FR-020）
+      if (seat.status === 1) {
+        Text(this.busyKey === 'seat-' + String(seat.id)
+          ? this.tr('libseat.submitting') : this.tr('libseat.book'))
+          .fontSize(FontSize.label)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Theme.textInvert)
+          .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+          .borderRadius(Radius.pill)
+          .backgroundColor(Theme.primary)
+          .margin({ left: Space.sm })
+          .constraintSize({ maxWidth: '100%' })
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .onClick(() => {
+            this.confirmBookSeat(seat);
+          })
+      }
     }
     .width('100%')
     .constraintSize({ maxWidth: '100%' })
@@ -715,7 +928,7 @@ export struct LibrarySeatPage {
       Column() {
         StateBlock({
           tone: StateTone.Info,
-          message: '座位状态实时查询，预约请前往官方小程序完成',
+          message: this.tr('libseat.seatHint'),
         })
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
@@ -750,6 +963,28 @@ export struct LibrarySeatPage {
         StatusBadge({ text: record.status.length > 0 ? record.status : '未知', tone: this.bookingTone(record.status) })
       }
       .width('100%')
+
+      // 仅可取消记录（cancelId 非空）提供"取消预约"；提交中转"提交中…"防重复（FR-016/FR-020）
+      if (record.cancelId.length > 0) {
+        Row() {
+          Text(this.busyKey === 'cancel-' + record.cancelId
+            ? this.tr('libseat.submitting') : this.tr('libseat.cancelBooking'))
+            .fontSize(FontSize.label)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Theme.error)
+            .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+            .borderRadius(Radius.pill)
+            .border({ width: 1, color: Theme.error })
+            .constraintSize({ maxWidth: '100%' })
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .onClick(() => {
+              this.confirmCancelBooking(record);
+            })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.End)
+      }
     }
     .width('100%')
     .constraintSize({ maxWidth: '100%' })
@@ -767,12 +1002,12 @@ export struct LibrarySeatPage {
       Column() {
         StateBlock({
           tone: StateTone.Info,
-          message: '记录仅供查询，预约与取消请前往官方小程序完成',
+          message: this.tr('libseat.bookingsHint'),
         })
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
         if (this.bookings.length === 0) {
-          EmptyHint({ title: '暂无预约记录', message: '预约座位请前往官方小程序完成' })
+          EmptyHint({ title: '暂无预约记录', message: this.tr('libseat.bookingsEmptyMessage') })
         } else {
           ForEach(this.bookings, (record: LibraryBookingRecord) => {
             this.BookingRow(record)

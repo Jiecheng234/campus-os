@@ -32,6 +32,7 @@ import { CampusCardService } from '../campus/CampusCardService';
 import { CampusNetworkService } from '../campus/CampusNetworkService';
 import { LibrarySeatService } from '../campus/LibrarySeatService';
 import { LibraryRoomService } from '../campus/LibraryRoomService';
+import { LaundryService } from '../campus/LaundryService';
 import { MailService } from '../campus/MailService';
 import { SportsService } from '../campus/SportsService';
 import { generateUUID } from '../../utils/CryptoUtils';
@@ -46,6 +47,7 @@ export class SessionManager {
   private static networkService: CampusNetworkService | undefined = undefined;
   private static librarySeatService: LibrarySeatService | undefined = undefined;
   private static libraryRoomService: LibraryRoomService | undefined = undefined;
+  private static laundryService: LaundryService | undefined = undefined;
   private static mailService: MailService | undefined = undefined;
   private static sportsService: SportsService | undefined = undefined;
 
@@ -95,6 +97,18 @@ export class SessionManager {
       SessionManager.libraryRoomService = new LibraryRoomService(auth.getHttpClient(), auth);
     }
     return SessionManager.libraryRoomService;
+  }
+
+  /**
+   * 宿舍洗衣机只读服务（第三方公开接口，无鉴权、不依赖登录态）：
+   * 仅以认证服务的 HttpClient 构造，不注入 auth（FR-009）。
+   */
+  static getLaundryService(): LaundryService {
+    if (SessionManager.laundryService === undefined) {
+      const auth: TsinghuaAuthService = SessionManager.getAuthService();
+      SessionManager.laundryService = new LaundryService(auth.getHttpClient());
+    }
+    return SessionManager.laundryService;
   }
 
   static getMailService(): MailService {
@@ -149,15 +163,34 @@ export class SessionManager {
   }
 
   /**
-   * 统一会话复位入口：清认证服务与校园数据服务的瞬态会话态/缓存标志
-   * （learn csrf、trace、教务/成绩/电费等子系统"已确保"标志、课表/学期缓存）。
+   * 统一会话复位入口：逐一扇出各校园子服务的瞬态会话态复位
+   * （各服务"已确保"标志与瞬态缓存：教务/成绩/电费/课表学期、体育会话、
+   * 图书馆座位会话+访问令牌/时段、研读间 cab 登录/账号号、Coremail 会话、
+   * 校园卡账号/卡号缓存）。
    *
-   * 触发点（两处，缺一不可）：
+   * 触发点（缺一不可，时序不变）：
    *   - logout()：退出登录即复位——进程内重登不残留上一会话的标志/缓存；
    *   - login()/verify2FACode() 成功后、AuthManager.loginSuccess() 广播门控前：
    *     页面随门控重新挂载后的首次自动加载依赖全新会话态。
    *
+   * 【复位方法契约】各子服务暴露一致签名的 `resetSessionState(): void`：
+   *   无参、同步、幂等、不抛；仅清本服务进程内瞬态态；
+   *   不触及 Cookie/凭证/网络/持久化。
+   *
+   * 【扇出清单】campusDataService（既有）→ sportsService → librarySeatService
+   *   → libraryRoomService → mailService → campusCardService。
+   *
+   * 【惰性】仅对已实例化服务调用（`!== undefined` 判据），不为复位触发懒加载；
+   * 未实例化服务的瞬态态本为初值，无需复位。
+   *
+   * 【异常隔离】每个服务复位调用独立 try/catch：单服务复位异常不中断
+   * 其余复位与登录/退出流程。
+   *
+   * 【登记指引】新增服务接入复位：实现同签名 `resetSessionState()` 并在
+   * 本方法内按上述范式登记一行（判据 + try/catch）。
+   *
    * 【边界】只清瞬态会话态：不清 Cookie、不动凭证（信任策略由调用方处理），
+   * 不复位认证服务 learn csrf（保持既有学习会话语义），
    * 不改变"退出不清 Cookie"的既有会话复用语义（FR-012）。
    */
   private static resetSessionState(): void {
@@ -165,9 +198,45 @@ export class SessionManager {
     //   - login() 首步已自行复位 csrfToken 并重新激活 learn 会话；
     //   - 本方法会在“登录成功后（门控广播前）”被调用，若此处再复位，
     //     会把刚激活得到的 csrf 清空 → 学习页 `UI_FETCH_COURSES trace=no_csrf`（实测）。
-    // 这里只复位校园子系统的“已确保/缓存”标志（消除跨会话残留：课表/成绩/电费等）。
+    // 这里逐一复位各校园子系统的瞬态会话态（“已确保”标志与瞬态缓存：
+    // 教务/成绩/电费/体育/图书馆座位/研读间/邮件/校园卡），消除跨会话残留。
     if (SessionManager.campusDataService !== undefined) {
       SessionManager.campusDataService.resetSessionState();
+    }
+    if (SessionManager.sportsService !== undefined) {
+      try {
+        SessionManager.sportsService.resetSessionState();
+      } catch (e) {
+        // 异常隔离：单服务复位异常不中断其余复位与登录/退出流程
+      }
+    }
+    if (SessionManager.librarySeatService !== undefined) {
+      try {
+        SessionManager.librarySeatService.resetSessionState();
+      } catch (e) {
+        // 异常隔离：同上
+      }
+    }
+    if (SessionManager.libraryRoomService !== undefined) {
+      try {
+        SessionManager.libraryRoomService.resetSessionState();
+      } catch (e) {
+        // 异常隔离：同上
+      }
+    }
+    if (SessionManager.mailService !== undefined) {
+      try {
+        SessionManager.mailService.resetSessionState();
+      } catch (e) {
+        // 异常隔离：同上
+      }
+    }
+    if (SessionManager.campusCardService !== undefined) {
+      try {
+        SessionManager.campusCardService.resetSessionState();
+      } catch (e) {
+        // 异常隔离：同上
+      }
     }
   }
 

@@ -395,6 +395,17 @@ export class SportsService {
     this.auth = auth;
   }
 
+  /**
+   * 会话瞬态复位（SessionManager.resetSessionState() 统一扇出调用）：
+   * 清体育场馆子系统"已确保"标志，避免进程内"退出→再登录"复用上一会话的
+   * 陈旧标志导致重登后首次拉取跳过会话重建。
+   * 契约：无参、同步、幂等、不抛；仅清本服务进程内瞬态态，
+   * 不触及 Cookie/凭证/网络。
+   */
+  resetSessionState(): void {
+    this.sportsSessionEnsured = false;
+  }
+
   /** 建立体育场馆子系统会话（通用漫游，对齐参考 ensureSportsSession） */
   private async ensureSportsSession(force: boolean): Promise<void> {
     if (this.sportsSessionEnsured && !force) {

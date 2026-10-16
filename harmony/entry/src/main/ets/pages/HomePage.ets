@@ -580,10 +580,8 @@ export struct HomePage {
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .onClick(() => {
-                this.getUIContext().getPromptAction().showToast({
-                  message: `${this.tr('home.qa.librarySeat')} — ${this.tr('home.comingSoon')}`,
-                  duration: 2000
-                });
+                // 一次点击直达图书馆座位页（FR-018；复用待处理导航目标机制）
+                this.navigateTo(3, 'library-seat', '');
               })
 
             Text(this.tr('home.qa.addDdl'))

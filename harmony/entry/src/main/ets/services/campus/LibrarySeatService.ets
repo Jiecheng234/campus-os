@@ -13,13 +13,20 @@
  *     并发拉取、单层失败容错为 0；未开放层不发请求。
  *   - 座位查询：先 areadays/{sectionId} 命中目标日期拿时段 id 与起止时间
  *     （今天把起始时间钳制为"当前时刻或更晚"），再 spaces_old 查座位状态。
- *   - 我的预约：user/index/book HTML 表格正则解析（cheerio 语义：tr 子节点含文本节点）。
- *
- * 只读浏览；预约/取消不迁移（下单走清华师生小程序）。
+ *   - 我的预约：user/index/book HTML 表格正则解析（cheerio 语义：tr 子节点含文本节点）；
+ *     行内 menuDel('…') onclick 解析出可取消标识 cancelId（无则不可取消）。
+ *   - 写操作（预约/取消，对齐原项目 getLibraryAccessToken/bookLibrarySeat/
+ *     cancelLibraryBooking）：访问令牌自图书馆主页 HTML 抓取（access_token 后
+ *     第一对引号内字符串），内存缓存约 5 分钟；预约 POST api.php/spaces/{seatId}/book
+ *     （表单 access_token/userid/segment/type/operateChannel=2）；取消 POST
+ *     api.php/profile/books/{bookingId}（表单 _method=delete/id/userid/
+ *     access_token/operateChannel=2）；响应 JSON status===0 视为成功；失败文本
+ *     命中令牌关键字则强制刷新令牌重试一次；日志/错误不得输出令牌明文（FR-019）。
  * ============================================================================
  */
 import { HttpClient, HttpResponse } from '../HttpClient';
 import { TsinghuaAuthService } from '../auth/TsinghuaAuthService';
+import { CampusCredentials } from '../../domain/AuthTypes';
 import { Log } from '../../utils/Logger';
 
 const WEBVPN_BASE: string = 'https://webvpn.tsinghua.edu.cn';
@@ -40,6 +47,13 @@ const LIBRARY_DAYS_URL_PREFIX: string = WEBVPN_BASE + '/https/' + LIB_TOKEN + '/
 const LIBRARY_SEATS_URL: string = WEBVPN_BASE + '/https/' + LIB_TOKEN + '/api.php/spaces_old';
 /** 我的预约记录页（HTML 表格） */
 const LIBRARY_BOOKING_RECORDS_URL: string = WEBVPN_BASE + '/https/' + LIB_TOKEN + '/user/index/book';
+/** 预约座位（POST 表单：api.php/spaces/{seatId}/book） */
+const LIBRARY_BOOK_URL_PREFIX: string = WEBVPN_BASE + '/https/' + LIB_TOKEN + '/api.php/spaces/';
+const LIBRARY_BOOK_URL_SUFFIX: string = '/book';
+/** 取消预约（POST 表单：api.php/profile/books/{bookingId}；表单含 _method=delete） */
+const LIBRARY_CANCEL_URL_PREFIX: string = WEBVPN_BASE + '/https/' + LIB_TOKEN + '/api.php/profile/books/';
+/** 访问令牌内存缓存有效期（约 5 分钟；对齐参考实现） */
+const ACCESS_TOKEN_CACHE_MS: number = 5 * 60 * 1000;
 
 // ============================================================
 // 模块级辅助
@@ -106,6 +120,20 @@ function strOf(value: Object | undefined): string {
     return '';
   }
   return String(value);
+}
+
+/** 写接口 status 字段 → 数字（缺失/非法 → -1，对齐参考实现 ?? -1；status===0 才视为成功） */
+function numOfOrMinusOne(value: Object | undefined): number {
+  if (value === undefined || value === null) {
+    return -1;
+  }
+  const n: number = Number(value);
+  return Number.isFinite(n) ? n : -1;
+}
+
+/** 失败文本是否命中令牌失效关键字（token/令牌/过期/invalid，忽略大小写；对齐参考实现） */
+function isTokenFailureText(msg: string): boolean {
+  return /token|令牌|过期|invalid/i.test(msg);
 }
 
 /** 座位状态 → 中文标签（1=可用 6=已预约 7=已被占用 其他=不可用；未知值安全回退） */
@@ -179,6 +207,7 @@ function parseTrChildren(trHtml: string): string[] {
 /**
  * 解析预约记录页 <tbody><tr> 行（对齐原项目 childText(row, 3/5/7/11)）：
  * id=编号 pos=位置 time=时间 status=状态；空行（无编号/位置/时间）过滤。
+ * 取消标识：行内 menuDel('…') onclick 提取取消 id（对齐参考 delMatch）；无则不可取消。
  */
 function parseBookingRecords(html: string): LibraryBookingRecord[] {
   const records: LibraryBookingRecord[] = [];
@@ -196,6 +225,9 @@ function parseBookingRecords(html: string): LibraryBookingRecord[] {
       rec.pos = children.length > 5 ? children[5] : '';
       rec.time = children.length > 7 ? children[7] : '';
       rec.status = children.length > 11 ? children[11] : '';
+      // 可取消标识：行内 menuDel('…') onclick 的第一个引号参数（无该标识 → 不可取消）
+      const delMatch: RegExpExecArray | null = /menuDel\('(.+?)'/.exec(trm[1]);
+      rec.cancelId = delMatch !== null ? delMatch[1] : '';
       if (rec.id.length > 0 || rec.pos.length > 0 || rec.time.length > 0) {
         records.push(rec);
       }
@@ -248,21 +280,31 @@ export class LibrarySeatInfo {
   type: number = 0;
 }
 
-/** 我的预约记录（只读展示；不支持取消） */
+/** 我的预约记录（cancelId 非空 → 可发起取消；空串 → 不可取消，不提供取消动作） */
 export class LibraryBookingRecord {
   id: string = '';
   pos: string = '';
   time: string = '';
   status: string = '';
+  /** 取消标识（行内 menuDel('…') 解析；空串表示不可取消） */
+  cancelId: string = '';
 }
 
-/** 区域可预约日时段（areadays 命中目标日期的那天；内部使用） */
-class LibraryDaySegment {
+/** 区域可预约日时段（areadays 命中目标日期的那天；读写共用） */
+export class LibraryDaySegment {
   day: string = '';
   startTime: string = '';
   endTime: string = '';
   segmentId: string = '';
   today: boolean = false;
+}
+
+/** 预约/取消写接口结果（status === 0 视为成功；失败文本命中令牌关键字 → tokenExpired） */
+export class LibraryBookResult {
+  status: number = -1;
+  msg: string = '';
+  /** 仅服务内部重试用；调用方以 status === 0 判定成功 */
+  tokenExpired: boolean = false;
 }
 
 // ============================================================
@@ -274,10 +316,30 @@ export class LibrarySeatService {
   private auth: TsinghuaAuthService;
   /** 图书馆座院子系统会话是否已通过 id-roam 建立 */
   private libAccessEnsured: boolean = false;
+  /** 访问令牌内存缓存值（禁止输出到日志/错误文本，FR-019） */
+  private accessTokenValue: string = '';
+  /** 访问令牌缓存时间戳（有效期约 5 分钟） */
+  private accessTokenTs: number = 0;
+  /** 最近一次座位查询解析到的目标日时段（预约确认框展示时段用） */
+  private lastDaySegment: LibraryDaySegment | undefined = undefined;
 
   constructor(http: HttpClient, auth: TsinghuaAuthService) {
     this.http = http;
     this.auth = auth;
+  }
+
+  /**
+   * 会话瞬态复位（SessionManager.resetSessionState() 统一扇出调用）：
+   * 清图书馆座院子系统"已确保"标志、访问令牌缓存（值/时间戳）与最近
+   * 时段缓存，避免进程内"退出→再登录"复用上一会话的陈旧令牌/时段。
+   * 契约：无参、同步、幂等、不抛；仅清本服务进程内瞬态态，
+   * 不触及 Cookie/凭证/网络。
+   */
+  resetSessionState(): void {
+    this.libAccessEnsured = false;
+    this.accessTokenValue = '';
+    this.accessTokenTs = 0;
+    this.lastDaySegment = undefined;
   }
 
   /** 建立图书馆座院子系统会话（id-roam + 子系统首页 GET 失败忽略）；force 强制重漫游 */
@@ -487,6 +549,7 @@ export class LibrarySeatService {
 
   private async doGetLibrarySeatList(sectionId: number, dateChoice: number): Promise<LibrarySeatInfo[]> {
     const dayInfo: LibraryDaySegment = await this.getLibraryDay(sectionId, dateChoice);
+    this.lastDaySegment = dayInfo;
     const params: Record<string, string | number> = {
       'area': sectionId,
       'segment': dayInfo.segmentId,
@@ -527,5 +590,159 @@ export class LibrarySeatService {
       throw new Error('未能加载图书馆预约记录');
     }
     return records;
+  }
+
+  // ============================================================
+  // 写操作（预约 / 取消；对齐参考实现 getLibraryAccessToken / bookLibrarySeat / cancelLibraryBooking）
+  // ============================================================
+
+  /**
+   * 最近一次座位查询的目标日时段（供预约确认框展示时段；尚未查询过返回 undefined）。
+   * 仅供展示；预约提交以 bookLibrarySeat 内部重新解析的时段为准。
+   */
+  getLastDaySegment(): LibraryDaySegment | undefined {
+    return this.lastDaySegment;
+  }
+
+  /**
+   * 访问令牌：自图书馆主页 HTML 中 "access_token" 后第一对引号内字符串抓取；
+   * 内存缓存约 5 分钟（force=true 跳过缓存强制刷新）。
+   * 令牌禁止输出到日志/错误文本（FR-019）。
+   */
+  async getLibraryAccessToken(force?: boolean): Promise<string> {
+    const now: number = Date.now();
+    const skipCache: boolean = force === undefined ? false : force;
+    if (!skipCache && this.accessTokenValue.length > 0
+      && now - this.accessTokenTs < ACCESS_TOKEN_CACHE_MS) {
+      return this.accessTokenValue;
+    }
+    await this.ensureLibraryAccess(false);
+    const resp: HttpResponse = await this.http.get(LIB_HOME_URL);
+    const html: string = resp.body;
+    const left: number = html.indexOf('access_token');
+    if (left < 0) {
+      throw new Error('图书馆主页未包含访问令牌字段');
+    }
+    const quoteStart: number = html.indexOf('"', left);
+    if (quoteStart < 0) {
+      throw new Error('图书馆主页访问令牌格式异常');
+    }
+    const quoteEnd: number = html.indexOf('"', quoteStart + 1);
+    if (quoteEnd < 0) {
+      throw new Error('图书馆主页访问令牌格式异常');
+    }
+    const token: string = html.substring(quoteStart + 1, quoteEnd).trim();
+    if (token.length === 0) {
+      throw new Error('图书馆主页访问令牌为空');
+    }
+    this.accessTokenValue = token;
+    this.accessTokenTs = now;
+    // 仅记录长度，禁止输出令牌明文（FR-019）
+    Log.i('LibrarySeat', 'ACCESS_TOKEN refreshed len=%{public}d force=%{public}s',
+      token.length, skipCache ? '1' : '0');
+    return token;
+  }
+
+  /**
+   * 预约座位：取目标日时段 → POST 表单 {access_token, userid, segment, type, operateChannel='2'}；
+   * 响应 JSON status===0 视为成功；失败文本命中令牌关键字 → 强制刷新令牌重试一次；
+   * 整体包 withLibRetry（两层会话恢复，label 'lib'）。
+   */
+  async bookLibrarySeat(sectionId: number, seatId: number, seatType: number, dateChoice: number):
+    Promise<LibraryBookResult> {
+    await this.ensureLibraryAccess(false);
+    return this.withLibRetry((): Promise<LibraryBookResult> => {
+      return this.doBookLibrarySeat(sectionId, seatId, seatType, dateChoice);
+    });
+  }
+
+  private async doBookLibrarySeat(sectionId: number, seatId: number, seatType: number,
+    dateChoice: number): Promise<LibraryBookResult> {
+    const creds: CampusCredentials = await this.auth.getRoamCredentials();
+    const dayInfo: LibraryDaySegment = await this.getLibraryDay(sectionId, dateChoice);
+    const token: string = await this.getLibraryAccessToken();
+    const first: LibraryBookResult = await this.postBook(seatId, seatType, creds.studentId,
+      dayInfo.segmentId, token);
+    if (first.tokenExpired) {
+      // 令牌失效自愈：强制刷新令牌后重试一次（SC-011）
+      const freshToken: string = await this.getLibraryAccessToken(true);
+      return this.postBook(seatId, seatType, creds.studentId, dayInfo.segmentId, freshToken);
+    }
+    return first;
+  }
+
+  /** 单次预约提交（POST 表单；不重试） */
+  private async postBook(seatId: number, seatType: number, userid: string, segment: string,
+    token: string): Promise<LibraryBookResult> {
+    const form: Record<string, string> = {
+      'access_token': token,
+      'userid': userid,
+      'segment': segment,
+      'type': String(seatType),
+      'operateChannel': '2',
+    };
+    const url: string = LIBRARY_BOOK_URL_PREFIX + String(seatId) + LIBRARY_BOOK_URL_SUFFIX;
+    const resp: HttpResponse = await this.http.postForm(url, form);
+    const result: LibraryBookResult = this.parseWriteResult(resp.body, '预约');
+    // 日志只记录座位与状态码，禁止输出表单（含令牌）与服务端原始文本（FR-019）
+    Log.i('LibrarySeat', 'LIB_BOOK seat=%{public}d status=%{public}d', seatId, result.status);
+    return result;
+  }
+
+  /**
+   * 取消预约：POST 表单 {_method='delete', id, userid, access_token, operateChannel='2'}；
+   * 令牌失效自动刷新重试一次；整体包 withLibRetry（两层会话恢复，label 'lib'）。
+   */
+  async cancelLibraryBooking(bookingId: string): Promise<LibraryBookResult> {
+    await this.ensureLibraryAccess(false);
+    return this.withLibRetry((): Promise<LibraryBookResult> => {
+      return this.doCancelLibraryBooking(bookingId);
+    });
+  }
+
+  private async doCancelLibraryBooking(bookingId: string): Promise<LibraryBookResult> {
+    const creds: CampusCredentials = await this.auth.getRoamCredentials();
+    const token: string = await this.getLibraryAccessToken();
+    const first: LibraryBookResult = await this.postCancel(bookingId, creds.studentId, token);
+    if (first.tokenExpired) {
+      // 令牌失效自愈：强制刷新令牌后重试一次（SC-011）
+      const freshToken: string = await this.getLibraryAccessToken(true);
+      return this.postCancel(bookingId, creds.studentId, freshToken);
+    }
+    return first;
+  }
+
+  /** 单次取消提交（POST 表单；不重试） */
+  private async postCancel(bookingId: string, userid: string, token: string): Promise<LibraryBookResult> {
+    const form: Record<string, string> = {
+      '_method': 'delete',
+      'id': bookingId,
+      'userid': userid,
+      'access_token': token,
+      'operateChannel': '2',
+    };
+    const url: string = LIBRARY_CANCEL_URL_PREFIX + bookingId;
+    const resp: HttpResponse = await this.http.postForm(url, form);
+    const result: LibraryBookResult = this.parseWriteResult(resp.body, '取消');
+    // 日志只记录结果状态码，禁止输出表单（含令牌）与服务端原始文本（FR-019）
+    Log.i('LibrarySeat', 'LIB_CANCEL status=%{public}d', result.status);
+    return result;
+  }
+
+  /** 写接口响应解析：非 JSON → 可读错误；status===0 成功；失败文本命中令牌关键字 → tokenExpired */
+  private parseWriteResult(body: string, opLabel: string): LibraryBookResult {
+    let parsed: Record<string, Object>;
+    try {
+      parsed = JSON.parse(body) as Record<string, Object>;
+    } catch (e) {
+      throw new Error(opLabel + '接口响应非 JSON: ' + body.substring(0, 80));
+    }
+    const result: LibraryBookResult = new LibraryBookResult();
+    result.status = numOfOrMinusOne(parsed['status']);
+    result.msg = strOf(parsed['msg']);
+    if (result.status !== 0 && isTokenFailureText(result.msg)) {
+      result.tokenExpired = true;
+    }
+    return result;
   }
 }

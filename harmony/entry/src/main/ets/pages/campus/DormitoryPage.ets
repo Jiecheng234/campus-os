@@ -1,14 +1,17 @@
 /**
- * DormitoryPage — 宿舍服务（核心：电费余额/房间信息/缴费记录）
- * 真实模式：id-roam 电费子系统 + webvpn 只读查询（对齐原项目 EleBalanceScreen）；
- * 演示模式：内置示例数据。充值链不迁移，按钮以 toast 提示走网页充值。
+ * DormitoryPage — 宿舍服务（电费 / 洗衣机 分段切换）
+ * 电费：余额/房间信息/缴费记录；真实模式 id-roam + webvpn 只读查询，演示模式内置示例。
+ * 洗衣机：内联渲染 LaundryPage（楼宇分组 → 楼层/机台，只读；第三方公开接口）。
+ * 充值链不迁移，按钮以 toast 提示走网页充值。
  */
-import { Theme, SafeTop, Space } from '../Theme';
+import { Theme, SafeTop, Space, Radius } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
 import { SessionManager } from '../../services/auth/SessionManager';
 import { CampusDataService, EleRemainder, EleRoomInfo } from '../../services/campus/CampusDataService';
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
+import { LaundryPage } from './LaundryPage';
+import { I18n } from '../../utils/I18n';
 
 /** 缴费记录列名（对齐原项目 RECORD_COLUMNS） */
 const RECORD_COLUMNS: string[] = ['充值时间', '充值', '充值前', '充值后', '操作员', '备注'];
@@ -34,6 +37,10 @@ function getMockRecords(): string[][] {
 @Component
 export struct DormitoryPage {
   onBack: () => void = () => {};
+  /** 页内切换：洗衣机子页（返回回到电费视图） */
+  @State showLaundry: boolean = false;
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
   @State remainderText: string = '—';
   @State updateTimeText: string = '';
   @State room: EleRoomInfo = new EleRoomInfo();
@@ -100,6 +107,35 @@ export struct DormitoryPage {
     }
   }
 
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  /** 顶部"电费 / 洗衣机"分段切换（FR-001：与电费并列，不新增校园主列表入口） */
+  @Builder SegmentTabs() {
+    Row({ space: Space.xs }) {
+      Text(this.tr('campus.dormitory.tabPower'))
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Theme.textInvert)
+        .padding({ left: Space.md, right: Space.md, top: 6, bottom: 6 })
+        .borderRadius(Radius.pill)
+        .backgroundColor(Theme.primary)
+      Text(this.tr('campus.dormitory.tabLaundry'))
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Theme.textSecondary)
+        .padding({ left: Space.md, right: Space.md, top: 6, bottom: 6 })
+        .borderRadius(Radius.pill)
+        .backgroundColor(Theme.surfaceAlt)
+        .onClick(() => {
+          this.showLaundry = true;
+        })
+    }
+    .width('100%')
+    .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+  }
+
   @Builder RightAction() {
     if (this.loading) {
       LoadingProgress()
@@ -143,24 +179,35 @@ export struct DormitoryPage {
     Column() {
       SafeTop()
 
-      DetailHeader({
-        title: '宿舍服务',
-        onBack: () => { this.onBack(); },
-        right: (): void => { this.RightAction(); },
-      })
+      if (this.showLaundry) {
+        // 洗衣机子层：内联渲染（自带头部/逐级返回/刷新；返回回到电费视图）
+        LaundryPage({
+          onBack: () => {
+            this.showLaundry = false;
+          },
+        })
+          .layoutWeight(1)
+      } else {
+        DetailHeader({
+          title: '宿舍服务',
+          onBack: () => { this.onBack(); },
+          right: (): void => { this.RightAction(); },
+        })
 
-      Divider().color(Theme.divider)
+        Divider().color(Theme.divider)
 
-      if (!this.isReal) {
-        Text('演示数据 · 登录后显示真实电费')
-          .fontSize(12)
-          .fontColor(Theme.textMuted)
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .padding({ top: 8, bottom: 0 })
-      }
+        this.SegmentTabs()
 
-      Scroll() {
+        if (!this.isReal) {
+          Text('演示数据 · 登录后显示真实电费')
+            .fontSize(12)
+            .fontColor(Theme.textMuted)
+            .width('100%')
+            .textAlign(TextAlign.Center)
+            .padding({ top: 8, bottom: 0 })
+        }
+
+        Scroll() {
         Column() {
           // 剩余电量卡片
           Column() {
@@ -281,55 +328,13 @@ export struct DormitoryPage {
             .fontColor(Theme.textInvert)
             .backgroundColor(Theme.primary)
             .borderRadius(Theme.cardRadius)
-            .margin({ left: 16, right: 16, top: 20 })
+            .margin({ left: 16, right: 16, top: 20, bottom: 24 })
             .onClick(() => {
               this.getUIContext().getPromptAction().showToast({
                 message: '充值请通过网页版电费系统操作',
                 duration: 2000,
               });
             })
-
-          // 洗衣服务（静态展示，服务暂未接入）
-          Row() {
-            Column() {
-              Text('👕')
-                .fontSize(28)
-            }
-            .width(56)
-            .height(56)
-            .borderRadius(14)
-            .backgroundColor('rgba(22,163,74,0.08)')
-            .alignItems(HorizontalAlign.Center)
-            .justifyContent(FlexAlign.Center)
-
-            Column() {
-              Text('洗衣服务')
-                .fontSize(13)
-                .fontColor(Theme.textMuted)
-              Text('3 台可用')
-                .fontSize(22)
-                .fontWeight(FontWeight.Bold)
-                .fontColor('#16A34A')
-                .margin({ top: 4 })
-            }
-            .alignItems(HorizontalAlign.Start)
-            .margin({ left: 16 })
-            .layoutWeight(1)
-
-            Text('空闲')
-              .fontSize(13)
-              .fontColor(Theme.success)
-              .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-              .borderRadius(8)
-              .backgroundColor('rgba(22,163,74,0.10)')
-          }
-          .width('100%')
-          .constraintSize({ maxWidth: '100%' })
-          .padding(16)
-          .borderRadius(Theme.cardRadius)
-          .backgroundColor(Theme.surface)
-          .border({ width: 1, color: Theme.borderSubtle })
-          .margin({ left: 16, right: 16, top: 16, bottom: 24 })
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
@@ -337,6 +342,7 @@ export struct DormitoryPage {
       .width('100%')
       .layoutWeight(1)
       .scrollBar(BarState.Off)
+      }
     }
     .width('100%')
     .height('100%')

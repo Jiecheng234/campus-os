@@ -8,6 +8,7 @@ import { FinancePage } from './campus/FinancePage';
 import { NetworkPage } from './campus/NetworkPage';
 import { MailPage } from './campus/MailPage';
 import { ReservationPage } from './campus/ReservationPage';
+import { LibrarySeatPage } from './campus/LibrarySeatPage';
 import { NewsPage } from './campus/NewsPage';
 import { ProgramPage } from './campus/ProgramPage';
 import { BackDispatcher, BackOwner, BackHandler } from '../state/BackDispatcher';
@@ -166,6 +167,19 @@ export struct CampusPage {
       NetworkPage({ onBack: () => { this.subScreen = ''; } })
     } else if (this.subScreen === 'reservation') {
       ReservationPage({ onBack: () => { this.subScreen = ''; } })
+    } else if (this.subScreen === 'library-seat') {
+      // 首页"图书馆座位"入口一次直达（复用待处理导航目标机制；FR-018）
+      // 顶部安全区由宿主提供：LibrarySeatPage 为内嵌组件（不自带 SafeTop），
+      // 经校园页进入时由 ReservationPage 提供，此处须同样提供，否则标题贴顶、
+      // 返回键被状态栏/通知中心遮挡。
+      Column() {
+        SafeTop()
+        LibrarySeatPage({ onBack: () => { this.subScreen = ''; } })
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Theme.background)
     } else if (this.subScreen === 'mail') {
       MailPage({ onBack: () => { this.subScreen = ''; } })
     } else if (this.subScreen === 'news') {
