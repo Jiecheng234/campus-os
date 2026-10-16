@@ -36,6 +36,8 @@ const CONNECT_TIMEOUT_MS: number = 15000;
 const READ_TIMEOUT_MS: number = 300000;
 /** dataEnd 后响应码仍未返回时的兜底等待（ms），超时按成功收尾 */
 const CODE_FALLBACK_WAIT_MS: number = 2000;
+/** 逐轮流式补全的取消轮询间隔（ms；数据静默期兜底响应停止操作） */
+const ROUND_CANCEL_POLL_MS: number = 500;
 
 /** 错误类别（页面按类别映射 i18n 可读文案；不承载预烘焙文案） */
 export enum LLMErrorKind {
@@ -115,6 +117,112 @@ class LLMFullResponseRaw {
 
 class LLMFullChoiceRaw {
   message?: LLMStreamDeltaRaw;
+}
+
+/** 非流式带工具响应原始模型（JSON.parse 后一次性断言；字段可能缺失） */
+class LLMToolsResponseRaw {
+  choices?: LLMToolsChoiceRaw[];
+}
+
+class LLMToolsChoiceRaw {
+  message?: LLMToolsMessageRaw;
+}
+
+class LLMToolsMessageRaw {
+  content?: string;
+  tool_calls?: LLMToolsCallRaw[];
+}
+
+class LLMToolsCallRaw {
+  id?: string;
+  function?: LLMToolsCallFunctionRaw;
+}
+
+class LLMToolsCallFunctionRaw {
+  name?: string;
+  arguments?: string;
+}
+
+/** 逐轮流式 SSE data 行原始模型（JSON.parse 后一次性断言；字段可能缺失） */
+class LLMRoundChunkRaw {
+  choices?: LLMRoundChoiceRaw[];
+}
+
+class LLMRoundChoiceRaw {
+  delta?: LLMRoundDeltaRaw;
+  message?: LLMRoundMessageRaw;
+}
+
+class LLMRoundDeltaRaw {
+  content?: string;
+  tool_calls?: LLMRoundToolCallDeltaRaw[];
+}
+
+/** delta.tool_calls[] 增量片段（id/function.name/function.arguments 均可能分片） */
+class LLMRoundToolCallDeltaRaw {
+  index?: number;
+  id?: string;
+  function?: LLMToolsCallFunctionRaw;
+}
+
+/** data 行内整体 message（个别服务端兼容形态；content/tool_calls 均为完整值） */
+class LLMRoundMessageRaw {
+  content?: string;
+  tool_calls?: LLMToolsCallRaw[];
+}
+
+/** 整体 JSON 响应原始模型（服务端忽略 stream:true 时的回退） */
+class LLMRoundFullResponseRaw {
+  choices?: LLMRoundFullChoiceRaw[];
+}
+
+class LLMRoundFullChoiceRaw {
+  message?: LLMRoundMessageRaw;
+}
+
+/** 流式 tool_calls 增量按 index 汇总的累积器（id/name/args 为分片拼接结果） */
+class LLMRoundToolCallAcc {
+  index: number = 0;
+  id: string = '';
+  name: string = '';
+  args: string = '';
+}
+
+/** 非流式工具补全：模型返回的单个工具调用 */
+export class LLMToolCall {
+  id: string = '';
+  name: string = '';
+  /** 参数 JSON 文本（原样回传模型，未解析） */
+  arguments: string = '{}';
+}
+
+/**
+ * 带工具补全的结果（非流式 chatCompleteWithTools 与流式逐轮
+ * streamRoundWithTools 共用）：
+ * - ok=true：content/toolCalls 为模型输出（两者可能同时存在）
+ * - ok=false：kind 为错误类别（沿用 LLMErrorKind 归一），detail 供日志
+ * - cancelled=true：流式轮次被取消（用户停止/离开；仅 streamRoundWithTools 产出）
+ */
+export class LLMToolsOutcome {
+  ok: boolean = false;
+  kind: LLMErrorKind = LLMErrorKind.SERVER;
+  detail: string = '';
+  content: string = '';
+  toolCalls: LLMToolCall[] = [];
+  /** 流式轮次被取消（不抛；已收增量由调用方决定保留/丢弃） */
+  cancelled: boolean = false;
+}
+
+/**
+ * 逐轮流式补全选项（agent 循环专用；T019/FR-015）：
+ * content 增量经 onContentDelta 外发；该轮出现 tool_calls 片段后停止外发
+ * （中间工具轮正文不外发，正文仍完整累积供回灌模型）。
+ */
+export class LLMRoundStreamOptions {
+  /** content 增量回调（已解码 UTF-8；仅该轮未出现 tool_calls 片段时回调） */
+  onContentDelta: (chunk: string) => void = (chunk: string): void => {};
+  /** 取消信号（数据到达与定时轮询中检查；取消即中断请求并以 cancelled 收尾） */
+  isCancelled: (() => boolean) | undefined = undefined;
 }
 
 /** 预设常量表（与参考实现 AI_PRESETS 对齐；dashscope=通义千问兼容模式） */
@@ -385,26 +493,12 @@ export class LLMStreamSession {
 
   /** HTTP 状态码 → 错误类别（401/403→AUTH；429→RATE_LIMIT；5xx→SERVER） */
   private mapHttpStatus(code: number): LLMErrorKind {
-    if (code === 401 || code === 403) {
-      return LLMErrorKind.AUTH;
-    }
-    if (code === 429) {
-      return LLMErrorKind.RATE_LIMIT;
-    }
-    if (code >= 500) {
-      return LLMErrorKind.SERVER;
-    }
-    // 其余 4xx（含 baseUrl 指向不存在的路径 404 等）按通用失败提示
-    return LLMErrorKind.SERVER;
+    return LLMService.mapHttpErrorKind(code);
   }
 
   /** 传输层错误 → 错误类别（超时单独归类，其余按网络不可用） */
   private mapTransportError(e: BusinessError): LLMErrorKind {
-    const message: string = e.message !== undefined ? e.message : '';
-    if (e.code === 2300028 || message.indexOf('timed out') >= 0 || message.indexOf('timeout') >= 0) {
-      return LLMErrorKind.TIMEOUT;
-    }
-    return LLMErrorKind.NETWORK;
+    return LLMService.mapTransportErrorKind(e);
   }
 
   private finishSuccess(): void {
@@ -443,6 +537,426 @@ export class LLMStreamSession {
       request.destroy();
     } catch (e) {
       // 清理失败不影响已定结果（fail/成功回调均已发出）
+    }
+  }
+}
+
+/**
+ * 逐轮流式补全会话（agent 循环专用；T019/FR-015/SC-009）：
+ * - 与既有 LLMStreamSession 的差异：请求体携带 tools/tool_choice（原始
+ *   JSON 文本），SSE 解析在 content 增量之外【同时累积 tool_calls 增量】
+ *   （OpenAI 兼容 choices[].delta.tool_calls[]，按 index 汇总 id/
+ *   function.name/function.arguments 分片），轮次结束以 LLMToolsOutcome
+ *   （Promise resolve）返回累积 content 与 toolCalls。
+ * - content 增量经 options.onContentDelta 外发；该轮出现 tool_calls 片段
+ *   后停止外发（中间工具轮正文不外发；正文仍完整累积回灌模型）。
+ * - 取消：isCancelled 在数据到达与定时轮询中检查，取消即销毁请求并以
+ *   cancelled=true 收尾（不抛、不再回调）。
+ * - 兼容服务端忽略 stream:true 返回整体 JSON（含 message.tool_calls）。
+ * - 错误按 LLMErrorKind 归一（ok=false）；鉴权头不进日志。
+ */
+export class LLMRoundStreamSession {
+  private httpRequest: http.HttpRequest | undefined = undefined;
+  private options: LLMRoundStreamOptions = new LLMRoundStreamOptions();
+  private decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+  /** 跨块行缓冲（SSE 事件可能被 TCP 分段截断） */
+  private lineBuffer: string = '';
+  private fullText: string = '';
+  /** 原始响应体积留档（仅用于整体 JSON 回退解析与日志长度） */
+  private rawBody: string = '';
+  private responseCode: number = -1;
+  private dataEnded: boolean = false;
+  private finished: boolean = false;
+  /** 该轮已出现 tool_calls 片段（其后 content 增量不再外发） */
+  private toolCallSeen: boolean = false;
+  /** tool_calls 增量按 index 汇总的累积器 */
+  private toolCallAccs: LLMRoundToolCallAcc[] = [];
+  private resolver: ((outcome: LLMToolsOutcome) => void) | undefined = undefined;
+  /** 静默期取消轮询句柄（<0 表示未启动） */
+  private cancelPoller: number = -1;
+
+  /**
+   * 发起逐轮流式补全：轮次结束时 Promise resolve 累积结果
+   * （ok=true 携带 content/toolCalls；ok=false 携带错误类别；取消 cancelled=true）。
+   */
+  begin(config: LLMProviderConfig, apiKey: string, messagesJson: string, toolsJson: string,
+    options: LLMRoundStreamOptions): Promise<LLMToolsOutcome> {
+    this.options = options;
+    return new Promise<LLMToolsOutcome>((resolve: (outcome: LLMToolsOutcome) => void) => {
+      this.resolver = resolve;
+      const baseUrl: string = LLMService.resolveBaseUrl(config);
+      const model: string = LLMService.resolveModel(config);
+      // 前置校验失败不构造请求、不触网
+      if (apiKey.length === 0) {
+        this.fail(LLMErrorKind.NOT_CONFIGURED);
+        return;
+      }
+      if (baseUrl.length === 0 || model.length === 0 || messagesJson.length === 0) {
+        this.fail(LLMErrorKind.BAD_BASE_URL);
+        return;
+      }
+
+      // 请求体以原始 JSON 文本提交（messages/tools 由调用方构造，含 tool_calls 轮次）
+      let bodyText: string = '{"model":' + JSON.stringify(model) +
+        ',"stream":true,"messages":' + messagesJson;
+      if (toolsJson.length > 0) {
+        bodyText += ',"tools":' + toolsJson + ',"tool_choice":"auto"';
+      }
+      bodyText += '}';
+
+      // 鉴权头仅进入请求，不进入任何日志
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Authorization': 'Bearer ' + apiKey,
+      };
+      const httpOptions: http.HttpRequestOptions = {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: bodyText,
+        connectTimeout: CONNECT_TIMEOUT_MS,
+        readTimeout: READ_TIMEOUT_MS,
+        usingCache: false,
+      };
+
+      const request: http.HttpRequest = http.createHttp();
+      this.httpRequest = request;
+      request.on('dataReceive', (data: ArrayBuffer) => {
+        this.handleChunk(data);
+      });
+      request.on('dataEnd', () => {
+        this.handleDataEnd();
+      });
+      this.startCancelPoller();
+      Log.i(LOG_TAG, 'ROUND start preset=%{public}s model=%{public}s hasTools=%{public}s',
+        config.preset, model, toolsJson.length > 0 ? 'true' : 'false');
+      request.requestInStream(baseUrl + '/chat/completions', httpOptions)
+        .then((code: number) => {
+          this.handleCode(code);
+        })
+        .catch((e: BusinessError) => {
+          this.handleFailure(e);
+        });
+    });
+  }
+
+  // ============================================================
+  // 内部：SSE 解析与状态机（content + tool_calls 双累积）
+  // ============================================================
+
+  private handleChunk(data: ArrayBuffer): void {
+    if (this.finished) {
+      return;
+    }
+    if (this.isCancelledNow()) {
+      this.cancelByUser();
+      return;
+    }
+    const text: string = this.decoder.decodeToString(new Uint8Array(data), { stream: true });
+    if (this.rawBody.length < 65536) {
+      this.rawBody += text;
+    }
+    this.lineBuffer += text;
+    const lines: string[] = this.lineBuffer.split('\n');
+    // 末段可能是不完整行，留待下一块或 dataEnd 补齐
+    this.lineBuffer = lines[lines.length - 1];
+    for (let i: number = 0; i < lines.length - 1; i++) {
+      this.consumeLine(lines[i]);
+    }
+  }
+
+  /** 解析单行 SSE：`data: {...}` 增量（content 外发 + tool_calls 累积） */
+  private consumeLine(line: string): void {
+    const trimmed: string = line.trim();
+    if (trimmed.indexOf('data:') !== 0) {
+      return;
+    }
+    const payload: string = trimmed.substring(5).trim();
+    if (payload.length === 0 || payload === '[DONE]') {
+      return;
+    }
+    try {
+      const parsed: LLMRoundChunkRaw = JSON.parse(payload) as LLMRoundChunkRaw;
+      const choices: LLMRoundChoiceRaw[] | undefined = parsed.choices;
+      if (choices === undefined || choices.length === 0) {
+        return;
+      }
+      // 优先流式 delta；兼容个别服务端在 data 行内直接给整体 message
+      const delta: LLMRoundDeltaRaw | undefined = choices[0].delta;
+      if (delta !== undefined) {
+        this.consumeDeltaToolCalls(delta.tool_calls);
+        if (delta.content !== undefined && delta.content.length > 0) {
+          this.appendContent(delta.content);
+        }
+        return;
+      }
+      const message: LLMRoundMessageRaw | undefined = choices[0].message;
+      if (message !== undefined) {
+        this.consumeMessageToolCalls(message.tool_calls);
+        if (message.content !== undefined && message.content.length > 0) {
+          this.appendContent(message.content);
+        }
+      }
+    } catch (e) {
+      // 半包/脏行：忽略，等待后续块补齐
+    }
+  }
+
+  /** delta.tool_calls[] 增量片段 → 按 index 汇总（id/name/arguments 分片拼接） */
+  private consumeDeltaToolCalls(calls: LLMRoundToolCallDeltaRaw[] | undefined): void {
+    if (calls === undefined || calls.length === 0) {
+      return;
+    }
+    this.toolCallSeen = true;
+    for (let i: number = 0; i < calls.length; i++) {
+      const frag: LLMRoundToolCallDeltaRaw = calls[i];
+      const idx: number = frag.index !== undefined ? frag.index : 0;
+      let acc: LLMRoundToolCallAcc | undefined = undefined;
+      for (let j: number = 0; j < this.toolCallAccs.length; j++) {
+        if (this.toolCallAccs[j].index === idx) {
+          acc = this.toolCallAccs[j];
+          break;
+        }
+      }
+      if (acc === undefined) {
+        acc = new LLMRoundToolCallAcc();
+        acc.index = idx;
+        this.toolCallAccs.push(acc);
+      }
+      if (frag.id !== undefined && frag.id.length > 0) {
+        acc.id += frag.id;
+      }
+      const fn: LLMToolsCallFunctionRaw | undefined = frag.function;
+      if (fn !== undefined) {
+        if (fn.name !== undefined && fn.name.length > 0) {
+          acc.name += fn.name;
+        }
+        if (fn.arguments !== undefined) {
+          acc.args += fn.arguments;
+        }
+      }
+    }
+  }
+
+  /** 整体 message.tool_calls[]（非流式形态）→ 直接成调用 */
+  private consumeMessageToolCalls(calls: LLMToolsCallRaw[] | undefined): void {
+    if (calls === undefined || calls.length === 0) {
+      return;
+    }
+    this.toolCallSeen = true;
+    for (let i: number = 0; i < calls.length; i++) {
+      const call: LLMToolsCallRaw = calls[i];
+      const fn: LLMToolsCallFunctionRaw | undefined = call.function;
+      if (fn === undefined || fn.name === undefined || fn.name.length === 0) {
+        continue;
+      }
+      const acc: LLMRoundToolCallAcc = new LLMRoundToolCallAcc();
+      acc.index = this.toolCallAccs.length;
+      acc.id = call.id !== undefined && call.id.length > 0 ? call.id : '';
+      acc.name = fn.name;
+      acc.args = fn.arguments !== undefined ? fn.arguments : '';
+      this.toolCallAccs.push(acc);
+    }
+  }
+
+  /** content 完整累积；该轮未出现 tool_calls 片段时同步外发增量 */
+  private appendContent(chunk: string): void {
+    this.fullText += chunk;
+    if (!this.toolCallSeen) {
+      this.options.onContentDelta(chunk);
+    }
+  }
+
+  private handleDataEnd(): void {
+    if (this.finished) {
+      return;
+    }
+    // 补齐残余半行
+    if (this.lineBuffer.trim().length > 0) {
+      this.consumeLine(this.lineBuffer);
+      this.lineBuffer = '';
+    }
+    this.dataEnded = true;
+    // 整体 JSON 回退：服务端忽略 stream:true 时（无任何 SSE 增量）一次性解析
+    if (this.fullText.length === 0 && this.toolCallAccs.length === 0 && this.rawBody.trim().length > 0) {
+      this.tryParseFullJsonBody();
+    }
+    if (this.responseCode >= 200 && this.responseCode < 300) {
+      this.finishSuccess();
+      return;
+    }
+    if (this.responseCode >= 400) {
+      this.fail(this.mapHttpStatus(this.responseCode));
+      return;
+    }
+    // 响应码尚未返回：兜底等待（正常应在响应头阶段已回调），超时按成功收尾
+    setTimeout(() => {
+      if (!this.finished) {
+        Log.w(LOG_TAG, 'ROUND code fallback fired');
+        this.finishSuccess();
+      }
+    }, CODE_FALLBACK_WAIT_MS);
+  }
+
+  /** 无任何 SSE 增量时按整体 JSON 解析（choices[0].message 含 content/tool_calls） */
+  private tryParseFullJsonBody(): void {
+    try {
+      const parsed: LLMRoundFullResponseRaw = JSON.parse(this.rawBody) as LLMRoundFullResponseRaw;
+      const choices: LLMRoundFullChoiceRaw[] | undefined = parsed.choices;
+      if (choices === undefined || choices.length === 0) {
+        return;
+      }
+      const message: LLMRoundMessageRaw | undefined = choices[0].message;
+      if (message === undefined) {
+        return;
+      }
+      this.consumeMessageToolCalls(message.tool_calls);
+      if (message.content !== undefined && message.content.length > 0) {
+        this.appendContent(message.content);
+      }
+    } catch (e) {
+      // 非 JSON：保持空结果，由 finishSuccess 判定 EMPTY
+    }
+  }
+
+  private handleCode(code: number): void {
+    if (this.finished) {
+      return;
+    }
+    this.responseCode = code;
+    if (code >= 400) {
+      Log.e(LOG_TAG, 'ROUND http error code=%{public}d', code);
+      this.fail(this.mapHttpStatus(code));
+      return;
+    }
+    if (this.dataEnded) {
+      // 响应码晚于 dataEnd 到达的补收尾路径
+      this.finishSuccess();
+    }
+  }
+
+  private handleFailure(e: BusinessError): void {
+    if (this.finished) {
+      return;
+    }
+    Log.e(LOG_TAG, 'ROUND failed code=%{public}d msg=%{public}s', e.code, e.message);
+    this.fail(this.mapTransportError(e));
+  }
+
+  private mapHttpStatus(code: number): LLMErrorKind {
+    return LLMService.mapHttpErrorKind(code);
+  }
+
+  private mapTransportError(e: BusinessError): LLMErrorKind {
+    return LLMService.mapTransportErrorKind(e);
+  }
+
+  /** 轮次正常收尾：累积 content 与 toolCalls 一并产出 */
+  private finishSuccess(): void {
+    if (this.finished) {
+      return;
+    }
+    const outcome: LLMToolsOutcome = new LLMToolsOutcome();
+    for (let i: number = 0; i < this.toolCallAccs.length; i++) {
+      const acc: LLMRoundToolCallAcc = this.toolCallAccs[i];
+      if (acc.name.length === 0) {
+        // 无名称的残缺片段（如仅 index 的空帧）：丢弃
+        continue;
+      }
+      const tc: LLMToolCall = new LLMToolCall();
+      tc.id = acc.id.length > 0 ? acc.id : 'call_' + i;
+      tc.name = acc.name;
+      tc.arguments = acc.args.length > 0 ? acc.args : '{}';
+      outcome.toolCalls.push(tc);
+    }
+    outcome.content = this.fullText;
+    this.finished = true;
+    if (outcome.content.length === 0 && outcome.toolCalls.length === 0) {
+      outcome.ok = false;
+      outcome.kind = LLMErrorKind.EMPTY;
+      outcome.detail = 'empty round';
+      Log.e(LOG_TAG, 'ROUND empty');
+      this.resolveOutcome(outcome);
+      this.cleanup();
+      return;
+    }
+    outcome.ok = true;
+    Log.i(LOG_TAG, 'ROUND done content_len=%{public}d tool_calls=%{public}d',
+      outcome.content.length, outcome.toolCalls.length);
+    this.resolveOutcome(outcome);
+    this.cleanup();
+  }
+
+  private fail(kind: LLMErrorKind): void {
+    if (this.finished) {
+      return;
+    }
+    this.finished = true;
+    const outcome: LLMToolsOutcome = new LLMToolsOutcome();
+    outcome.ok = false;
+    outcome.kind = kind;
+    const clipped: string = this.rawBody.trim();
+    outcome.detail = clipped.length > 200 ? clipped.substring(0, 200) : clipped;
+    Log.e(LOG_TAG, 'ROUND error kind=%{public}s', kind);
+    this.resolveOutcome(outcome);
+    this.cleanup();
+  }
+
+  /** 用户取消：销毁请求并以 cancelled 结果收尾（不抛；已收增量不外发） */
+  private cancelByUser(): void {
+    if (this.finished) {
+      return;
+    }
+    this.finished = true;
+    const outcome: LLMToolsOutcome = new LLMToolsOutcome();
+    outcome.ok = false;
+    outcome.cancelled = true;
+    Log.i(LOG_TAG, 'ROUND cancelled content_len=%{public}d', this.fullText.length);
+    this.resolveOutcome(outcome);
+    this.cleanup();
+  }
+
+  /** 静默期取消兜底：数据长时间不达时仍可及时响应停止操作 */
+  private startCancelPoller(): void {
+    if (this.options.isCancelled === undefined) {
+      return;
+    }
+    this.cancelPoller = setInterval(() => {
+      if (!this.finished && this.isCancelledNow()) {
+        this.cancelByUser();
+      }
+    }, ROUND_CANCEL_POLL_MS);
+  }
+
+  private isCancelledNow(): boolean {
+    const fn: (() => boolean) | undefined = this.options.isCancelled;
+    return fn !== undefined && fn();
+  }
+
+  private resolveOutcome(outcome: LLMToolsOutcome): void {
+    const resolver: ((outcome: LLMToolsOutcome) => void) | undefined = this.resolver;
+    this.resolver = undefined;
+    if (resolver !== undefined) {
+      resolver(outcome);
+    }
+  }
+
+  private cleanup(): void {
+    if (this.cancelPoller >= 0) {
+      clearInterval(this.cancelPoller);
+      this.cancelPoller = -1;
+    }
+    const request: http.HttpRequest | undefined = this.httpRequest;
+    this.httpRequest = undefined;
+    if (request === undefined) {
+      return;
+    }
+    try {
+      request.off('dataReceive');
+      request.off('dataEnd');
+      request.destroy();
+    } catch (e) {
+      // 清理失败不影响已定结果（结果回调均已发出）
     }
   }
 }
@@ -497,5 +1011,184 @@ export class LLMService {
     const session: LLMStreamSession = new LLMStreamSession();
     session.begin(config, apiKey, history, systemPrompt, handlers);
     return session;
+  }
+
+  /**
+   * 逐轮流式带工具补全（agent 循环专用；T019/FR-015/SC-009）：
+   * - 每轮以 SSE 流式请求（stream:true + tools + tool_choice:'auto'），
+   *   请求体以【原始 JSON 文本】提交（messages/tools 由调用方构造）。
+   * - SSE 解析同时累积 content 与 tool_calls 增量（按 index 汇总）；
+   *   content 增量经 options.onContentDelta 回调（该轮出现 tool_calls
+   *   片段后停止回调——中间工具轮正文不外发）。
+   * - 轮次结束以 LLMToolsOutcome resolve（ok=true 携带累积 content/toolCalls）；
+   *   错误按 LLMErrorKind 归一（ok=false），取消以 cancelled=true 收尾（均不抛）。
+   * - 兼容服务端忽略 stream:true 返回整体 JSON（含 message.tool_calls）。
+   * - 不改变既有 streamChat 的签名与行为。
+   */
+  static streamRoundWithTools(config: LLMProviderConfig, apiKey: string,
+    messagesJson: string, toolsJson: string, options: LLMRoundStreamOptions): Promise<LLMToolsOutcome> {
+    const session: LLMRoundStreamSession = new LLMRoundStreamSession();
+    return session.begin(config, apiKey, messagesJson, toolsJson, options);
+  }
+
+  /** HTTP 状态码 → 错误类别（401/403→AUTH；429→RATE_LIMIT；其余非 2xx→SERVER） */
+  static mapHttpErrorKind(code: number): LLMErrorKind {
+    if (code === 401 || code === 403) {
+      return LLMErrorKind.AUTH;
+    }
+    if (code === 429) {
+      return LLMErrorKind.RATE_LIMIT;
+    }
+    if (code >= 500) {
+      return LLMErrorKind.SERVER;
+    }
+    // 其余 4xx（含 baseUrl 指向不存在的路径 404 等）按通用失败提示
+    return LLMErrorKind.SERVER;
+  }
+
+  /** 传输层错误 → 错误类别（超时单独归类，其余按网络不可用） */
+  static mapTransportErrorKind(e: BusinessError): LLMErrorKind {
+    const message: string = e.message !== undefined ? e.message : '';
+    if (e.code === 2300028 || message.indexOf('timed out') >= 0 || message.indexOf('timeout') >= 0) {
+      return LLMErrorKind.TIMEOUT;
+    }
+    return LLMErrorKind.NETWORK;
+  }
+
+  /** 响应体 → 文本（string 直取；ArrayBuffer 解码；其余 JSON.stringify 兜底） */
+  private static bodyToString(result: string | Object | ArrayBuffer): string {
+    if (typeof result === 'string') {
+      return result as string;
+    }
+    if (result instanceof ArrayBuffer) {
+      const decoder: util.TextDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
+      return decoder.decodeToString(new Uint8Array(result));
+    }
+    try {
+      return JSON.stringify(result);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  /** 截断错误详情（仅用于日志/诊断，绝不含鉴权头与 API Key） */
+  private static clipDetail(text: string): string {
+    const trimmed: string = text.trim();
+    return trimmed.length > 200 ? trimmed.substring(0, 200) : trimmed;
+  }
+
+  /**
+   * 非流式带工具补全（agent 循环专用；对齐参考实现 runAgent 的
+   * postChatCompletion 语义）：
+   * - 请求体以【原始 JSON 文本】提交：messages/tools 由调用方构造为 JSON
+   *   片段（含 tool_calls / tool_call_id 等无法用强类型类表达的轮次），
+   *   本方法仅拼装 model/stream:false/tool_choice:'auto'。
+   * - 解析返回 content 与 toolCalls；错误按 LLMErrorKind 归一。
+   * - 鉴权头仅进入请求，不进入任何日志（FR-015）。
+   */
+  static async chatCompleteWithTools(config: LLMProviderConfig, apiKey: string,
+    messagesJson: string, toolsJson: string): Promise<LLMToolsOutcome> {
+    const outcome: LLMToolsOutcome = new LLMToolsOutcome();
+    const baseUrl: string = LLMService.resolveBaseUrl(config);
+    const model: string = LLMService.resolveModel(config);
+    // 前置校验失败不构造请求、不触网（FR-008 加固）
+    if (apiKey.length === 0) {
+      outcome.kind = LLMErrorKind.NOT_CONFIGURED;
+      return outcome;
+    }
+    if (baseUrl.length === 0 || model.length === 0 || messagesJson.length === 0) {
+      outcome.kind = LLMErrorKind.BAD_BASE_URL;
+      return outcome;
+    }
+
+    let bodyText: string = '{"model":' + JSON.stringify(model) +
+      ',"stream":false,"messages":' + messagesJson;
+    if (toolsJson.length > 0) {
+      bodyText += ',"tools":' + toolsJson + ',"tool_choice":"auto"';
+    }
+    bodyText += '}';
+
+    const header: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + apiKey,
+    };
+    const options: http.HttpRequestOptions = {
+      method: http.RequestMethod.POST,
+      header: header,
+      extraData: bodyText,
+      connectTimeout: CONNECT_TIMEOUT_MS,
+      readTimeout: READ_TIMEOUT_MS,
+      usingCache: false,
+    };
+
+    const request: http.HttpRequest = http.createHttp();
+    try {
+      Log.i(LOG_TAG, 'TOOLS start preset=%{public}s model=%{public}s hasTools=%{public}s',
+        config.preset, model, toolsJson.length > 0 ? 'true' : 'false');
+      const resp: http.HttpResponse = await request.request(baseUrl + '/chat/completions', options);
+      const code: number = resp.responseCode;
+      const body: string = LLMService.bodyToString(resp.result);
+      if (code < 200 || code >= 300) {
+        Log.e(LOG_TAG, 'TOOLS http error code=%{public}d len=%{public}d', code, body.length);
+        outcome.kind = LLMService.mapHttpErrorKind(code);
+        outcome.detail = LLMService.clipDetail(body);
+        return outcome;
+      }
+      const parsed: LLMToolsResponseRaw = JSON.parse(body) as LLMToolsResponseRaw;
+      const choices: LLMToolsChoiceRaw[] | undefined = parsed.choices;
+      if (choices === undefined || choices.length === 0) {
+        outcome.kind = LLMErrorKind.EMPTY;
+        outcome.detail = 'no choices';
+        return outcome;
+      }
+      const message: LLMToolsMessageRaw | undefined = choices[0].message;
+      if (message === undefined) {
+        outcome.kind = LLMErrorKind.EMPTY;
+        outcome.detail = 'no message';
+        return outcome;
+      }
+      if (typeof message.content === 'string') {
+        outcome.content = message.content;
+      }
+      const calls: LLMToolsCallRaw[] | undefined = message.tool_calls;
+      if (calls !== undefined) {
+        for (let i: number = 0; i < calls.length; i++) {
+          const call: LLMToolsCallRaw = calls[i];
+          const fn: LLMToolsCallFunctionRaw | undefined = call.function;
+          if (fn === undefined || typeof fn.name !== 'string' || fn.name.length === 0) {
+            continue;
+          }
+          const tc: LLMToolCall = new LLMToolCall();
+          tc.id = typeof call.id === 'string' && call.id.length > 0 ? call.id : 'call_' + i;
+          tc.name = fn.name;
+          tc.arguments = typeof fn.arguments === 'string' ? fn.arguments : '{}';
+          outcome.toolCalls.push(tc);
+        }
+      }
+      if (outcome.content.length === 0 && outcome.toolCalls.length === 0) {
+        outcome.kind = LLMErrorKind.EMPTY;
+        outcome.detail = 'empty completion';
+        return outcome;
+      }
+      outcome.ok = true;
+      Log.i(LOG_TAG, 'TOOLS done content_len=%{public}d tool_calls=%{public}d',
+        outcome.content.length, outcome.toolCalls.length);
+      return outcome;
+    } catch (e) {
+      // JSON 解析失败或传输层错误
+      const err: BusinessError = e as BusinessError;
+      if (typeof err.code === 'number') {
+        Log.e(LOG_TAG, 'TOOLS failed code=%{public}d msg=%{public}s', err.code, err.message);
+        outcome.kind = LLMService.mapTransportErrorKind(err);
+        outcome.detail = LLMService.clipDetail(err.message !== undefined ? err.message : '');
+      } else {
+        Log.e(LOG_TAG, 'TOOLS parse failed');
+        outcome.kind = LLMErrorKind.SERVER;
+        outcome.detail = 'response parse failed';
+      }
+      return outcome;
+    } finally {
+      request.destroy();
+    }
   }
 }

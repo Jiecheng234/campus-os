@@ -230,6 +230,21 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'ai.errorGeneric': { zh: '请求失败，请重试', en: 'Request failed. Please retry.' },
   'ai.errorBadBaseUrl': { zh: '接口地址无效，请在设置中检查', en: 'Invalid base URL. Please check Settings.' },
 
+  // ── AI Agent 工具调用（ai-agent 特性追加：过程态/确认/轨迹）──
+  'ai.agentThinking': { zh: '正在思考…', en: 'Thinking…' },
+  'ai.agentToolRunning': { zh: '正在调用工具：', en: 'Running tool: ' },
+  'ai.traceOk': { zh: '成功', en: 'OK' },
+  'ai.traceError': { zh: '失败', en: 'Failed' },
+  'ai.traceCancelled': { zh: '已取消', en: 'Cancelled' },
+  'ai.traceParams': { zh: '参数', en: 'Params' },
+  'ai.confirmTitle': { zh: '确认执行', en: 'Confirm action' },
+  'ai.confirmExecute': { zh: '确认执行', en: 'Execute' },
+  'ai.confirmRisk': { zh: '低风险 · 可撤销操作', en: 'Low risk · reversible' },
+  'ai.confirmFallback': {
+    zh: '该操作将在你确认后执行，执行后可通过对应工具撤销。确认继续吗？',
+    en: 'This action runs after your approval and can be undone afterwards. Continue?'
+  },
+
   // ── 登录页（login.*）──
   'login.subtitle': { zh: '清华校园 AI 操作系统', en: 'Tsinghua campus AI OS' },
   'login.restoring': { zh: '正在恢复登录…', en: 'Restoring sign-in…' },

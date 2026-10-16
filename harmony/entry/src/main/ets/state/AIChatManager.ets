@@ -16,7 +16,7 @@
  *   - 会话标题：首条用户消息摘要（超长截断），替代默认标题。
  * ============================================================================
  */
-import { Conversation, ChatMessage, AIProviderConfig } from '../domain/AIAgentTypes';
+import { Conversation, ChatMessage, AIProviderConfig, ToolTrace } from '../domain/AIAgentTypes';
 import { StateManager } from './StateManager';
 import { generateUUID } from '../utils/CryptoUtils';
 import { StorageKeys } from '../storage/StorageKeys';
@@ -52,6 +52,20 @@ class ChatMessageRaw {
   content?: string;
   timestamp?: string;
   status?: string;
+  traces?: ToolTraceRaw[];
+}
+
+/** 持久化工具轨迹原始形态（JSON 读入断言；字段可能缺失，读取后归一） */
+class ToolTraceRaw {
+  callId?: string;
+  name?: string;
+  params?: string;
+  result?: string;
+  timestamp?: string;
+  success?: boolean;
+  title?: string;
+  status?: string;
+  detail?: string;
 }
 
 /** 持久化会话原始形态（JSON 读入断言；字段可能缺失，读取后归一） */
@@ -127,6 +141,23 @@ export class AIChatManager {
         msg.content = rawMsg.content !== undefined ? rawMsg.content : '';
         msg.timestamp = rawMsg.timestamp !== undefined ? rawMsg.timestamp : '';
         msg.status = rawMsg.status !== undefined ? rawMsg.status : AIChatMessageStatus.OK;
+        const rawTraces: ToolTraceRaw[] | undefined = rawMsg.traces;
+        if (rawTraces !== undefined && Array.isArray(rawTraces)) {
+          for (let k: number = 0; k < rawTraces.length; k++) {
+            const rt: ToolTraceRaw = rawTraces[k];
+            const trace: ToolTrace = new ToolTrace();
+            trace.callId = typeof rt.callId === 'string' ? rt.callId : '';
+            trace.name = typeof rt.name === 'string' ? rt.name : '';
+            trace.params = typeof rt.params === 'string' ? rt.params : '';
+            trace.result = typeof rt.result === 'string' ? rt.result : '';
+            trace.timestamp = typeof rt.timestamp === 'string' ? rt.timestamp : '';
+            trace.success = rt.success === true;
+            trace.title = typeof rt.title === 'string' ? rt.title : '';
+            trace.status = typeof rt.status === 'string' ? rt.status : '';
+            trace.detail = typeof rt.detail === 'string' ? rt.detail : '';
+            msg.traces.push(trace);
+          }
+        }
         conv.messages.push(msg);
       }
     }
@@ -232,6 +263,18 @@ export class AIChatManager {
     const msg: ChatMessage | undefined = AIChatManager.findMessage(conversationId, messageId);
     if (msg instanceof AIChatMessage) {
       msg.status = status;
+    }
+    AIChatManager.saveConversations();
+  }
+
+  /**
+   * 将工具轨迹关联到指定消息（US3：对话内渲染轨迹卡片）。
+   * 以副本写入避免外部数组后续变更影响持久化；未找到消息静默忽略。
+   */
+  static attachTraces(conversationId: string, messageId: string, traces: ToolTrace[]): void {
+    const msg: ChatMessage | undefined = AIChatManager.findMessage(conversationId, messageId);
+    if (msg !== undefined) {
+      msg.traces = traces.slice();
     }
     AIChatManager.saveConversations();
   }

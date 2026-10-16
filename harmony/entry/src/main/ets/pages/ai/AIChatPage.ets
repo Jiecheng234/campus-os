@@ -1,21 +1,31 @@
 /**
  * ============================================================================
- * AIChatPage — AI 真实对话页（流式、多会话、降级策略）
+ * AIChatPage — AI 真实对话页（Agent 工具调用、多会话、降级策略）
  * ============================================================================
  *
  * 【发送判定（FR-008/FR-009 零请求约束）】发送前依次判定：
- *   1. 演示模式 → 本地示例应答（零网络请求）；
+ *   1. 演示模式 → 本地示例应答（buildContext + createMockReply；零真实
+ *      校园请求）；
  *   2. API Key 未配置（ASSET 读取为空）→ 展示引导（可跳设置页），
  *      不构造请求、不清空输入；
  *   3. custom baseUrl 缺失 → 可读提示，不构造请求。
  *
- * 【流式渲染（FR-005）】增量经页面级 @State streamingText 驱动独立"生成中"
- *   气泡实时渲染；完成/中断/失败后一次性落入会话消息（消息一旦入列不再
- *   原地变更，规避 V1 观察能力限制）。
+ * 【Agent 循环（D1/D8 流式增量渲染，FR-015/SC-009）】发送走
+ *   AgentService.runAgent：≤6 轮"流式带工具补全 → 执行 → 回灌"循环；
+ *   最终回答经 onDelta 逐字流入 streamingText（边生成边显示），
+ *   onAnswer 为结束信号（落库为新消息）；中间工具轮正文不展示
+ *   （onToolStart 收起已流出正文，工具过程经 agentActivity 实时提示
+ *   "正在调用工具：xxx"）。写操作经 requestConfirmation 弹出页内确认卡
+ *   （标题/预览/风险/影响资源），拒绝或无确认通道即不执行（D4/D5）。
+ *
+ * 【工具轨迹（US3）】onToolEnd 收集 ToolTrace，随最终回答关联到消息
+ *   （AIChatManager.attachTraces）并在对话内渲染轨迹卡片（参数/结果均为
+ *   工具 summarize 产物，已脱敏；不展示原始 JSON）。
  *
  * 【中断与错误（FR-006/FR-010/FR-013）】"停止"/切换会话/离开页面统一走
- *   cancelGeneration()：终止请求句柄、保留已生成内容并标注状态；
- *   错误映射为可读 i18n 提示且保留用户输入（输入框为空时回填上次发送内容）。
+ *   cancelGeneration()：置取消标记并自增 runToken，agent 循环在轮次/工具
+ *   边界静默退出；已收集轨迹随"已停止"消息保留。错误映射为可读 i18n
+ *   提示且保留用户输入（输入框为空时回填上次发送内容）。
  *
  * 【会话（FR-007）】新建/切换/删除（二次确认）经 AIChatManager；
  *   消息区随会话切换；aboutToAppear 恢复既有会话（loadConversations）。
@@ -26,19 +36,20 @@
  *   无需重启即可更新 provider · model 展示（Tabs 切换不触发生命周期）。
  *
  * 【消息布局】用户消息右对齐（主色底白字、纯文本）；助手消息左对齐
- *   （灰底、MarkdownText 渲染、无头像）。
+ *   （灰底、MarkdownText 渲染、无头像），工具轨迹卡片列于其上方。
  * ============================================================================
  */
 import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
 import { ScreenHeader } from '../../components/Ui';
 import { I18n } from '../../utils/I18n';
-import { LLMService, LLMStreamSession, LLMStreamHandlers, LLMProviderConfig,
-  LLMChatTurn, LLMErrorKind } from '../../services/ai/LLMService';
+import { LLMService, LLMProviderConfig, LLMErrorKind } from '../../services/ai/LLMService';
 import { ApiKeyStore } from '../../services/ai/ApiKeyStore';
+import { AgentService, AgentRunError, AgentCallbacks, AgentToolEndMeta } from '../../services/ai/AgentService';
 import { AIChatManager, AIChatMessage, AIChatMessageStatus } from '../../state/AIChatManager';
 import { SettingsManager, AIProviderSettings } from '../../state/SettingsManager';
 import { MarkdownText } from '../common/components/MarkdownText';
-import { ChatMessage, Conversation } from '../../domain/AIAgentTypes';
+import { ChatMessage, Conversation, AgentContext, AgentToolDef, ToolTrace } from '../../domain/AIAgentTypes';
+import { ActionPreview, ActionExecutionStatus, ConfirmationSpec } from '../../domain/ActionTypes';
 import { emitNavigate, NavTarget } from '../../state/UiEvents';
 
 /** 推荐提问：词典键（渲染与发送时均经页面 tr() 按当前语言解析） */
@@ -52,6 +63,15 @@ const SUGGESTION_KEYS: string[] = [
 
 /** 演示模式本地应答延迟（ms），模拟"思考"节奏 */
 const DEMO_REPLY_DELAY_MS: number = 800;
+
+/** 待确认写操作（页内确认卡数据 + Promise resolve 句柄；拒绝即不执行） */
+class PendingConfirm {
+  title: string = '';
+  message: string = '';
+  detail: string = '';
+  riskLabel: string = '';
+  resolve: (approved: boolean) => void = (approved: boolean): void => {};
+}
 
 /** ISO 时间 → HH:mm（无效/缺失返回空串） */
 function formatTime(iso: string): string {
@@ -79,8 +99,90 @@ function formatDate(iso: string): string {
 }
 
 /**
+ * 工具轨迹卡片（US3）：标题/名称、参数概要、结果状态、时间。
+ * 参数与结果均来自工具 summarize 产物（已脱敏），不展示原始完整 JSON。
+ */
+@Component
+struct ToolTraceCard {
+  @Prop trace: ToolTrace = new ToolTrace();
+  /** 语言订阅：状态标注随语言切换即时重渲染 */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  /** 状态标注（成功/失败/已取消 → i18n 文案） */
+  private statusLabel(): string {
+    if (this.trace.status === ActionExecutionStatus.CANCELLED) {
+      return this.tr('ai.traceCancelled');
+    }
+    if (this.trace.success) {
+      return this.tr('ai.traceOk');
+    }
+    return this.tr('ai.traceError');
+  }
+
+  /** 轨迹时间（'YYYY-MM-DD HH:mm:ss' → HH:mm:ss；无空格原样展示） */
+  private timeText(): string {
+    const t: string = this.trace.timestamp;
+    const sp: number = t.indexOf(' ');
+    return sp >= 0 ? t.substring(sp + 1) : t;
+  }
+
+  build() {
+    Column({ space: 2 }) {
+      Row({ space: 6 }) {
+        Text('🔧')
+          .fontSize(12)
+        Text(this.trace.title.length > 0 ? this.trace.title : this.trace.name)
+          .fontSize(FontSize.caption)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Theme.text)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Text(this.statusLabel())
+          .fontSize(FontSize.micro)
+          .fontColor(this.trace.success ? Theme.success :
+            (this.trace.status === ActionExecutionStatus.CANCELLED ? Theme.textMuted : Theme.error))
+      }
+      .width('100%')
+
+      if (this.trace.params.length > 0) {
+        Text(this.trace.params)
+          .fontSize(FontSize.micro)
+          .fontColor(Theme.textMuted)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+      if (this.trace.result.length > 0) {
+        Text(this.trace.result)
+          .fontSize(FontSize.micro)
+          .fontColor(Theme.textSecondary)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+      Text(this.timeText())
+        .fontSize(FontSize.micro)
+        .fontColor(Theme.textMuted)
+        .width('100%')
+    }
+    .alignItems(HorizontalAlign.Start)
+    .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+    .borderRadius(Radius.sm)
+    .backgroundColor(Theme.surface)
+    .border({ width: 1, color: Theme.border })
+    .constraintSize({ maxWidth: '88%' })
+  }
+}
+
+/**
  * 消息气泡：用户消息右对齐（主色底白字、纯文本）、助手消息左对齐
  * （灰底、Markdown 渲染）；助手无头像（无占位空间）。
+ * 助手消息可携带工具轨迹卡片（US3；列于气泡上方，左对齐）。
  */
 @Component
 struct MessageBubble {
@@ -88,6 +190,8 @@ struct MessageBubble {
   @Prop role: string = 'user';
   @Prop timeText: string = '';
   @Prop status: string = AIChatMessageStatus.OK;
+  /** 本条消息关联的工具轨迹（旧消息/用户消息为空数组） */
+  @Prop traces: ToolTrace[] = [];
   /** 语言订阅：中断/失败状态标注随语言切换即时重渲染 */
   @StorageLink('locale') locale: string = 'zh';
 
@@ -108,6 +212,18 @@ struct MessageBubble {
 
   build() {
     Column() {
+      if (this.role !== 'user' && this.traces.length > 0) {
+        // 工具轨迹卡片（US3）：列于助手气泡上方；ForEach 键含状态避免复用旧卡片
+        Column({ space: 4 }) {
+          ForEach(this.traces, (t: ToolTrace) => {
+            ToolTraceCard({ trace: t })
+          }, (t: ToolTrace) => t.callId + '_' + t.timestamp + '_' + t.status)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .padding({ left: 16, right: 16, top: 6 })
+        .width('100%')
+      }
+
       if (this.role === 'user') {
         // 用户消息：右对齐、主色底白字、纯文本（长词/长链接可断行）
         Text(this.content)
@@ -162,10 +278,14 @@ export struct AIChatPage {
   /** 当前会话消息（渲染副本；消息入列后不再原地变更） */
   @State messages: ChatMessage[] = [];
   @State inputText: string = '';
-  /** 生成中（流式或演示本地应答） */
+  /** 生成中（agent 循环或演示本地应答） */
   @State busy: boolean = false;
-  /** 流式增量文本（驱动"生成中"气泡实时渲染） */
+  /** Agent 当前活动文案（"正在调用工具：xxx"；空串回退默认思考文案） */
+  @State agentActivity: string = '';
+  /** 最终轮流式增量文本（T021，FR-015/SC-009）：边收边渲染；完成时落库为新消息并清空 */
   @State streamingText: string = '';
+  /** 待确认写操作（非空时渲染页内确认卡；确认/拒绝经 Promise 回传） */
+  @State confirmReq: PendingConfirm | undefined = undefined;
   /** 可读错误提示（横幅展示；空串隐藏） */
   @State errorText: string = '';
   /** 未配置引导卡片（发送时判定；跳设置或再次发送时收起） */
@@ -175,16 +295,20 @@ export struct AIChatPage {
   /** 状态胶囊文案（演示提示 / provider · model；实时读 SettingsManager 重算，不缓存 provider/model） */
   @State chipLabel: string = '';
 
-  /** 流式请求取消句柄（busy 时有效） */
-  private session: LLMStreamSession | undefined = undefined;
   /** 演示模式本地应答定时器句柄（<0 表示无待触发应答） */
   private demoTimer: number = -1;
-  /** 当前流式/演示应答目标会话 id */
-  private streamConvId: string = '';
+  /** 当前 agent/演示应答目标会话 id */
+  private runConvId: string = '';
   /** 最近一次发送内容（错误时回填输入框，保证输入不丢） */
   private lastSentText: string = '';
-  /** 消息区滚动控制器（流式跟随滚动到底部） */
+  /** 消息区滚动控制器（新消息/工具过程跟随滚动到底部） */
   private scroller: Scroller = new Scroller();
+  /** 运行令牌：每次发起/取消自增，使旧 run 的回调全部失效（防并发双跑） */
+  private runToken: number = 0;
+  /** 取消标记（停止/切换/离开）：agent 循环在轮次/工具边界退出 */
+  private agentCancelled: boolean = false;
+  /** 本次运行收集的工具轨迹（随最终回答关联到消息，US3） */
+  private pendingTraces: ToolTrace[] = [];
 
   private tr(key: string): string {
     return I18n.t(key, this.locale);
@@ -251,27 +375,42 @@ export struct AIChatPage {
       return;
     }
 
-    // 4) 真实流式请求
+    // 4) Agent 循环（流式增量渲染，FR-015；工具治理链见 AgentService）
     const conv: Conversation = this.ensureConversation();
-    this.streamConvId = conv.id;
     AIChatManager.addMessage(conv.id, 'user', text);
     this.lastSentText = text;
     this.inputText = '';
     this.refreshMessages();
     this.scrollToEnd();
-    this.startStream(conv, config, apiKey);
+    this.startAgent(conv, config, apiKey);
   }
 
-  /** 演示模式本地应答（关键词命中 i18n 示例文案；零网络请求） */
-  private sendDemo(text: string): void {
+  /** 演示模式本地应答（buildContext + createMockReply；零真实校园请求） */
+  private async sendDemo(text: string): Promise<void> {
     const conv: Conversation = this.ensureConversation();
-    this.streamConvId = conv.id;
+    this.runConvId = conv.id;
+    const token: number = ++this.runToken;
+    this.agentCancelled = false;
     AIChatManager.addMessage(conv.id, 'user', text);
     this.lastSentText = text;
     this.inputText = '';
     this.refreshMessages();
+    this.scrollToEnd();
     this.busy = true;
-    const reply: string = this.getMockResponse(text);
+    this.agentActivity = '';
+    this.streamingText = '';
+    let reply: string = this.getMockResponse(text);
+    try {
+      const context: AgentContext = await AgentService.buildContext();
+      if (token === this.runToken) {
+        reply = AgentService.createMockReply(text, context);
+      }
+    } catch (e) {
+      // 上下文构建失败：回退关键词示例应答
+    }
+    if (token !== this.runToken) {
+      return;
+    }
     this.demoTimer = setTimeout(() => {
       this.demoTimer = -1;
       this.busy = false;
@@ -283,88 +422,155 @@ export struct AIChatPage {
     }, DEMO_REPLY_DELAY_MS);
   }
 
-  /** 发起流式请求：增量实时渲染，完成/失败分别收尾 */
-  private startStream(conv: Conversation, config: LLMProviderConfig, apiKey: string): void {
+  /**
+   * 发起 agent 循环（T008/T011/T021）：每轮流式请求模型，最终回答经
+   * onDelta 逐字流入 streamingText（边生成边显示，FR-015/SC-009），
+   * onAnswer 为结束信号（增量内容落库为新消息，轨迹随消息关联 US3）；
+   * 中间工具轮正文不展示（onToolStart 收起已流出正文），工具过程实时
+   * 提示；写操作经页内确认卡二次确认（拒绝即不执行）。
+   * runToken 使取消/新请求后旧回调全部失效，防并发双跑。
+   */
+  private async startAgent(conv: Conversation, config: LLMProviderConfig, apiKey: string): Promise<void> {
+    const token: number = ++this.runToken;
+    this.runConvId = conv.id;
     this.busy = true;
+    this.agentCancelled = false;
+    this.agentActivity = '';
+    this.pendingTraces = [];
     this.streamingText = '';
-    // 历史快照（含刚追加的用户消息；仅 user/assistant 且内容非空）
-    const history: LLMChatTurn[] = [];
-    for (let i: number = 0; i < conv.messages.length; i++) {
-      const m: ChatMessage = conv.messages[i];
-      if (m.role !== 'user' && m.role !== 'assistant') {
-        continue;
-      }
-      if (m.content.trim().length === 0) {
-        continue;
-      }
-      const turn: LLMChatTurn = new LLMChatTurn();
-      turn.role = m.role;
-      turn.content = m.content;
-      history.push(turn);
+
+    let context: AgentContext = new AgentContext();
+    try {
+      context = await AgentService.buildContext();
+    } catch (e) {
+      // 上下文构建失败：以空上下文继续（系统提示含占位文案）
+    }
+    if (token !== this.runToken) {
+      return;
     }
 
-    const handlers: LLMStreamHandlers = new LLMStreamHandlers();
-    handlers.onDelta = (chunk: string): void => {
-      this.streamingText += chunk;
+    const callbacks: AgentCallbacks = new AgentCallbacks();
+    callbacks.onDelta = (text: string): void => {
+      if (token !== this.runToken) {
+        return;
+      }
+      // 最终轮流式增量：边收边渲染（复用 streamingText 机制）
+      this.streamingText += text;
       this.scrollToEnd();
     };
-    handlers.onDone = (fullText: string): void => {
-      this.finishStreamOk(fullText);
-    };
-    handlers.onError = (kind: LLMErrorKind): void => {
-      this.handleStreamError(kind);
-    };
-    this.session = LLMService.streamChat(config, apiKey, history, handlers, '');
-  }
-
-  /** 流式正常收尾：完整回复入列（状态 ok） */
-  private finishStreamOk(fullText: string): void {
-    this.busy = false;
-    this.session = undefined;
-    this.streamingText = '';
-    if (this.streamConvId.length > 0) {
-      AIChatManager.addMessage(this.streamConvId, 'assistant', fullText);
-    }
-    this.refreshMessages();
-    this.scrollToEnd();
-  }
-
-  /** 中断生成（停止按钮/切换会话/离开页面）：保留已生成内容并标注"已中断" */
-  private cancelGeneration(): void {
-    if (!this.busy) {
-      return;
-    }
-    // 演示模式：取消待触发的本地应答
-    if (this.demoTimer >= 0) {
-      clearTimeout(this.demoTimer);
-      this.demoTimer = -1;
+    callbacks.onAnswer = (text: string): void => {
+      if (token !== this.runToken) {
+        return;
+      }
+      // 结束信号：流式增量内容落库为新消息（轨迹随消息关联，US3）
       this.busy = false;
-      return;
-    }
-    this.busy = false;
-    const partial: string = this.streamingText;
-    this.streamingText = '';
-    const s: LLMStreamSession | undefined = this.session;
-    this.session = undefined;
-    if (s !== undefined) {
-      s.cancel();
-    }
-    if (partial.length > 0 && this.streamConvId.length > 0) {
-      const msg: ChatMessage = AIChatManager.addMessage(this.streamConvId, 'assistant', partial);
-      AIChatManager.updateMessageStatus(this.streamConvId, msg.id, AIChatMessageStatus.ABORTED);
-      this.refreshMessages();
+      this.agentActivity = '';
+      this.streamingText = '';
+      const msg: ChatMessage = AIChatManager.addMessage(conv.id, 'assistant', text);
+      AIChatManager.attachTraces(conv.id, msg.id, this.pendingTraces);
+      this.pendingTraces = [];
+      if (this.activeConvId() === conv.id) {
+        this.refreshMessages();
+        this.scrollToEnd();
+      }
+    };
+    callbacks.onToolStart = (tool: AgentToolDef, argsJson: string): void => {
+      if (token !== this.runToken) {
+        return;
+      }
+      // 工具执行开始：收起中间轮已流出的正文（中间工具轮正文不展示，SC-009）
+      this.streamingText = '';
+      this.agentActivity = this.tr('ai.agentToolRunning') +
+        (tool.title.length > 0 ? tool.title : tool.name);
+      this.scrollToEnd();
+    };
+    callbacks.onToolEnd = (tool: AgentToolDef, status: string, detail: string, meta: AgentToolEndMeta): void => {
+      if (token !== this.runToken) {
+        return;
+      }
+      this.pendingTraces.push(meta.trace);
+      this.agentActivity = '';
+    };
+    callbacks.requestConfirmation =
+      (tool: AgentToolDef, argsJson: string, preview: ActionPreview | undefined): Promise<boolean> => {
+        if (token !== this.runToken) {
+          const denied: Promise<boolean> = Promise.resolve(false);
+          return denied;
+        }
+        return this.requestWriteConfirmation(tool, argsJson, preview);
+      };
+    callbacks.isCancelled = (): boolean => token !== this.runToken || this.agentCancelled;
+
+    try {
+      await AgentService.runAgent(config, apiKey, conv.messages, context, callbacks);
+      // 最终回答已由 onAnswer（结束信号）落库；取消路径已由 token 失效，此处无需处理
+    } catch (e) {
+      if (token !== this.runToken) {
+        return;
+      }
+      this.handleAgentError(conv.id, e);
     }
   }
 
-  /** 流式失败：可读提示（i18n 映射）；保留已生成内容（标注"失败"）与用户输入 */
-  private handleStreamError(kind: LLMErrorKind): void {
+  /**
+   * 写操作二次确认（T011，D4/D5）：构建页内确认卡（工具标题 + 预览摘要 +
+   * 影响资源 + 风险标注）；确认/拒绝经 Promise 回传，拒绝即不执行。
+   */
+  private requestWriteConfirmation(tool: AgentToolDef, argsJson: string,
+    preview: ActionPreview | undefined): Promise<boolean> {
+    const req: PendingConfirm = new PendingConfirm();
+    req.title = tool.title.length > 0 ? tool.title : tool.name;
+    let message: string = '';
+    if (tool.confirmPrompt !== undefined) {
+      try {
+        const spec: ConfirmationSpec = tool.confirmPrompt(AgentService.parseToolArgs(argsJson), preview);
+        if (spec.title.length > 0) {
+          req.title = spec.title;
+        }
+        message = spec.message.length > 0 ? spec.message : spec.summary;
+      } catch (e) {
+        // 文案构造失败：回退 preview 摘要/兜底文案
+      }
+    }
+    if (message.length === 0 && preview !== undefined) {
+      message = preview.summary.length > 0 ? preview.summary : preview.description;
+    }
+    if (message.length === 0) {
+      message = this.tr('ai.confirmFallback');
+    }
+    req.message = message;
+    if (preview !== undefined && preview.affectedResource.length > 0) {
+      req.detail = preview.affectedResource;
+    }
+    req.riskLabel = this.tr('ai.confirmRisk');
+    return new Promise<boolean>((resolve: (approved: boolean) => void) => {
+      req.resolve = resolve;
+      this.confirmReq = req;
+    });
+  }
+
+  /** 确认卡按钮回调（拒绝同时覆盖点遮罩取消场景） */
+  private resolveConfirm(approved: boolean): void {
+    const req: PendingConfirm | undefined = this.confirmReq;
+    this.confirmReq = undefined;
+    if (req !== undefined) {
+      req.resolve(approved);
+    }
+  }
+
+  /**
+   * Agent 运行失败：可读提示（i18n 映射）+ 保留用户输入（FR-010）；
+   * 已收集工具轨迹与已流出的部分正文随失败消息保留（US3/SC-009：
+   * 已生成内容不因错误丢失）。
+   */
+  private handleAgentError(convId: string, e: Object): void {
     this.busy = false;
-    this.session = undefined;
+    this.agentActivity = '';
     const partial: string = this.streamingText;
     this.streamingText = '';
-    if (partial.length > 0 && this.streamConvId.length > 0) {
-      const msg: ChatMessage = AIChatManager.addMessage(this.streamConvId, 'assistant', partial);
-      AIChatManager.updateMessageStatus(this.streamConvId, msg.id, AIChatMessageStatus.ERROR);
+    let kind: LLMErrorKind = LLMErrorKind.SERVER;
+    if (e instanceof AgentRunError) {
+      kind = e.kind;
     }
     if (kind === LLMErrorKind.NOT_CONFIGURED) {
       this.showNotConfigured = true;
@@ -375,7 +581,59 @@ export struct AIChatPage {
     if (this.inputText.trim().length === 0) {
       this.inputText = this.lastSentText;
     }
-    this.refreshMessages();
+    if (kind !== LLMErrorKind.NOT_CONFIGURED && (partial.trim().length > 0 || this.pendingTraces.length > 0)) {
+      // 已流出的部分正文（优先）或错误提示落为失败消息；轨迹随消息保留
+      const msg: ChatMessage = AIChatManager.addMessage(convId, 'assistant',
+        partial.trim().length > 0 ? partial : this.errorTextFor(kind));
+      AIChatManager.updateMessageStatus(convId, msg.id, AIChatMessageStatus.ERROR);
+      AIChatManager.attachTraces(convId, msg.id, this.pendingTraces);
+      this.pendingTraces = [];
+    }
+    if (this.activeConvId() === convId) {
+      this.refreshMessages();
+      this.scrollToEnd();
+    }
+  }
+
+  /**
+   * 中断生成（停止按钮/切换会话/离开页面）：置取消标记并自增 runToken，
+   * agent 循环与流式请求在轮次/工具/数据边界静默退出；已流出的部分正文
+   * 落为"已中断"消息（保留已生成内容），已收集轨迹随消息保留；仅有轨迹
+   * 无正文时沿用"已停止"占位消息；两者皆无时不追加消息。
+   */
+  private cancelGeneration(): void {
+    if (!this.busy) {
+      return;
+    }
+    // 演示模式：取消待触发的本地应答
+    if (this.demoTimer >= 0) {
+      clearTimeout(this.demoTimer);
+      this.demoTimer = -1;
+      this.busy = false;
+      this.runToken++;
+      return;
+    }
+    this.runToken++;
+    this.agentCancelled = true;
+    this.busy = false;
+    this.agentActivity = '';
+    const partial: string = this.streamingText;
+    this.streamingText = '';
+    // 待确认卡若在展示：按拒绝收尾，保证确认 Promise 必定 resolve
+    const req: PendingConfirm | undefined = this.confirmReq;
+    this.confirmReq = undefined;
+    if (req !== undefined) {
+      req.resolve(false);
+    }
+    if (this.runConvId.length > 0 && (partial.trim().length > 0 || this.pendingTraces.length > 0)) {
+      // 已流出的正文落为"已中断"消息（保留已生成内容）；仅有轨迹时沿用占位文案
+      const msg: ChatMessage = AIChatManager.addMessage(this.runConvId, 'assistant',
+        partial.trim().length > 0 ? partial : this.tr('ai.msgAborted'));
+      AIChatManager.updateMessageStatus(this.runConvId, msg.id, AIChatMessageStatus.ABORTED);
+      AIChatManager.attachTraces(this.runConvId, msg.id, this.pendingTraces);
+      this.pendingTraces = [];
+      this.refreshMessages();
+    }
   }
 
   /** 错误类别 → 可读 i18n 文案（不含 Key/鉴权头，FR-015） */
@@ -594,6 +852,22 @@ export struct AIChatPage {
     }
   }
 
+  /**
+   * 最终轮流式增量气泡（T021，FR-015/SC-009）：复用助手气泡样式，
+   * 边收边渲染（MarkdownText）；onAnswer 结束时落库为新消息并清空本态。
+   */
+  @Builder
+  streamingBubble() {
+    Column() {
+      MarkdownText({ content: this.streamingText })
+    }
+    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    .borderRadius({ topLeft: 16, topRight: 16, bottomLeft: 4, bottomRight: 16 })
+    .backgroundColor(Theme.surfaceAlt)
+    .constraintSize({ maxWidth: '88%' })
+    .margin({ left: 16, top: 6 })
+  }
+
   @Builder
   typingIndicator() {
     Column() {
@@ -605,6 +879,14 @@ export struct AIChatPage {
       .padding({ left: 14, right: 14, top: 12, bottom: 12 })
       .borderRadius(16)
       .backgroundColor(Theme.surfaceAlt)
+      // 过程态文案（T008）：默认思考提示；工具执行时切换为"正在调用工具：xxx"
+      Text(this.agentActivity.length > 0 ? this.agentActivity : this.tr('ai.agentThinking'))
+        .fontSize(10)
+        .fontColor(Theme.textMuted)
+        .margin({ top: 4 })
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: '88%' })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -669,9 +951,95 @@ export struct AIChatPage {
     .alignItems(HorizontalAlign.Start)
   }
 
-  build() {
+  /**
+   * 页内写操作确认卡（T011，D4/D5）：工具标题 + 预览摘要 + 影响资源 +
+   * 风险标注 + 确认/拒绝；点遮罩视为拒绝（拒绝即不执行）。
+   */
+  @Builder
+  confirmOverlayBuilder(req: PendingConfirm) {
     Column() {
-      SafeTop()
+      Column({ space: Space.md }) {
+        Row({ space: Space.sm }) {
+          Text('⚠️')
+            .fontSize(20)
+          Text(req.title)
+            .fontSize(FontSize.h3)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Theme.text)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Text(req.message)
+          .fontSize(FontSize.caption)
+          .fontColor(Theme.textSecondary)
+          .width('100%')
+
+        if (req.detail.length > 0) {
+          Text(req.detail)
+            .fontSize(FontSize.caption)
+            .fontColor(Theme.text)
+            .width('100%')
+            .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+            .borderRadius(Radius.sm)
+            .backgroundColor(Theme.surfaceAlt)
+        }
+
+        Text(req.riskLabel)
+          .fontSize(FontSize.micro)
+          .fontColor(Theme.textMuted)
+          .width('100%')
+
+        Row({ space: Space.md }) {
+          Button(this.tr('common.cancel'))
+            .type(ButtonType.Capsule)
+            .height(40)
+            .fontSize(FontSize.label)
+            .fontColor(Theme.textSecondary)
+            .backgroundColor(Theme.surfaceAlt)
+            .layoutWeight(1)
+            .onClick(() => {
+              this.resolveConfirm(false);
+            })
+          Button(this.tr('ai.confirmExecute'))
+            .type(ButtonType.Capsule)
+            .height(40)
+            .fontSize(FontSize.label)
+            .fontColor(Theme.textInvert)
+            .backgroundColor(Theme.primary)
+            .layoutWeight(1)
+            .onClick(() => {
+              this.resolveConfirm(true);
+            })
+        }
+        .width('100%')
+        .margin({ top: Space.sm })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .padding(Space.lg)
+      .borderRadius(Radius.lg)
+      .backgroundColor(Theme.surface)
+      .constraintSize({ maxWidth: '86%' })
+      .onClick(() => {
+        // 阻断冒泡：点卡片本体不触发遮罩的拒绝回调
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(Theme.overlay)
+    .onClick(() => {
+      this.resolveConfirm(false);
+    })
+  }
+
+  build() {
+    Stack() {
+      Column() {
+        SafeTop()
 
       Column() {
         ScreenHeader({
@@ -712,32 +1080,18 @@ export struct AIChatPage {
                 role: msg.role,
                 timeText: formatTime(msg.timestamp),
                 status: this.statusOf(msg),
+                traces: msg.traces,
               })
             }, (msg: ChatMessage) => msg.id)
 
-            if (this.busy) {
-              if (this.streamingText.length > 0) {
-                // 流式增量：助手气泡（左对齐、灰底、Markdown 渲染、无头像）
-                Column() {
-                  Column() {
-                    MarkdownText({ content: this.streamingText })
-                  }
-                  .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-                  .borderRadius({ topLeft: 16, topRight: 16, bottomLeft: 4, bottomRight: 16 })
-                  .backgroundColor(Theme.surfaceAlt)
-                  .constraintSize({ maxWidth: '88%' })
+            if (this.busy && this.streamingText.length === 0) {
+              // agent 过程态（T008）：思考中/工具执行中提示（无流式增量时）
+              this.typingIndicator()
+            }
 
-                  Text(this.tr('ai.generating'))
-                    .fontSize(10)
-                    .fontColor(Theme.textMuted)
-                    .margin({ top: 2 })
-                }
-                .width('100%')
-                .alignItems(HorizontalAlign.Start)
-                .padding({ left: 16, right: 16, top: 6, bottom: 6 })
-              } else {
-                this.typingIndicator()
-              }
+            if (this.streamingText.length > 0) {
+              // 最终轮流式增量气泡（T021，FR-015）：边收边渲染
+              this.streamingBubble()
             }
 
             Blank().height(8)
@@ -899,10 +1253,18 @@ export struct AIChatPage {
       .width('100%')
       .padding({ left: 16, right: 16, top: 10, bottom: 16 })
       .backgroundColor(Theme.surface)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Theme.background)
+
+      // 页内写操作确认卡（T011）：agent 循环 await 其 Promise；拒绝即不执行
+      if (this.confirmReq !== undefined) {
+        this.confirmOverlayBuilder(this.confirmReq)
+      }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Theme.background)
     .bindSheet($$this.showChatList, this.chatListSheetBuilder(), {
       height: 480,
       showClose: true,
