@@ -1,6 +1,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
-  encodeBase64, decodeBase64, sha256, md5, generateUUID,
+  encodeBase64, decodeBase64, sha256, generateUUID,
   bytesToHex, stringToUint8Array, uint8ArrayToString
 } from './CryptoUtils';
 import { decodeURLEncodedGBK } from './EncodingUtils';
@@ -80,11 +80,6 @@ function runCryptoTests(): void {
   TestRunner.test('SHA256 hash length', () => {
     const hash: string = sha256('test');
     return hash.length === 64;
-  });
-
-  TestRunner.test('MD5 hash length', () => {
-    const hash: string = md5('test');
-    return hash.length === 32;
   });
 
   TestRunner.test('UUID generation', () => {
