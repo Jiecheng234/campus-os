@@ -1,11 +1,11 @@
-import Storage from './asyncStorage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Workflow} from '../domain/workflow';
 
 const KEY = '@campusos/workflows';
 
 export async function loadWorkflows(): Promise<Workflow[]> {
   try {
-    const raw = await Storage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(KEY);
     if (!raw) {
       return [];
     }
@@ -17,7 +17,7 @@ export async function loadWorkflows(): Promise<Workflow[]> {
 
 export async function saveWorkflows(workflows: Workflow[]): Promise<void> {
   try {
-    await Storage.setItem(KEY, JSON.stringify(workflows));
+    await AsyncStorage.setItem(KEY, JSON.stringify(workflows));
   } catch {
     // 持久化失败不致命
   }

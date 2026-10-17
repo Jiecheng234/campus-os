@@ -1,4 +1,4 @@
-import { Keychain } from './secureStorageBridge';
+import * as Keychain from 'react-native-keychain';
 
 const SERVICE = 'com.campusos.credentials';
 const AI_SERVICE = 'com.campusos.ai';

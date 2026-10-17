@@ -9,7 +9,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {WebView, WebViewNavigation} from 'react-native-webview';
-import { CookieManager } from '../../storage/cookieManager';
+import CookieManager from '@react-native-cookies/cookies';
 import {colors, spacing, typography} from '../../app/theme';
 import {RootStackParamList} from '../../app/navigation/types';
 import {InlineLoader, StateBlock} from '../common/components/Status';

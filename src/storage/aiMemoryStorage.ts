@@ -1,4 +1,4 @@
-import Storage from './asyncStorage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {AIMemory} from '../domain/agent';
 
 const KEY = '@campusos/ai_memory';
@@ -7,7 +7,7 @@ const EMPTY: AIMemory = {};
 
 export async function loadAIMemory(): Promise<AIMemory> {
   try {
-    const raw = await Storage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(KEY);
     if (!raw) {
       return {...EMPTY};
     }
@@ -19,7 +19,7 @@ export async function loadAIMemory(): Promise<AIMemory> {
 
 export async function saveAIMemory(memory: AIMemory): Promise<void> {
   try {
-    await Storage.setItem(KEY, JSON.stringify(memory));
+    await AsyncStorage.setItem(KEY, JSON.stringify(memory));
   } catch {
     // 持久化失败不致命
   }
@@ -67,7 +67,7 @@ export async function patchAIMemory(patch: Partial<AIMemory>): Promise<AIMemory>
 
 export async function clearAIMemory(): Promise<void> {
   try {
-    await Storage.removeItem(KEY);
+    await AsyncStorage.removeItem(KEY);
   } catch {
     // 忽略
   }

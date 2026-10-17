@@ -1,4 +1,4 @@
-import { CookieManager } from '../../storage/cookieManager';
+import CookieManager from '@react-native-cookies/cookies';
 import {CampusCredentials} from '../../domain/campus';
 import {stripHtml} from '../../utils/html';
 import {tsinghuaAuthService} from '../auth/tsinghuaAuth';
