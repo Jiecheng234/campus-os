@@ -34,6 +34,11 @@
 *.bat    text eol=crlf
 *.cmd    text eol=crlf
 
+# ohpm 每次构建会用它自己的换行（Windows 下 CRLF）重写这个锁文件。
+# 若这里强制 LF，每次 devecocli build 后都会出现"已修改但 diff 为空"的假脏状态。
+# 约定：仓库内仍存 LF，工作区保持 ohpm 写入的 CRLF → git status 保持干净。
+oh-package-lock.json5  text eol=crlf
+
 # 二进制：禁止换行转换与文本 diff
 *.png    binary
 *.jpg    binary
