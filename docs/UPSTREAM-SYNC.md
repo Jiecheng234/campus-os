@@ -40,6 +40,80 @@
 
 ---
 
+## RN 侧改动的性质与回退方案（2026-10-17 逐文件核实）
+
+> 精确差异：**26 个 `src/` 文件 + `__mocks__/jest.setup.ts` + `.gitignore`**。
+> 之前统计的 30 还包含 2 个 `.deveco/plans/*.md`（已不入库）与 1 个已不存在的 `docs/harmonyos-dependency-matrix.md`。
+
+### A 类：本分支新增的"OpenHarmony RN 兼容层"（11 个文件，上游没有）
+
+| 文件 | 新增行 | 被引用 | 备注 |
+|---|---|---|---|
+| `src/storage/cookieManager.ts` | 121 | 4（transport / mail / 2 个 Screen） | 手动 cookie jar |
+| `src/app/platform.ts` | 72 | 仅 compat 文件 | 平台判断 |
+| `src/storage/secureStorageBridge.ts` | 76 | 1（secureStorage.ts） | Keychain 桥 |
+| `src/storage/asyncStorage.ts` | 64 | 7（各 storage） | 存储桥 |
+| `src/app/navigation/navigationCompat.ts` | 88 | **0** | 死代码 |
+| `src/features/common/components/AnimatedCompat.tsx` | 97 | **0** | 死代码 |
+| `src/features/common/components/SafeAreaView.tsx` | 70 | **0** | 死代码 |
+| `src/features/common/components/MarkdownCompat.tsx` | 50 | **0** | 死代码 |
+| `src/services/campus/networkCompat.ts` | 57 | **0** | 死代码 |
+| `src/features/common/components/Gradient.tsx` | 57 | **0** | 死代码 |
+| `src/utils/filesystemCompat.ts` | 45 | **0** | 死代码 |
+
+**合计 797 行新增；其中 7 个文件 464 行是零引用死代码。**
+（注：业务屏里的 `LinearGradient` 来自 `react-native-linear-gradient`，与本文件的 `Gradient.tsx` 无关 —— 已核实。）
+
+### B 类：上游已有文件被改（13 个文件，+57 / −45 行）
+
+全部是把 `@react-native-cookies/cookies`、RN 存储包等**替换成 A 类的桥**，或把 import 包进 `try/catch`：
+
+| 文件 | 差异 | 性质 |
+|---|---|---|
+| `src/services/webvpn/transport.ts` | 1/1 | `CookieManager` 换成自建桥 |
+| `src/services/campus/mail.ts` | 1/1 | 同上 |
+| `src/features/campus/CampusMailViewerScreen.tsx` | 1/1 | 同上 |
+| `src/features/learning/InAppViewerScreen.tsx` | 1/1 | 同上 |
+| `src/polyfills.ts` | 6/2 | `try { import 'react-native-get-random-values' }` |
+| `src/storage/asyncStorage.ts` 等 7 个 | 3–12 行 | import 路径切换 |
+| `src/storage/preferencesStorage.ts` | 12/12 | import 路径切换 |
+| `src/storage/secureStorage.ts` | 1/1 | 改用 secureStorageBridge |
+| `__mocks__/jest.setup.ts` | 11/0 | 新增 ohos mock |
+
+**B 类不含任何业务协议逻辑** —— 纯 plumbing。
+
+### 对当前重写方案的价值：**0**
+
+- `harmony/` 对 `src/` 的**跨端 import 次数 = 0**（ArkTS 不消费 TS/TSX）
+- 业务协议知识本来就在**上游原版**里（`transport.ts` / `mail.ts` 的原始实现），已提取进
+  `.deveco/skills/{tsinghua-auth,campus-endpoints}/SKILL.md`
+- 唯一可参考的是 `cookieManager.ts` 的手动 jar 思路，但鸿蒙侧 `CookieManager.ets` 已独立实现
+
+### 回退方案（闭合、可逆；需产品决策后执行）
+
+A + B **必须一起回退**，否则 RN 版会因缺少 compat 模块而编译失败：
+
+```powershell
+# 1) 删除 11 个纯新增文件
+git rm src/app/navigation/navigationCompat.ts src/app/platform.ts `
+       src/features/common/components/AnimatedCompat.tsx src/features/common/components/Gradient.tsx `
+       src/features/common/components/MarkdownCompat.tsx src/features/common/components/SafeAreaView.tsx `
+       src/services/campus/networkCompat.ts src/storage/asyncStorage.ts src/storage/cookieManager.ts `
+       src/storage/secureStorageBridge.ts src/utils/filesystemCompat.ts
+# 2) 14 个文件回退到上游内容
+git checkout upstream/main -- src __mocks__/jest.setup.ts
+# 保留：.gitignore（项目级，与兼容层无关）
+```
+
+回退后冲突面从 **27 → 1**（只剩 `.gitignore`）。
+
+⚠️ **前置条件与风险**
+1. 本机 `node_modules` 不存在 → **无法本地跑 `npm run typecheck` 验证**（需先 `npm ci`，RN 依赖较重）
+2. 回退即放弃"RN 应用跑在 OpenHarmony 上"这条备用路线
+3. 回退是可逆的（这些文件都在 git 历史里；备份分支 `backup/pre-improve-20261017-2238`）
+
+---
+
 ## 同步流程（建议每两周一次，或上游有 release 时）
 
 ```powershell
