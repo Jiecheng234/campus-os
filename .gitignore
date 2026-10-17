@@ -99,3 +99,8 @@ ui-*.xml
 # DevEco 本地工具目录（.deveco/）与本地 ACL 备份产物（脚本生成，不入库）
 .deveco/
 dsh-acl-backup/
+
+# HarmonyOS 构建产物（与 APK 同策略：只入库校验元数据，不入库二进制）
+*.hap
+*.hsp
+*.app

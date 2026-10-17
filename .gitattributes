@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 换行与编码治理
+#   背景：Windows 下 core.autocrlf=true 会在 checkout 时把 LF 改写成 CRLF，
+#         导致每次 git add 刷警告、跨平台比对出现整文件 diff、上游合并放大冲突。
+#   策略：仓库与工作区统一 LF；Windows 脚本保留 CRLF；二进制禁止任何转换。
+#   注意：本仓库 index 已是全 LF，加入本文件不产生内容 diff，只固定后续行为。
+# ─────────────────────────────────────────────────────────────────────────────
+
+* text=auto eol=lf
+
+# ArkTS / 前端 / 配置 / 文档
+*.ets    text eol=lf
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.js     text eol=lf
+*.json   text eol=lf
+*.json5  text eol=lf
+*.md     text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.sh     text eol=lf
+*.gitignore    text eol=lf
+*.gitattributes text eol=lf
+
+# Windows 脚本保持 CRLF，避免 PowerShell 解析异常
+*.ps1    text eol=crlf
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+
+# 二进制：禁止换行转换与文本 diff
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.webp   binary
+*.ttf    binary
+*.otf    binary
+*.so     binary
+*.a      binary
+*.dylib  binary
+*.har    binary
+*.hap    binary
+*.hsp    binary
+*.app    binary
+*.apk    binary
+*.aab    binary
+*.keystore binary
+*.p12    binary
+*.p7b    binary
+*.cer    binary
