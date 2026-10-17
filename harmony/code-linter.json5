@@ -28,5 +28,18 @@
     "@security/no-unsafe-dsa-key": "error",
     "@security/no-unsafe-dh-key": "error",
     "@security/no-unsafe-3des": "error"
-  }
+  },
+  "overrides": [
+    {
+      // 校园卡服务端协议强制 AES-128-ECB（密钥随密文下发），客户端无替代模式；
+      // 仅对本文件关闭 no-unsafe-aes，其余文件与其余安全规则保持 error。
+      // 背景与取舍见 CryptoUtils.aesEcbDecryptBase64 的注释。
+      "files": [
+        "entry/src/main/ets/utils/CryptoUtils.ets"
+      ],
+      "rules": {
+        "@security/no-unsafe-aes": "off"
+      }
+    }
+  ]
 }

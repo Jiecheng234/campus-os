@@ -31,25 +31,8 @@ export function bytesToHex(bytes: Uint8Array): string {
   return result;
 }
 
-export function hexToBytes(hex: string): Uint8Array {
-  const len: number = Math.floor(hex.length / 2);
-  const bytes: Uint8Array = new Uint8Array(len);
-  for (let i: number = 0; i < len; i++) {
-    bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
-}
-
 export function generateUUID(): string {
   return util.generateRandomUUID();
-}
-
-export function generateRandomBytes(length: number): Uint8Array {
-  const bytes: Uint8Array = new Uint8Array(length);
-  for (let i: number = 0; i < length; i++) {
-    bytes[i] = Math.floor(Math.random() * 256);
-  }
-  return bytes;
 }
 
 export function sha256(input: string): string {
@@ -60,17 +43,20 @@ export function sha256(input: string): string {
   return bytesToHex(result.data);
 }
 
-export function md5(input: string): string {
-  const md: cryptoFramework.Md = cryptoFramework.createMd('MD5');
-  const uint8Array: Uint8Array = stringToUint8Array(input);
-  md.updateSync({ data: uint8Array });
-  const result: cryptoFramework.DataBlob = md.digestSync();
-  return bytesToHex(result.data);
-}
-
 /**
  * AES-128-ECB（PKCS7）解密 Base64 密文（校园卡加密响应）。
  * key 为 16 字符 UTF-8 串（对齐 crypto-js：enc.Utf8.parse(data.substring(0,16)) + AES.decrypt ECB/Pkcs7）。
+ *
+ * 安全说明（CodeLinter @security/no-unsafe-aes 已知例外，勿按建议改成 CBC/GCM）：
+ * - ECB 是校园卡服务端协议强制约束，不是客户端选择：服务端把密钥（密文前 16 字符）
+ *   与 ECB 密文一起下发，客户端必须用同款模式才能解出 JSON。
+ * - 参考实现位置：RN 侧 src/services/campus/campusCard.ts:116-118
+ *   （AES.decrypt + mode.ECB + pad.Pkcs7），行为逐字对齐。
+ * - 改模式/填充会直接导致校园卡接口全部解密失败；服务端未提供可选模式。
+ * - “密钥随密文下发”属服务端设计问题，非客户端缺陷；本函数只解密展示，
+ *   客户端不产生任何 ECB 密文。
+ * - 因此仅在 code-linter.json5 的 overrides 中对本文件关闭该一条规则，
+ *   其余文件与其余安全规则保持 error 级别。
  */
 export function aesEcbDecryptBase64(base64Ciphertext: string, key: string): string {
   const helper: util.Base64Helper = new util.Base64Helper();
@@ -263,30 +249,4 @@ export function rsaEncryptPkcs1(plainText: string, publicKeyPem: string): string
   const input: cryptoFramework.DataBlob = { data: stringToUint8Array(plainText) };
   const output: cryptoFramework.DataBlob = cipher.doFinalSync(input);
   return helper.encodeToStringSync(output.data);
-}
-
-export function formatDate(date: Date): string {
-  const year: number = date.getFullYear();
-  const month: string = String(date.getMonth() + 1).padStart(2, '0');
-  const day: string = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-export function getTodayDateStr(): string {
-  return formatDate(new Date());
-}
-
-export function getWeekDates(): string[] {
-  const today: Date = new Date();
-  const dayOfWeek: number = today.getDay();
-  const mondayOffset: number = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const monday: Date = new Date(today);
-  monday.setDate(today.getDate() + mondayOffset);
-  const dates: string[] = [];
-  for (let i: number = 0; i < 7; i++) {
-    const d: Date = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    dates.push(`${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`);
-  }
-  return dates;
 }
