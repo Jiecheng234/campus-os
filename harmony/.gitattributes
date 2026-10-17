@@ -1,9 +1,15 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# 换行与编码治理
-#   背景：Windows 下 core.autocrlf=true 会在 checkout 时把 LF 改写成 CRLF，
-#         导致每次 git add 刷警告、跨平台比对出现整文件 diff、上游合并放大冲突。
-#   策略：仓库与工作区统一 LF；Windows 脚本保留 CRLF；二进制禁止任何转换。
-#   注意：本仓库 index 已是全 LF，加入本文件不产生内容 diff，只固定后续行为。
+# 换行与编码治理 —— 本文件**只作用于 harmony/ 子树**
+#
+# 背景：Windows 下 core.autocrlf=true 会在 checkout 时把 LF 改写为 CRLF，
+#       导致 git add 刷警告、跨平台比对出现整文件 diff、上游合并放大冲突。
+#
+# 为什么放在 harmony/ 而不是仓库根：
+#   本仓库是上游 RN 项目的 fork。根级 .gitattributes 会改变上游/协作者的
+#   checkout 行为（他们没同意这个约定）。这里只固定我们新增的鸿蒙代码，
+#   对 src/、android/ 等上游文件保持 autocrlf 默认行为。
+#   作用域验证：git check-attr text eol -- harmony/.../Index.ets   → text, lf
+#               git check-attr text eol -- src/polyfills.ts        → unspecified
 # ─────────────────────────────────────────────────────────────────────────────
 
 * text=auto eol=lf
@@ -20,11 +26,8 @@
 *.yml    text eol=lf
 *.sh     text eol=lf
 
-# Git hooks 脚本必须 LF，否则 Git for Windows 的 sh 会把 shebang 读成 "#!/bin/sh\r"
-.githooks/*  text eol=lf
-
-*.gitignore    text eol=lf
-*.gitattributes text eol=lf
+*.gitignore      text eol=lf
+*.gitattributes  text eol=lf
 
 # Windows 脚本保持 CRLF，避免 PowerShell 解析异常
 *.ps1    text eol=crlf
