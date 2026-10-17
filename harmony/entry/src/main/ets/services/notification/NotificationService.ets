@@ -12,7 +12,7 @@ export async function showLocalNotification(title: string, text: string, id: num
           text: text,
         }
       },
-      slotType: notificationManager.SlotType.SOCIAL_COMMUNICATION,
+      notificationSlotType: notificationManager.SlotType.SOCIAL_COMMUNICATION,
     };
     await notificationManager.publish(request);
   } catch (e) {

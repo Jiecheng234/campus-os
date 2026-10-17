@@ -1,3 +1,4 @@
+/// <reference path="../BuildProfile.d.ts" />
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import BuildProfile from 'BuildProfile';
 

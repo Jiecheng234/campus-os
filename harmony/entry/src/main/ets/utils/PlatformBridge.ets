@@ -42,8 +42,14 @@ export interface WebViewOptions {
  * Native module names for TurboModule registration.
  * These must match the names registered on the ArkTS side.
  */
-export const NATIVE_MODULE_NAMES = {
+export interface NativeModuleNames {
+  readonly SECURE_STORAGE: string;
+  readonly LOCAL_NOTIFICATION: string;
+  readonly WEB_VIEW: string;
+}
+
+export const NATIVE_MODULE_NAMES: NativeModuleNames = {
   SECURE_STORAGE: 'CampusOSSecureStorage',
   LOCAL_NOTIFICATION: 'CampusOSLocalNotification',
   WEB_VIEW: 'CampusOSWebView',
-} as const;
+};
