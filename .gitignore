@@ -104,3 +104,11 @@ dsh-acl-backup/
 *.hap
 *.hsp
 *.app
+
+# 本地 Git 钩子 —— 个人工作流，刻意不入库
+#   1. 钩子开关 core.hooksPath 是本地配置，别人拉取后本来就不会执行，入库只会污染上游树
+#   2. 文件仍在工作区可用；历史里也有备份，换机器后可用下面命令恢复：
+#        for h in commit-msg pre-commit pre-push post-merge; do
+#          git show 41843fb:.githooks/$h > .githooks/$h; done
+#   3. 恢复后确保启用：git config core.hooksPath .githooks
+.githooks/
