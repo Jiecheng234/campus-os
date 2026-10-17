@@ -1,17 +1,24 @@
 import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
 import { CampusNotification } from '../../services/campus/CampusDataService';
+import { I18n } from '../../utils/I18n';
 
 @Component
 export struct NotificationDetailPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
   item: CampusNotification = new CampusNotification();
 
   build() {
     Column() {
       SafeTop()
 
-      DetailHeader({ title: '通知详情', onBack: () => { this.onBack(); } })
+      DetailHeader({ title: this.tr('learning.notification.title'), onBack: () => { this.onBack(); } })
 
       Divider().color(Theme.divider)
 
@@ -41,7 +48,7 @@ export struct NotificationDetailPage {
 
             Divider().color(Theme.divider).margin({ bottom: 16 })
 
-            Text(this.item.content.length > 0 ? this.item.content : '暂无内容')
+            Text(this.item.content.length > 0 ? this.item.content : this.tr('learning.notification.empty'))
               .fontSize(15)
               .fontColor(Theme.text)
               .lineHeight(26)

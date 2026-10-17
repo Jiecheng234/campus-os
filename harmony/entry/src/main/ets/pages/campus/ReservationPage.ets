@@ -3,10 +3,17 @@ import { DetailHeader } from '../../components/Ui';
 import { LibrarySeatPage } from './LibrarySeatPage';
 import { LibraryRoomPage } from './LibraryRoomPage';
 import { SportsBookingPage } from './SportsBookingPage';
+import { I18n } from '../../utils/I18n';
 
 @Component
 export struct ReservationPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
   /** 页内切换：图书馆座位子页（返回回到入口卡片） */
   @State showLibrarySeat: boolean = false;
   /** 页内切换：研读间子页（返回回到入口卡片） */
@@ -40,7 +47,7 @@ export struct ReservationPage {
         })
           .layoutWeight(1)
       } else {
-        DetailHeader({ title: '场馆预约', onBack: () => { this.onBack(); } })
+        DetailHeader({ title: this.tr('campus.reservation.title'), onBack: () => { this.onBack(); } })
 
         Divider().color(Theme.divider)
 
@@ -60,11 +67,11 @@ export struct ReservationPage {
             .justifyContent(FlexAlign.Center)
 
             Column() {
-              Text('图书馆座位预约')
+              Text(this.tr('campus.reservation.libSeat'))
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
-              Text('已预约 0 个座位')
+              Text(this.tr('campus.reservation.libSeatHint'))
                 .fontSize(12)
                 .fontColor(Theme.textMuted)
                 .margin({ top: 2 })
@@ -102,11 +109,11 @@ export struct ReservationPage {
             .justifyContent(FlexAlign.Center)
 
             Column() {
-              Text('研读间预约')
+              Text(this.tr('campus.reservation.libRoom'))
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
-              Text('已预约 0 间')
+              Text(this.tr('campus.reservation.libRoomHint'))
                 .fontSize(12)
                 .fontColor(Theme.textMuted)
                 .margin({ top: 2 })
@@ -144,11 +151,11 @@ export struct ReservationPage {
             .justifyContent(FlexAlign.Center)
 
             Column() {
-              Text('体育场馆预约')
+              Text(this.tr('campus.reservation.sports'))
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
-              Text('羽毛球 · 乒乓球 · 游泳馆')
+              Text(this.tr('campus.reservation.sportsHint'))
                 .fontSize(12)
                 .fontColor(Theme.textMuted)
                 .margin({ top: 2 })

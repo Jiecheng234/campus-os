@@ -1,10 +1,21 @@
 import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
 import { CampusFile } from '../../services/campus/CampusDataService';
+import { I18n } from '../../utils/I18n';
 
 @Component
 export struct FileDetailPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
   item: CampusFile = new CampusFile();
 
   private getExtension(title: string): string {
@@ -17,7 +28,7 @@ export struct FileDetailPage {
     Column() {
       SafeTop()
 
-      DetailHeader({ title: '文件详情', onBack: () => { this.onBack(); } })
+      DetailHeader({ title: this.tr('learning.file.title'), onBack: () => { this.onBack(); } })
 
       Divider().color(Theme.divider)
 
@@ -40,10 +51,10 @@ export struct FileDetailPage {
 
           // 文件信息
           Column() {
-            InfoRow({ label: '所属课程', value: this.item.courseName })
-            InfoRow({ label: '文件大小', value: this.item.size.length > 0 ? this.item.size : '—' })
-            InfoRow({ label: '文件类型', value: this.getExtension(this.item.title).toUpperCase() })
-            InfoRow({ label: '上传时间', value: this.item.uploadTime.length > 0 ? this.item.uploadTime : '—' })
+            InfoRow({ label: this.tr('learning.file.course'), value: this.item.courseName })
+            InfoRow({ label: this.tr('learning.file.size'), value: this.item.size.length > 0 ? this.item.size : '—' })
+            InfoRow({ label: this.tr('learning.file.type'), value: this.getExtension(this.item.title).toUpperCase() })
+            InfoRow({ label: this.tr('learning.file.uploadTime'), value: this.item.uploadTime.length > 0 ? this.item.uploadTime : '—' })
           }
           .width('100%')
           .constraintSize({ maxWidth: '100%' })
@@ -55,13 +66,13 @@ export struct FileDetailPage {
 
           // 描述
           Column() {
-            Text('文件说明')
+            Text(this.tr('learning.file.descriptionTitle'))
               .fontSize(15)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.text)
               .margin({ bottom: 8 })
 
-            Text(this.item.description.length > 0 ? this.item.description : '暂无说明')
+            Text(this.item.description.length > 0 ? this.item.description : this.tr('learning.file.emptyDescription'))
               .fontSize(14)
               .fontColor(Theme.textSecondary)
               .lineHeight(22)
@@ -75,7 +86,9 @@ export struct FileDetailPage {
           .margin({ left: 16, right: 16, bottom: 20 })
 
           // 下载按钮
-          Button('下载文件' + (this.item.size.length > 0 ? ' (' + this.item.size + ')' : ''))
+          Button(this.item.size.length > 0
+            ? this.trp('learning.file.downloadWithSize', { 'size': this.item.size })
+            : this.tr('learning.file.download'))
             .type(ButtonType.Normal)
             .width('100%')
             .constraintSize({ maxWidth: '100%' })

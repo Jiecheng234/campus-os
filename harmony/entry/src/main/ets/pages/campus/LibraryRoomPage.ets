@@ -205,9 +205,10 @@ export struct LibraryRoomPage {
   }
 
   @State level: number = LEVEL_KIND;
-  @State titleText: string = '研读间';
+  @State titleText: string = '';
   @State loading: boolean = false;
-  @State loadingText: string = '正在建立研读间会话…';
+  /** 加载态文案（存 i18n 键；渲染经 tr() 即时跟随语言） */
+  @State loadingText: string = 'libroom.loadingSession';
   @State errorMessage: string = '';
   /** 写操作提交中标识（'book-{devId}' / 'cancel-{uuid}'；非空时禁用全部写动作防重复提交） */
   @State busyKey: string = '';
@@ -261,12 +262,12 @@ export struct LibraryRoomPage {
     if (this.level === LEVEL_BOOK) {
       // 表单返回资源层（保留当前类型/日期数据）
       this.level = LEVEL_RESOURCE;
-      this.titleText = this.currentKindName.length > 0 ? this.currentKindName : '研读间';
+      this.titleText = this.currentKindName;
       this.errorMessage = '';
       return;
     }
     this.level = LEVEL_KIND;
-    this.titleText = '研读间';
+    this.titleText = '';
     this.errorMessage = '';
   }
 
@@ -287,9 +288,9 @@ export struct LibraryRoomPage {
   /** KIND 层：类型列表（首次进入自动完成研读间子系统登录与账号校验） */
   private async loadKinds(): Promise<void> {
     this.level = LEVEL_KIND;
-    this.titleText = '研读间';
+    this.titleText = '';
     this.errorMessage = '';
-    this.loadingText = this.kinds.length === 0 ? '正在建立研读间会话…' : '正在刷新研读间类型…';
+    this.loadingText = this.kinds.length === 0 ? 'libroom.loadingSession' : 'libroom.loadingKinds';
     if (this.isDemo) {
       this.kinds = getDemoKinds();
       return;
@@ -317,9 +318,9 @@ export struct LibraryRoomPage {
     this.currentKindName = kind.kindName;
     this.currentDateOffset = dateOffset;
     this.level = LEVEL_RESOURCE;
-    this.titleText = kind.kindName.length > 0 ? kind.kindName : '研读间资源';
+    this.titleText = kind.kindName;
     this.errorMessage = '';
-    this.loadingText = '正在读取研读间资源…';
+    this.loadingText = 'libroom.loadingResources';
     if (this.isDemo) {
       this.resources = getDemoResources();
       return;
@@ -337,9 +338,9 @@ export struct LibraryRoomPage {
   /** BOOKINGS 层：我的预约记录 */
   private async openBookings(): Promise<void> {
     this.level = LEVEL_BOOKINGS;
-    this.titleText = '我的预约';
+    this.titleText = '';
     this.errorMessage = '';
-    this.loadingText = '正在读取我的预约…';
+    this.loadingText = 'libroom.loadingBookings';
     if (this.isDemo) {
       this.bookings = getDemoRoomBookings();
       return;
@@ -406,10 +407,21 @@ export struct LibraryRoomPage {
 
   // ── 写操作（预约 / 取消 / 成员搜索）：二次确认 + 防重复 + 成功刷新（演示模式零请求） ────────────────────────
 
+  /** 页内头部标题（KIND/BOOKINGS 走词条；RESOURCE/BOOK 为服务数据名，存于 titleText） */
+  private headerTitle(): string {
+    if (this.level === LEVEL_BOOKINGS) {
+      return this.tr('libroom.bookingsTitle');
+    }
+    if (this.level === LEVEL_KIND) {
+      return this.tr('libroom.title');
+    }
+    return this.titleText.length > 0 ? this.titleText : this.tr('libroom.resourcesFallback');
+  }
+
   /** 资源显示名（房间名优先，回退设备名/编号） */
   private roomDisplayName(res: LibRoomResource): string {
     const name: string = res.roomName.length > 0 ? res.roomName : res.devName;
-    return name.length > 0 ? name : ('研读间 ' + String(res.devId));
+    return name.length > 0 ? name : this.trp('libroom.roomFallback', { 'id': String(res.devId) });
   }
 
   /** 预约表单目标房间名（确认框/标题用） */
@@ -734,7 +746,7 @@ export struct LibraryRoomPage {
       return;
     }
     const roomText: string = rec.devName.length > 0
-      ? rec.devName : ('研读间 ' + String(rec.rsvId));
+      ? rec.devName : this.trp('libroom.roomFallback', { 'id': String(rec.rsvId) });
     const timeText: string = (rec.date.length > 0 ? rec.date + ' ' : '')
       + rec.beginText + ' – ' + rec.endText;
     const message: string = this.trp('libroom.confirmRoom', { 'name': roomText }) + '\n'
@@ -814,7 +826,7 @@ export struct LibraryRoomPage {
           this.handleHeaderBack();
         })
 
-      Text(this.titleText)
+      Text(this.headerTitle())
         .fontSize(FontSize.h3)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.text)
@@ -861,7 +873,7 @@ export struct LibraryRoomPage {
         .width(36)
         .height(36)
         .color(Theme.primary)
-      Text(this.loadingText)
+      Text(this.tr(this.loadingText))
         .fontSize(FontSize.caption)
         .fontColor(Theme.textMuted)
     }
@@ -875,9 +887,9 @@ export struct LibraryRoomPage {
     Column() {
       StateBlock({
         tone: StateTone.Error,
-        title: '加载失败',
+        title: this.tr('status.failed'),
         message: this.errorMessage,
-        actionText: '重试',
+        actionText: this.tr('status.retry'),
         onAction: () => {
           this.refreshCurrentLevel();
         },
@@ -894,11 +906,16 @@ export struct LibraryRoomPage {
     Column() {
       Row() {
         Column({ space: 2 }) {
-          Text(kind.kindName.length > 0 ? kind.kindName : ('类型 ' + String(kind.kindId)))
+          Text(kind.kindName.length > 0 ? kind.kindName : this.trp('libroom.kindFallback', {
+            'id': String(kind.kindId)
+          }))
             .fontSize(FontSize.body)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
-          Text(String(kind.roomCount) + ' 个房间 · 点选查看近 ' + String(VALID_DATE_NUM) + ' 天')
+          Text(this.trp('libroom.kindCardHint', {
+            'rooms': String(kind.roomCount),
+            'days': String(VALID_DATE_NUM)
+          }))
             .fontSize(FontSize.caption)
             .fontColor(Theme.textMuted)
         }
@@ -955,7 +972,7 @@ export struct LibraryRoomPage {
         Row() {
           Text('📋')
             .fontSize(20)
-          Text('我的预约')
+          Text(this.tr('libroom.bookingsTitle'))
             .fontSize(FontSize.body)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
@@ -984,7 +1001,7 @@ export struct LibraryRoomPage {
         .margin({ left: Space.md, right: Space.md, bottom: Space.md })
 
         if (this.kinds.length === 0) {
-          EmptyHint({ title: '无研读间类型', message: '接口未返回研读间类型数据，可稍后刷新' })
+          EmptyHint({ title: this.tr('libroom.emptyKindsTitle'), message: this.tr('libroom.emptyKindsMessage') })
         } else {
           ForEach(this.kinds, (kind: LibRoomKind) => {
             this.KindCard(kind)
@@ -1006,7 +1023,10 @@ export struct LibraryRoomPage {
       Row() {
         Column({ space: 2 }) {
           Text((res.roomName.length > 0 ? res.roomName : res.devName)
-            + (res.maxUser > 1 ? ('（' + String(res.minUser) + '~' + String(res.maxUser) + '人）') : ''))
+            + (res.maxUser > 1 ? this.trp('libroom.userRange', {
+              'min': String(res.minUser),
+              'max': String(res.maxUser)
+            }) : ''))
             .fontSize(FontSize.body)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
@@ -1014,7 +1034,10 @@ export struct LibraryRoomPage {
             .fontSize(FontSize.caption)
             .fontColor(Theme.textMuted)
           if (res.openStart.length > 0 && res.openEnd.length > 0) {
-            Text('开放 ' + res.openStart + '–' + res.openEnd)
+            Text(this.trp('libroom.ruleOpen', {
+              'start': res.openStart,
+              'end': res.openEnd
+            }))
               .fontSize(FontSize.caption)
               .fontColor(Theme.textMuted)
           }
@@ -1023,9 +1046,9 @@ export struct LibraryRoomPage {
         .layoutWeight(1)
 
         if (res.kindName.indexOf('暂未开放') >= 0) {
-          StatusBadge({ text: '未开放', tone: BadgeTone.Warning })
+          StatusBadge({ text: this.tr('libroom.closedBadge'), tone: BadgeTone.Warning })
         } else {
-          StatusBadge({ text: '可预约', tone: BadgeTone.Success })
+          StatusBadge({ text: this.tr('libroom.bookableBadge'), tone: BadgeTone.Success })
         }
       }
       .width('100%')
@@ -1074,7 +1097,7 @@ export struct LibraryRoomPage {
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
         if (this.resources.length === 0) {
-          EmptyHint({ title: '暂无可预约资源', message: '该类型当天暂无可预约研读间' })
+          EmptyHint({ title: this.tr('libroom.emptyResourcesTitle'), message: this.tr('libroom.emptyResourcesMessage') })
         } else {
           ForEach(this.resources, (res: LibRoomResource) => {
             this.ResourceCard(res)
@@ -1335,7 +1358,9 @@ export struct LibraryRoomPage {
   @Builder
   private BookingCard(rec: LibRoomBookRecord) {
     Column({ space: Space.xs }) {
-      Text(rec.devName.length > 0 ? rec.devName : ('研读间 ' + String(rec.rsvId)))
+      Text(rec.devName.length > 0 ? rec.devName : this.trp('libroom.roomFallback', {
+        'id': String(rec.rsvId)
+      }))
         .fontSize(FontSize.body)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.text)
@@ -1346,7 +1371,7 @@ export struct LibraryRoomPage {
         .fontSize(FontSize.caption)
         .fontColor(Theme.textMuted)
       if (rec.membersText.length > 0) {
-        Text('成员：' + rec.membersText)
+        Text(this.trp('libroom.membersLine', { 'names': rec.membersText }))
           .fontSize(FontSize.caption)
           .fontColor(Theme.textMuted)
       }
@@ -1395,7 +1420,7 @@ export struct LibraryRoomPage {
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
         if (this.bookings.length === 0) {
-          EmptyHint({ title: '暂无预约记录', message: this.tr('libroom.bookingsEmptyMessage') })
+          EmptyHint({ title: this.tr('libroom.emptyBookingsTitle'), message: this.tr('libroom.bookingsEmptyMessage') })
         } else {
           ForEach(this.bookings, (rec: LibRoomBookRecord) => {
             this.BookingCard(rec)

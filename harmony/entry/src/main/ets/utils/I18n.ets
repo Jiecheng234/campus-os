@@ -649,6 +649,459 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
     zh: '状态由第三方洗衣平台提供，仅供参考',
     en: 'Status is provided by third-party laundry platforms, for reference only'
   },
+
+  // ══════════════════════════════════════════════════════════════════
+  // i18n 批次二（校园子页 / 顶层页 / 学习详情页文案迁移）
+  // ══════════════════════════════════════════════════════════════════
+
+  // ── 通用（common.*，批次二追加）──
+  'common.refresh': { zh: '刷新', en: 'Refresh' },
+
+  // ── 校园财务（campus.finance.*，FinancePage）──
+  'campus.finance.pageTitle': { zh: '校园财务', en: 'Campus finance' },
+  'campus.finance.demoHint': {
+    zh: '演示数据 · 登录后显示真实校园卡信息',
+    en: 'Demo data · Sign in for your real card info'
+  },
+  'campus.finance.balanceTitle': { zh: '校园卡余额', en: 'Card balance' },
+  'campus.finance.yuan': { zh: '元', en: 'CNY' },
+  'campus.finance.lastTx': { zh: '最近交易 {name}', en: 'Last transaction {name}' },
+  'campus.finance.errorTitle': { zh: '校园财务加载失败', en: 'Failed to load finance' },
+  'campus.finance.cardInfo': { zh: '校园卡信息', en: 'Card information' },
+  'campus.finance.name': { zh: '姓名', en: 'Name' },
+  'campus.finance.department': { zh: '院系', en: 'Department' },
+  'campus.finance.cardId': { zh: '卡号', en: 'Card no.' },
+  'campus.finance.status': { zh: '状态', en: 'Status' },
+  'campus.finance.perTxLimit': { zh: '单笔限额', en: 'Per-transaction limit' },
+  'campus.finance.dailyLimit': { zh: '日限额', en: 'Daily limit' },
+  'campus.finance.yuanAmount': { zh: '{n} 元', en: '¥{n}' },
+  'campus.finance.recentTx': { zh: '近 7 天流水', en: 'Last 7 days' },
+  'campus.finance.loadingTx': { zh: '正在读取近期流水', en: 'Loading recent transactions' },
+  'campus.finance.emptyTxTitle': { zh: '暂无近期流水', en: 'No recent transactions' },
+  'campus.finance.emptyTxMessage': {
+    zh: '近 7 天没有查询到校园卡交易记录。',
+    en: 'No card transactions in the last 7 days.'
+  },
+  'campus.finance.txFallback': { zh: '校园卡交易', en: 'Card transaction' },
+  'campus.finance.balanceLabel': { zh: '余额 {n}', en: 'Balance {n}' },
+  'campus.finance.topUp': { zh: '去充值', en: 'Top up' },
+  'campus.finance.topUpToast': {
+    zh: '充值请通过支付宝或网页版校园卡系统操作',
+    en: 'Top up via Alipay or the web campus card system'
+  },
+
+  // ── 通用（common.*，批次二追加）──
+  'common.search': { zh: '搜索', en: 'Search' },
+  'common.clear': { zh: '清除', en: 'Clear' },
+
+  // ── 校园邮件（mail.*，MailPage / MailComposeView / MailDetailView）──
+  'mail.title': { zh: '校园邮件', en: 'Campus mail' },
+  'mail.unknownSender': { zh: '未知发件人', en: 'Unknown sender' },
+  // 系统文件夹（服务层 MAIL_FOLDERS 的 system 标识 → 展示名）
+  'mail.folder.inbox': { zh: '收件箱', en: 'Inbox' },
+  'mail.folder.drafts': { zh: '草稿箱', en: 'Drafts' },
+  'mail.folder.sent': { zh: '已发送', en: 'Sent' },
+  'mail.folder.deleted': { zh: '已删除', en: 'Deleted' },
+  'mail.folder.junk': { zh: '垃圾邮件', en: 'Junk' },
+  'mail.demoHint': {
+    zh: '演示数据 · 登录后查看真实邮箱',
+    en: 'Demo data · Sign in for your real mailbox'
+  },
+  'mail.searchPlaceholder': { zh: '搜索邮件', en: 'Search mail' },
+  'mail.searchEmptyTitle': { zh: '未找到相关邮件', en: 'No matching messages' },
+  'mail.searchEmptyMessage': { zh: '换个关键词试试', en: 'Try another keyword' },
+  'mail.emptyTitle': { zh: '暂无邮件', en: 'No messages' },
+  'mail.emptyMessage': { zh: '该文件夹暂时没有邮件', en: 'This folder is empty' },
+  'mail.unreadCount': { zh: '{n} 封未读', en: '{n} unread' },
+  'mail.noUnread': { zh: '无未读邮件', en: 'No unread mail' },
+  'mail.totalCount': { zh: '共 {n} 封', en: '{n} in total' },
+  'mail.searchResult': { zh: '关键词“{k}” · 找到 {n} 封', en: '“{k}” · {n} found' },
+  'mail.loadMore': { zh: '加载更多', en: 'Load more' },
+  'mail.loadMoreFailed': { zh: '加载更多失败：{msg}', en: 'Failed to load more: {msg}' },
+  'mail.delete': { zh: '删除邮件', en: 'Delete message' },
+  'mail.move': { zh: '移动邮件', en: 'Move message' },
+  'mail.rowActionsMessage': { zh: '选择对该邮件的操作', en: 'Choose an action for this message' },
+  'mail.deleteConfirmMessage': {
+    zh: '确认删除所选邮件？删除的邮件可在“已删除”文件夹中找到。',
+    en: 'Delete the selected messages? Deleted messages can be found in Trash.'
+  },
+  'mail.deleteConfirmOk': { zh: '确认删除', en: 'Delete' },
+  'mail.deletedToast': { zh: '已删除', en: 'Deleted' },
+  'mail.deleteFailed': { zh: '删除失败：{msg}', en: 'Failed to delete: {msg}' },
+  'mail.markReadFailed': {
+    zh: '已读状态同步失败，可稍后刷新',
+    en: 'Failed to sync read state; try refreshing later'
+  },
+  'mail.pickFolderMessage': { zh: '选择目标文件夹', en: 'Choose a target folder' },
+  'mail.moveConfirmMessage': {
+    zh: '确认将所选邮件移动到“{name}”？',
+    en: 'Move the selected messages to “{name}”?'
+  },
+  'mail.moveConfirmOk': { zh: '确认移动', en: 'Move' },
+  'mail.movedToast': { zh: '已移动到{name}', en: 'Moved to {name}' },
+  'mail.moveFailed': { zh: '移动失败：{msg}', en: 'Failed to move: {msg}' },
+  'mail.sentToast': { zh: '发送成功', en: 'Sent' },
+
+  // ── 撰写邮件（mail.compose.*，MailComposeView）──
+  'mail.compose.title': { zh: '写邮件', en: 'Compose' },
+  'mail.compose.to': { zh: '收件人 *', en: 'To *' },
+  'mail.compose.toPlaceholder': {
+    zh: '收件人邮箱，多人用分号分隔',
+    en: 'Recipient addresses, separated by semicolons'
+  },
+  'mail.compose.toRequired': { zh: '请填写收件人', en: 'Please enter a recipient' },
+  'mail.compose.cc': { zh: '抄送', en: 'Cc' },
+  'mail.compose.ccPlaceholder': {
+    zh: '抄送邮箱（可选），多人用分号分隔',
+    en: 'Cc addresses (optional), separated by semicolons'
+  },
+  'mail.compose.subject': { zh: '主题 *', en: 'Subject *' },
+  'mail.compose.subjectPlaceholder': { zh: '邮件主题', en: 'Email subject' },
+  'mail.compose.subjectRequired': { zh: '请填写主题', en: 'Please enter a subject' },
+  'mail.compose.content': { zh: '正文', en: 'Body' },
+  'mail.compose.contentPlaceholder': { zh: '输入正文…', en: 'Write your message…' },
+  'mail.compose.sendTitle': { zh: '发送邮件', en: 'Send email' },
+  'mail.compose.sendConfirmMessage': { zh: '确认发送这封邮件？', en: 'Send this email?' },
+  'mail.compose.sendConfirmOk': { zh: '确认发送', en: 'Send' },
+  'mail.compose.sending': { zh: '发送中…', en: 'Sending…' },
+  'mail.compose.send': { zh: '发送', en: 'Send' },
+
+  // ── 邮件详情（mail.detail.*，MailDetailView）──
+  'mail.detail.title': { zh: '邮件详情', en: 'Message detail' },
+  'mail.detail.loading': { zh: '正在加载邮件…', en: 'Loading message…' },
+  'mail.detail.from': { zh: '发件人', en: 'From' },
+  'mail.detail.to': { zh: '收件人', en: 'To' },
+  'mail.detail.cc': { zh: '抄送', en: 'Cc' },
+  'mail.detail.time': { zh: '时间', en: 'Date' },
+  'mail.detail.folder': { zh: '文件夹', en: 'Folder' },
+  'mail.detail.emptyBody': { zh: '暂无正文', en: 'No body' },
+  'mail.detail.attachments': { zh: '附件（{n}）', en: 'Attachments ({n})' },
+
+  // ── 校园网络（campus.network.*，NetworkPage）──
+  'campus.network.pageTitle': { zh: '校园网络', en: 'Campus network' },
+  'campus.network.demoHint': {
+    zh: '演示数据 · 登录后显示真实校园网信息',
+    en: 'Demo data · Sign in for your real network info'
+  },
+  'campus.network.balance': { zh: '账户余额', en: 'Account balance' },
+  'campus.network.yuan': { zh: '元', en: 'CNY' },
+  'campus.network.usedBytes': { zh: '已用流量', en: 'Data used' },
+  'campus.network.usedTime': { zh: '已用时长', en: 'Time used' },
+  'campus.network.settlementDate': { zh: '结算日期 {name}', en: 'Billing date {name}' },
+  'campus.network.errorTitle': { zh: '校园网信息加载失败', en: 'Failed to load network info' },
+  'campus.network.captchaTitle': { zh: '校园网需要验证码', en: 'Captcha required' },
+  'campus.network.captchaHint': {
+    zh: '输入图片中的字符完成校园网登录',
+    en: 'Enter the characters in the image to sign in'
+  },
+  'campus.network.getCaptcha': { zh: '点击获取验证码', en: 'Tap to get captcha' },
+  'campus.network.captchaPlaceholder': { zh: '请输入验证码', en: 'Enter captcha' },
+  'campus.network.refreshCaptcha': { zh: '换一张', en: 'New image' },
+  'campus.network.loggingIn': { zh: '登录中…', en: 'Signing in…' },
+  'campus.network.loginButton': { zh: '登录校园网', en: 'Sign in' },
+  'campus.network.retryQuery': { zh: '重试原查询', en: 'Retry the original query' },
+  'campus.network.captchaFailed': { zh: '验证码获取失败：{msg}', en: 'Failed to get captcha: {msg}' },
+  'campus.network.captchaEmpty': { zh: '请输入验证码', en: 'Please enter the captcha' },
+  'campus.network.loginSuccess': { zh: '校园网登录成功', en: 'Signed in to the campus network' },
+  'campus.network.accountInfo': { zh: '账户信息', en: 'Account information' },
+  'campus.network.username': { zh: '用户名', en: 'Username' },
+  'campus.network.contactEmail': { zh: '联系邮箱', en: 'Email' },
+  'campus.network.contactPhone': { zh: '联系电话', en: 'Phone' },
+  'campus.network.contactLandline': { zh: '固定电话', en: 'Landline' },
+  'campus.network.realName': { zh: '真实姓名', en: 'Real name' },
+  'campus.network.userGroup': { zh: '用户组', en: 'User group' },
+  'campus.network.status': { zh: '状态', en: 'Status' },
+  'campus.network.location': { zh: '所在位置', en: 'Location' },
+  'campus.network.allowedDevices': { zh: '允许在线设备数', en: 'Allowed online devices' },
+  'campus.network.devices': { zh: '在线设备', en: 'Online devices' },
+  'campus.network.loadingDevices': { zh: '正在读取在线设备', en: 'Loading online devices' },
+  'campus.network.emptyDevicesTitle': { zh: '暂无在线设备', en: 'No online devices' },
+  'campus.network.emptyDevicesMessage': {
+    zh: '当前账号没有查询到在线设备。',
+    en: 'No online devices found for this account.'
+  },
+  'campus.network.deviceFallback': { zh: '在线设备', en: 'Device' },
+  'campus.network.ip4': { zh: 'IPv4 {name}', en: 'IPv4 {name}' },
+  'campus.network.ip6': { zh: 'IPv6 {name}', en: 'IPv6 {name}' },
+  'campus.network.loginTime': { zh: '登录时间 {name}', en: 'Signed in {name}' },
+  'campus.network.mac': { zh: 'MAC {name}', en: 'MAC {name}' },
+  'campus.network.processing': { zh: '处理中', en: 'Working…' },
+  'campus.network.logout': { zh: '注销', en: 'Log out' },
+  'campus.network.logoutTitle': { zh: '注销校园网设备', en: 'Log out device' },
+  'campus.network.logoutWarning': {
+    zh: '设备可能立刻断网，需要重新认证后才能联网。',
+    en: 'The device may go offline immediately and need re-authentication to reconnect.'
+  },
+  'campus.network.logoutOk': { zh: '确认注销', en: 'Log out' },
+  'campus.network.loggedOutToast': { zh: '设备已注销', en: 'Device logged out' },
+  'campus.network.logoutFailed': { zh: '注销失败：{msg}', en: 'Failed to log out: {msg}' },
+
+  // ── 校园资讯（campus.news.*，NewsPage）──
+  'campus.news.pageTitle': { zh: '校园新闻', en: 'Campus news' },
+  'campus.news.detailTitle': { zh: '新闻详情', en: 'News detail' },
+  'campus.news.demoHint': {
+    zh: '演示数据 · 登录后显示真实资讯',
+    en: 'Demo data · Sign in for real news'
+  },
+  'campus.news.loadingDetail': { zh: '正在加载正文...', en: 'Loading content…' },
+  'campus.news.noDetailUrl': { zh: '该资讯缺少详情链接', en: 'This item has no detail link' },
+  'campus.news.emptyContent': { zh: '暂无内容', en: 'No content' },
+  'campus.news.sourceFallback': { zh: '清华信息门户', en: 'Tsinghua info portal' },
+  'campus.news.topped': { zh: '置顶', en: 'Pinned' },
+
+  // ── 培养方案（campus.program.*，ProgramPage）──
+  'campus.program.progress': {
+    zh: '已完成 {earned} / {required} 学分',
+    en: 'Earned {earned} / {required} credits'
+  },
+  'campus.program.creditsShort': { zh: '{earned}/{required} 学分', en: '{earned}/{required} cr' },
+  'campus.program.credits': { zh: '{n} 学分', en: '{n} cr' },
+
+  // ── 场馆预约入口（campus.reservation.*，ReservationPage）──
+  'campus.reservation.libSeat': { zh: '图书馆座位预约', en: 'Library seat booking' },
+  'campus.reservation.libSeatHint': { zh: '已预约 0 个座位', en: '0 seats booked' },
+  'campus.reservation.libRoom': { zh: '研读间预约', en: 'Study room booking' },
+  'campus.reservation.libRoomHint': { zh: '已预约 0 间', en: '0 rooms booked' },
+  'campus.reservation.sports': { zh: '体育场馆预约', en: 'Sports venue booking' },
+  'campus.reservation.sportsHint': {
+    zh: '羽毛球 · 乒乓球 · 游泳馆',
+    en: 'Badminton · Table tennis · Pool'
+  },
+
+  // ── 通用（common.*，批次二补充）──
+  'common.today': { zh: '今天', en: 'Today' },
+  'common.tomorrow': { zh: '明天', en: 'Tomorrow' },
+
+  // ── 体育场馆（campus.sports.*，SportsBookingPage）──
+  'campus.sports.title': { zh: '体育场馆', en: 'Sports venues' },
+  // 服务层错误文案的本地化映射（页面展示，避免英文模式泄露中文）
+  'campus.sports.errorLimit': {
+    zh: '无法获取体育场馆预约限额',
+    en: 'Could not load sports venue booking quotas'
+  },
+  'campus.sports.errorSession': {
+    zh: '体育场馆会话未登录，请刷新重试',
+    en: 'Sports venue session is not signed in. Please refresh and try again.'
+  },
+  'campus.sports.errorSessionBuild': {
+    zh: '体育场馆会话建立失败，请稍后重试',
+    en: 'Could not establish the sports venue session. Please try again later.'
+  },
+  'campus.sports.errorOrders': {
+    zh: '无法加载体育场馆预约订单',
+    en: 'Could not load sports booking records'
+  },
+  'campus.sports.errorGeneric': {
+    zh: '操作失败，请稍后重试',
+    en: 'Something went wrong. Please try again later.'
+  },
+  'campus.sports.recordsTitle': { zh: '我的预约记录', en: 'My bookings' },
+  'campus.sports.locked': { zh: '已锁定', en: 'Locked' },
+  'campus.sports.notBookable': { zh: '不可预约', en: 'Not bookable' },
+  'campus.sports.bookable': { zh: '可预约', en: 'Bookable' },
+  'campus.sports.limitTitle': { zh: '今日限额', en: 'Daily limit' },
+  'campus.sports.limitUsed': { zh: '已用 {used} / 上限 {max}', en: 'Used {used} / Limit {max}' },
+  'campus.sports.phone': { zh: '联系电话', en: 'Phone' },
+  'campus.sports.timeTbd': { zh: '时段待发布', en: 'Time to be announced' },
+  'campus.sports.fieldTbd': { zh: '场地待发布', en: 'Field to be announced' },
+  'campus.sports.fieldFallback': { zh: '场地', en: 'Field' },
+  'campus.sports.timeFallback': { zh: '时间待定', en: 'Time TBC' },
+  'campus.sports.methodFallback': { zh: '支付方式待定', en: 'Payment method TBC' },
+  'campus.sports.payable': { zh: '可支付', en: 'Payable' },
+  'campus.sports.cancellable': { zh: '可取消', en: 'Cancellable' },
+  'campus.sports.priceLine': { zh: '{price} 元 · {method}', en: '¥{price} · {method}' },
+  'campus.sports.readonlyHint': {
+    zh: '资源信息仅供查询，下单与支付请通过官方渠道完成',
+    en: 'For reference only. Book and pay via official channels.'
+  },
+  'campus.sports.recordsHint': {
+    zh: '记录仅供查询，下单与支付请通过官方渠道完成',
+    en: 'Records are for reference only. Book and pay via official channels.'
+  },
+  'campus.sports.emptyResourcesTitle': { zh: '暂无可预约资源', en: 'No bookable resources' },
+  'campus.sports.emptyResourcesMessage': {
+    zh: '该场馆当日暂无发布资源',
+    en: 'No resources published for this venue today.'
+  },
+  'campus.sports.emptyRecordsTitle': { zh: '暂无预约记录', en: 'No bookings yet' },
+  'campus.sports.emptyRecordsMessage': {
+    zh: '预约场馆请通过官方渠道完成',
+    en: 'Book venues via official channels.'
+  },
+
+  // ── 空教室查询（classroom.*，ClassroomPage）──
+  'classroom.title': { zh: '空教室查询', en: 'Free classrooms' },
+  'classroom.loadingList': { zh: '正在加载教学楼列表...', en: 'Loading buildings…' },
+  'classroom.errorList': { zh: '教学楼列表加载失败', en: 'Failed to load buildings' },
+  'classroom.loadingState': { zh: '加载教室状态...', en: 'Loading room status…' },
+  'classroom.errorState': { zh: '教室状态加载失败', en: 'Failed to load room status' },
+  'classroom.day0': { zh: '周一', en: 'Mon' },
+  'classroom.day1': { zh: '周二', en: 'Tue' },
+  'classroom.day2': { zh: '周三', en: 'Wed' },
+  'classroom.day3': { zh: '周四', en: 'Thu' },
+  'classroom.day4': { zh: '周五', en: 'Fri' },
+  'classroom.day5': { zh: '周六', en: 'Sat' },
+  'classroom.day6': { zh: '周日', en: 'Sun' },
+  'classroom.todayMark': { zh: '·今', en: ' · Today' },
+  'classroom.periodsFree': { zh: '{n}/{total} 节空', en: '{n}/{total} free' },
+  'classroom.freeAllDay': { zh: '{n}/{total} 间全天空闲', en: '{n}/{total} free all day' },
+  'classroom.emptyTitle': { zh: '该教学楼无教室数据', en: 'No room data for this building' },
+  'classroom.emptyMessage': {
+    zh: '可以切换其它教学楼、周次或稍后刷新',
+    en: 'Try another building or week, or refresh later'
+  },
+  'classroom.statusAvailable': { zh: '空闲', en: 'Free' },
+  'classroom.statusTeaching': { zh: '上课', en: 'Class' },
+  'classroom.statusExam': { zh: '考试', en: 'Exam' },
+  'classroom.statusBorrowed': { zh: '借用', en: 'Borrowed' },
+  'classroom.statusDisabled': { zh: '停用', en: 'Closed' },
+  'classroom.statusReserved': { zh: '保留', en: 'Reserved' },
+  'classroom.colRoom': { zh: '教室', en: 'Room' },
+  'classroom.colCapacity': { zh: '容量', en: 'Capacity' },
+  'classroom.colPeriods': { zh: '1  2  3  4  5  6', en: '1  2  3  4  5  6' },
+
+  // ── 成绩查询（campus.grades.*，GradesPage）──
+  'campus.grades.demoHint': {
+    zh: '演示数据 · 登录后显示真实成绩',
+    en: 'Demo data · Sign in for real grades'
+  },
+  'campus.grades.subtitleStats': {
+    zh: '已修 {all} 学分（计入绩点 {total}）· 共 {n} 门',
+    en: '{all} credits earned ({total} in GPA) · {n} courses'
+  },
+  'campus.grades.noSemester': { zh: '未分学期', en: 'No semester' },
+  'campus.grades.gpaShort': { zh: '绩点 {n}', en: 'GPA {n}' },
+  'campus.grades.credits': { zh: '{n} 学分', en: '{n} cr' },
+  'campus.grades.courseMeta': { zh: '{c} 学分 · 绩点 {p}', en: '{c} cr · GPA {p}' },
+
+  // ── 占位页（common.placeholder.*，PlaceholderPage）──
+  'common.placeholder.defaultTitle': { zh: '页面', en: 'Page' },
+  'common.placeholder.wip': { zh: '功能开发中', en: 'Work in progress' },
+
+  // ── 网络学习详情页（learning.*，pages/learning/*）──
+  'learning.course.code': { zh: '课程代码', en: 'Course code' },
+  'learning.course.teacher': { zh: '授课教师', en: 'Instructor' },
+  'learning.course.semester': { zh: '学期', en: 'Semester' },
+  'learning.file.title': { zh: '文件详情', en: 'File details' },
+  'learning.file.course': { zh: '所属课程', en: 'Course' },
+  'learning.file.size': { zh: '文件大小', en: 'Size' },
+  'learning.file.type': { zh: '文件类型', en: 'Type' },
+  'learning.file.uploadTime': { zh: '上传时间', en: 'Uploaded' },
+  'learning.file.descriptionTitle': { zh: '文件说明', en: 'Description' },
+  'learning.file.emptyDescription': { zh: '暂无说明', en: 'No description' },
+  'learning.file.download': { zh: '下载文件', en: 'Download' },
+  'learning.file.downloadWithSize': { zh: '下载文件 ({size})', en: 'Download ({size})' },
+  'learning.homework.title': { zh: '作业详情', en: 'Homework details' },
+  'learning.homework.course': { zh: '课程', en: 'Course' },
+  'learning.homework.deadline': { zh: '截止时间', en: 'Deadline' },
+  'learning.homework.requirements': { zh: '作业要求', en: 'Requirements' },
+  'learning.homework.emptyRequirements': { zh: '暂无作业要求', en: 'No requirements' },
+  'learning.homework.attachments': { zh: '附件材料 ({n})', en: 'Attachments ({n})' },
+  'learning.homework.download': { zh: '下载', en: 'Download' },
+  'learning.homework.feedback': { zh: '成绩反馈', en: 'Feedback' },
+  'learning.homework.grade': { zh: '成绩：{grade}', en: 'Grade: {grade}' },
+  'learning.homework.graded': { zh: '已批改', en: 'Graded' },
+  'learning.homework.notGraded': {
+    zh: '作业尚未批改，请耐心等待。',
+    en: 'Not graded yet. Please wait.'
+  },
+  'learning.notification.title': { zh: '通知详情', en: 'Notification details' },
+  'learning.notification.empty': { zh: '暂无内容', en: 'No content' },
+  'webviewer.defaultTitle': { zh: '浏览器', en: 'Browser' },
+
+  // ── US4 复核补齐：图书馆座位（libseat.*，LibrarySeatPage）──
+  'libseat.title': { zh: '图书馆座位', en: 'Library seats' },
+  'libseat.bookingsTitle': { zh: '我的预约', en: 'My bookings' },
+  'libseat.errorNoLibrary': { zh: '未获取到图书馆列表', en: 'No libraries found' },
+  'libseat.libraryFallback': { zh: '图书馆', en: 'Library' },
+  'libseat.floorN': { zh: '楼层 {n}', en: 'Floor {n}' },
+  'libseat.floorAvailability': { zh: '可用 {n} / 共 {total} 座位', en: '{n} of {total} seats free' },
+  'libseat.sectionN': { zh: '区域 {n}', en: 'Section {n}' },
+  'libseat.sectionAvailability': {
+    zh: '可用 {n} / 共 {total} · 已预约 {r}',
+    en: '{n} of {total} free · {r} booked'
+  },
+  'libseat.notOpen': { zh: '暂不开放', en: 'Not open' },
+  'libseat.closedBadge': { zh: '未开放', en: 'Closed' },
+  'libseat.emptyFloorsTitle': { zh: '暂无楼层信息', en: 'No floor info' },
+  'libseat.emptyFloorsMessage': {
+    zh: '该图书馆暂无可用楼层',
+    en: 'No floors available in this library'
+  },
+  'libseat.emptySectionsTitle': { zh: '暂无区域信息', en: 'No section info' },
+  'libseat.emptySectionsMessage': {
+    zh: '该楼层暂无开放区域',
+    en: 'No open sections on this floor'
+  },
+  'libseat.emptySeatsTitle': { zh: '暂无座位信息', en: 'No seat info' },
+  'libseat.emptySeatsMessage': {
+    zh: '该区域暂无可查询座位',
+    en: 'No seats to show in this section'
+  },
+  'libseat.emptyBookingsTitle': { zh: '暂无预约记录', en: 'No bookings yet' },
+  'libseat.bookingFallback': { zh: '预约 {id}', en: 'Booking {id}' },
+  'libseat.unknownStatus': { zh: '未知', en: 'Unknown' },
+  'libseat.seatAvailable': { zh: '可用', en: 'Available' },
+  'libseat.seatBooked': { zh: '已预约', en: 'Booked' },
+  'libseat.seatOccupied': { zh: '已被占用', en: 'Occupied' },
+  'libseat.seatUnavailable': { zh: '不可用', en: 'Unavailable' },
+
+  // ── US4 复核补齐：研读间（libroom.*，LibraryRoomPage）──
+  'libroom.title': { zh: '研读间', en: 'Study rooms' },
+  'libroom.bookingsTitle': { zh: '我的预约', en: 'My bookings' },
+  'libroom.loadingSession': { zh: '正在建立研读间会话…', en: 'Starting study room session…' },
+  'libroom.loadingKinds': { zh: '正在刷新研读间类型…', en: 'Refreshing room types…' },
+  'libroom.loadingResources': { zh: '正在读取研读间资源…', en: 'Loading rooms…' },
+  'libroom.loadingBookings': { zh: '正在读取我的预约…', en: 'Loading my bookings…' },
+  'libroom.resourcesFallback': { zh: '研读间资源', en: 'Rooms' },
+  'libroom.roomFallback': { zh: '研读间 {id}', en: 'Room {id}' },
+  'libroom.kindFallback': { zh: '类型 {id}', en: 'Type {id}' },
+  'libroom.kindCardHint': {
+    zh: '{rooms} 个房间 · 点选查看近 {days} 天',
+    en: '{rooms} rooms · Tap to view the next {days} days'
+  },
+  'libroom.emptyKindsTitle': { zh: '无研读间类型', en: 'No room types' },
+  'libroom.emptyKindsMessage': {
+    zh: '接口未返回研读间类型数据，可稍后刷新',
+    en: 'No room types returned. Try refreshing later.'
+  },
+  'libroom.userRange': { zh: '（{min}~{max}人）', en: ' ({min}–{max} people)' },
+  'libroom.closedBadge': { zh: '未开放', en: 'Closed' },
+  'libroom.bookableBadge': { zh: '可预约', en: 'Bookable' },
+  'libroom.emptyResourcesTitle': { zh: '暂无可预约资源', en: 'No bookable rooms' },
+  'libroom.emptyResourcesMessage': {
+    zh: '该类型当天暂无可预约研读间',
+    en: 'No bookable rooms of this type today'
+  },
+  'libroom.emptyBookingsTitle': { zh: '暂无预约记录', en: 'No bookings yet' },
+  'libroom.membersLine': { zh: '成员：{names}', en: 'Members: {names}' },
+
+  // ── US4 复核补齐：宿舍服务（campus.dormitory.*，DormitoryPage）──
+  'campus.dormitory.demoHint': {
+    zh: '演示数据 · 登录后显示真实电费',
+    en: 'Demo data · Sign in for real power info'
+  },
+  'campus.dormitory.powerTitle': { zh: '当前剩余电量', en: 'Remaining power' },
+  'campus.dormitory.kwh': { zh: '度', en: 'kWh' },
+  'campus.dormitory.updatedAt': { zh: '更新于 {name}', en: 'Updated {name}' },
+  'campus.dormitory.powerError': { zh: '电费余额加载失败', en: 'Failed to load power balance' },
+  'campus.dormitory.roomInfo': { zh: '房间信息', en: 'Room info' },
+  'campus.dormitory.owner': { zh: '户名', en: 'Owner' },
+  'campus.dormitory.building': { zh: '楼号', en: 'Building' },
+  'campus.dormitory.room': { zh: '房间', en: 'Room' },
+  'campus.dormitory.studentId': { zh: '学号', en: 'Student ID' },
+  'campus.dormitory.records': { zh: '缴费记录', en: 'Payment records' },
+  'campus.dormitory.topUp': { zh: '去充值', en: 'Top up' },
+  'campus.dormitory.topUpToast': {
+    zh: '充值请通过网页版电费系统操作',
+    en: 'Top up via the web power system'
+  },
+  'campus.dormitory.colTime': { zh: '充值时间', en: 'Time' },
+  'campus.dormitory.colAmount': { zh: '充值', en: 'Amount' },
+  'campus.dormitory.colBefore': { zh: '充值前', en: 'Before' },
+  'campus.dormitory.colAfter': { zh: '充值后', en: 'After' },
+  'campus.dormitory.colOperator': { zh: '操作员', en: 'Operator' },
+  'campus.dormitory.colNote': { zh: '备注', en: 'Note' },
 };
 
 export class I18n {

@@ -8,6 +8,7 @@ import { SessionManager } from '../services/auth/SessionManager';
 import { CampusGrade, GradeReport } from '../services/campus/CampusDataService';
 import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
+import { I18n } from '../utils/I18n';
 
 class GradeItem {
   name: string = '';
@@ -76,12 +77,12 @@ function computeGpa(items: GradeItem[]): number {
 }
 
 /** 按学期首遇顺序分组（入参须为新 → 旧），绩点/学分按组内汇总 */
-function buildSemesterGroups(items: GradeItem[]): SemesterGroup[] {
+function buildSemesterGroups(items: GradeItem[], locale: string): SemesterGroup[] {
   const groups: SemesterGroup[] = [];
   const indexBySemester: Record<string, number> = {};
   for (let i: number = 0; i < items.length; i++) {
     const item: GradeItem = items[i];
-    const key: string = item.semester.length > 0 ? item.semester : '未分学期';
+    const key: string = item.semester.length > 0 ? item.semester : I18n.t('campus.grades.noSemester', locale);
     let idx: number = indexBySemester[key];
     if (idx === undefined) {
       const group: SemesterGroup = new SemesterGroup();
@@ -111,10 +112,24 @@ function buildSemesterGroups(items: GradeItem[]): SemesterGroup[] {
 @Component
 export struct GradesPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
+
   @State grades: GradeItem[] = getMockGrades();
   @State groups: SemesterGroup[] = [];
   @State gpaText: string = '0.00';
-  @State subtitleText: string = '演示数据 · 登录后显示真实成绩';
+  /** 副标题结构化数据（allCredit = -1 表示演示提示；语言切换即时重渲染） */
+  @State subtitleAllCredit: number = -1;
+  @State subtitleGpaCredit: number = 0;
+  @State subtitleCourseCount: number = 0;
   @State loading: boolean = false;
   @State errorText: string = '';
   private isReal: boolean = false;
@@ -125,13 +140,13 @@ export struct GradesPage {
       this.loadGrades();
     } else {
       this.applyItems(this.grades);
-      this.subtitleText = '演示数据 · 登录后显示真实成绩';
+      this.subtitleAllCredit = -1;
     }
   }
 
   private applyItems(items: GradeItem[]): void {
     this.grades = items;
-    this.groups = buildSemesterGroups(items);
+    this.groups = buildSemesterGroups(items, this.locale);
     this.gpaText = computeGpa(items).toFixed(2);
   }
 
@@ -155,7 +170,9 @@ export struct GradesPage {
       this.applyItems(items);
       // 总 GPA 用服务端口径（P/F 课不计入 totalCredit）
       this.gpaText = report.gpa.toFixed(2);
-      this.subtitleText = `已修 ${report.allCredit} 学分（计入绩点 ${report.totalCredit}）· 共 ${items.length} 门`;
+      this.subtitleAllCredit = report.allCredit;
+      this.subtitleGpaCredit = report.totalCredit;
+      this.subtitleCourseCount = items.length;
     } catch (e) {
       this.errorText = e instanceof Error ? e.message : String(e);
     }
@@ -170,12 +187,12 @@ export struct GradesPage {
         .fontColor(Theme.text)
       Blank()
       if (group.gpaValid) {
-        Text(`绩点 ${group.gpa.toFixed(2)}`)
+        Text(this.trp('campus.grades.gpaShort', { 'n': group.gpa.toFixed(2) }))
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.primary)
       }
-      Text(`${group.credits} 学分`)
+      Text(this.trp('campus.grades.credits', { 'n': group.credits.toString() }))
         .fontSize(12)
         .fontColor(Theme.textMuted)
         .margin({ left: Space.sm })
@@ -191,7 +208,10 @@ export struct GradesPage {
           .fontSize(15)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.text)
-        Text(`${item.credits} 学分 · 绩点 ${isNaN(item.point) ? 'N/A' : item.point.toFixed(1)}`)
+        Text(this.trp('campus.grades.courseMeta', {
+          'c': item.credits.toString(),
+          'p': isNaN(item.point) ? 'N/A' : item.point.toFixed(1)
+        }))
           .fontSize(12)
           .fontColor(Theme.textMuted)
           .margin({ top: 2 })
@@ -218,13 +238,19 @@ export struct GradesPage {
     Column() {
       SafeTop()
 
-      DetailHeader({ title: '成绩查询', onBack: () => { this.onBack(); } })
+      DetailHeader({ title: this.tr('campus.grades.title'), onBack: () => { this.onBack(); } })
 
       Divider().color(Theme.divider)
 
       // GPA 汇总
       Column() {
-        Text(this.subtitleText)
+        Text(this.subtitleAllCredit >= 0
+          ? this.trp('campus.grades.subtitleStats', {
+            'all': this.subtitleAllCredit.toString(),
+            'total': this.subtitleGpaCredit.toString(),
+            'n': this.subtitleCourseCount.toString()
+          })
+          : this.tr('campus.grades.demoHint'))
           .fontSize(13)
           .fontColor(Theme.textMuted)
           .textAlign(TextAlign.Center)
@@ -252,7 +278,7 @@ export struct GradesPage {
               .fontSize(FontSize.caption)
               .fontColor(Theme.warning)
               .textAlign(TextAlign.Center)
-            Text('重试')
+            Text(this.tr('status.retry'))
               .fontSize(FontSize.caption)
               .fontColor(Theme.primary)
               .padding({

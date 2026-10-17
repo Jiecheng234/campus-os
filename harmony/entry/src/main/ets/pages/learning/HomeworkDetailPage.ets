@@ -2,10 +2,21 @@ import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
 import { CampusHomework, HomeworkDetailData, CampusDataService } from '../../services/campus/CampusDataService';
 import { SessionManager } from '../../services/auth/SessionManager';
+import { I18n } from '../../utils/I18n';
 
 @Component
 export struct HomeworkDetailPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
   item: CampusHomework = new CampusHomework();
   @State detail: HomeworkDetailData = new HomeworkDetailData();
   @State detailLoaded: boolean = false;
@@ -28,7 +39,7 @@ export struct HomeworkDetailPage {
     Column() {
       SafeTop()
 
-      DetailHeader({ title: '作业详情', onBack: () => { this.onBack(); } })
+      DetailHeader({ title: this.tr('learning.homework.title'), onBack: () => { this.onBack(); } })
 
       Divider().color(Theme.divider)
 
@@ -53,7 +64,7 @@ export struct HomeworkDetailPage {
             .margin({ bottom: 10 })
 
             Row() {
-              Text('课程')
+              Text(this.tr('learning.homework.course'))
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .width(60)
@@ -65,7 +76,7 @@ export struct HomeworkDetailPage {
             .margin({ bottom: 6 })
 
             Row() {
-              Text('截止时间')
+              Text(this.tr('learning.homework.deadline'))
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .width(60)
@@ -85,19 +96,19 @@ export struct HomeworkDetailPage {
 
           // 作业要求
           Column() {
-            Text('作业要求')
+            Text(this.tr('learning.homework.requirements'))
               .fontSize(15)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.text)
               .margin({ bottom: 8 })
 
             if (!this.detailLoaded) {
-              Text('加载中…')
+              Text(this.tr('status.loading'))
                 .fontSize(14)
                 .fontColor(Theme.textMuted)
                 .lineHeight(22)
             } else {
-              Text(this.detail.description.length > 0 ? this.detail.description : '暂无作业要求')
+              Text(this.detail.description.length > 0 ? this.detail.description : this.tr('learning.homework.emptyRequirements'))
                 .fontSize(14)
                 .fontColor(Theme.textSecondary)
                 .lineHeight(22)
@@ -114,7 +125,9 @@ export struct HomeworkDetailPage {
           // 附件
           if (this.detail.attachments.length > 0) {
             Column() {
-              Text('附件材料 (' + String(this.detail.attachments.length) + ')')
+              Text(this.trp('learning.homework.attachments', {
+                'n': String(this.detail.attachments.length)
+              }))
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
@@ -129,7 +142,7 @@ export struct HomeworkDetailPage {
                     .fontSize(14)
                     .fontColor(Theme.primary)
                   Blank()
-                  Text('下载')
+                  Text(this.tr('learning.homework.download'))
                     .fontSize(12)
                     .fontColor(Theme.textMuted)
                 }
@@ -148,14 +161,14 @@ export struct HomeworkDetailPage {
 
           // 成绩反馈
           Column() {
-            Text('成绩反馈')
+            Text(this.tr('learning.homework.feedback'))
               .fontSize(15)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.text)
               .margin({ bottom: 8 })
 
             if (this.item.grade.length > 0) {
-              Text('成绩：' + this.item.grade)
+              Text(this.trp('learning.homework.grade', { 'grade': this.item.grade }))
                 .fontSize(14)
                 .fontColor(Theme.text)
             }
@@ -166,7 +179,9 @@ export struct HomeworkDetailPage {
                 .margin({ top: 6 })
             }
             if (this.item.grade.length === 0 && this.item.gradeContent.length === 0) {
-              Text(this.item.graded ? '已批改' : '作业尚未批改，请耐心等待。')
+              Text(this.item.graded
+                ? this.tr('learning.homework.graded')
+                : this.tr('learning.homework.notGraded'))
                 .fontSize(14)
                 .fontColor(Theme.textMuted)
             }

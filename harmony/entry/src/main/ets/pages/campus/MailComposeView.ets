@@ -14,6 +14,7 @@
 import { Theme, Space, Radius, FontSize } from '../Theme';
 import { DetailHeader, StateBlock, StateTone } from '../../components/Ui';
 import { ComposeDraft } from '../../services/campus/MailService';
+import { I18n } from '../../utils/I18n';
 
 @Component
 export struct MailComposeView {
@@ -25,6 +26,13 @@ export struct MailComposeView {
   /** 发送成功回调（父组件返回列表并提示） */
   onSent: () => void = () => {};
   onBack: () => void = () => {};
+
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
 
   @State toInput: string = '';
   @State ccInput: string = '';
@@ -53,11 +61,11 @@ export struct MailComposeView {
   /** 必填校验：收件人、主题 */
   private validateDraft(draft: ComposeDraft): boolean {
     if (draft.to.length === 0) {
-      this.getUIContext().getPromptAction().showToast({ message: '请填写收件人', duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({ message: this.tr('mail.compose.toRequired'), duration: 2000 });
       return false;
     }
     if (draft.subject.length === 0) {
-      this.getUIContext().getPromptAction().showToast({ message: '请填写主题', duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({ message: this.tr('mail.compose.subjectRequired'), duration: 2000 });
       return false;
     }
     return true;
@@ -73,14 +81,14 @@ export struct MailComposeView {
       return;
     }
     AlertDialog.show({
-      title: '发送邮件',
-      message: '确认发送这封邮件？',
+      title: this.tr('mail.compose.sendTitle'),
+      message: this.tr('mail.compose.sendConfirmMessage'),
       primaryButton: {
-        value: '取消',
+        value: this.tr('common.cancel'),
         action: (): void => {},
       },
       secondaryButton: {
-        value: '确认发送',
+        value: this.tr('mail.compose.sendConfirmOk'),
         action: (): void => {
           this.doSend(draft);
         },
@@ -114,13 +122,13 @@ export struct MailComposeView {
 
   build() {
     Column() {
-      DetailHeader({ title: '写邮件', onBack: () => { this.onBack(); } })
+      DetailHeader({ title: this.tr('mail.compose.title'), onBack: () => { this.onBack(); } })
       Divider().color(Theme.divider)
 
       Scroll() {
         Column({ space: Space.sm }) {
-          this.FieldLabel('收件人 *')
-          TextInput({ placeholder: '收件人邮箱，多人用分号分隔', text: this.toInput })
+          this.FieldLabel(this.tr('mail.compose.to'))
+          TextInput({ placeholder: this.tr('mail.compose.toPlaceholder'), text: this.toInput })
             .fontSize(FontSize.body)
             .fontColor(Theme.text)
             .height(44)
@@ -133,8 +141,8 @@ export struct MailComposeView {
               this.toInput = value;
             })
 
-          this.FieldLabel('抄送')
-          TextInput({ placeholder: '抄送邮箱（可选），多人用分号分隔', text: this.ccInput })
+          this.FieldLabel(this.tr('mail.compose.cc'))
+          TextInput({ placeholder: this.tr('mail.compose.ccPlaceholder'), text: this.ccInput })
             .fontSize(FontSize.body)
             .fontColor(Theme.text)
             .height(44)
@@ -147,8 +155,8 @@ export struct MailComposeView {
               this.ccInput = value;
             })
 
-          this.FieldLabel('主题 *')
-          TextInput({ placeholder: '邮件主题', text: this.subjectInput })
+          this.FieldLabel(this.tr('mail.compose.subject'))
+          TextInput({ placeholder: this.tr('mail.compose.subjectPlaceholder'), text: this.subjectInput })
             .fontSize(FontSize.body)
             .fontColor(Theme.text)
             .height(44)
@@ -161,8 +169,8 @@ export struct MailComposeView {
               this.subjectInput = value;
             })
 
-          this.FieldLabel('正文')
-          TextArea({ placeholder: '输入正文…', text: this.contentInput })
+          this.FieldLabel(this.tr('mail.compose.content'))
+          TextArea({ placeholder: this.tr('mail.compose.contentPlaceholder'), text: this.contentInput })
             .fontSize(FontSize.body)
             .fontColor(Theme.text)
             .width('100%')
@@ -195,7 +203,7 @@ export struct MailComposeView {
       }
 
       Row() {
-        Button(this.sending ? '发送中…' : '发送')
+        Button(this.sending ? this.tr('mail.compose.sending') : this.tr('mail.compose.send'))
           .fontSize(FontSize.label)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.textInvert)

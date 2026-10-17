@@ -1,10 +1,17 @@
 import { Theme, SafeTop, Space, Radius, FontSize } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
 import { CampusCourse } from '../../services/campus/CampusDataService';
+import { I18n } from '../../utils/I18n';
 
 @Component
 export struct CourseDetailPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
   course: CampusCourse = new CampusCourse();
   semester: string = '';
 
@@ -21,7 +28,7 @@ export struct CourseDetailPage {
           // 基本信息卡片
           Column() {
             Row() {
-              Text('课程代码')
+              Text(this.tr('learning.course.code'))
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .width(80)
@@ -33,7 +40,7 @@ export struct CourseDetailPage {
             .margin({ bottom: 8 })
 
             Row() {
-              Text('授课教师')
+              Text(this.tr('learning.course.teacher'))
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .width(80)
@@ -45,7 +52,7 @@ export struct CourseDetailPage {
             .margin({ bottom: 8 })
 
             Row() {
-              Text('学期')
+              Text(this.tr('learning.course.semester'))
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .width(80)

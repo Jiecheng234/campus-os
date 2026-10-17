@@ -1,5 +1,6 @@
 import { Theme, SafeTop } from '../Theme';
 import { DetailHeader } from '../../components/Ui';
+import { I18n } from '../../utils/I18n';
 
 class CourseSetItem {
   courseId: string = '';
@@ -67,13 +68,23 @@ function getMockProgram(): ProgramData {
 @Component
 export struct ProgramPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
   private data = getMockProgram();
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
 
   build() {
     Column() {
       SafeTop()
 
-      DetailHeader({ title: '培养方案', onBack: () => { this.onBack(); } })
+      DetailHeader({ title: this.tr('campus.program.title'), onBack: () => { this.onBack(); } })
 
       Divider().color(Theme.divider)
 
@@ -87,7 +98,10 @@ export struct ProgramPage {
               .margin({ bottom: 12 })
 
             Row() {
-              Text(`已完成 ${this.data.totalEarned} / ${this.data.totalRequired} 学分`)
+              Text(this.trp('campus.program.progress', {
+                'earned': this.data.totalEarned.toString(),
+                'required': this.data.totalRequired.toString()
+              }))
                 .fontSize(14)
                 .fontColor(Theme.primary)
             }
@@ -122,7 +136,10 @@ export struct ProgramPage {
                   .fontWeight(FontWeight.Medium)
                   .fontColor(Theme.text)
                 Blank()
-                Text(`${set.earnedCredits}/${set.requiredCredits} 学分`)
+                Text(this.trp('campus.program.creditsShort', {
+                  'earned': set.earnedCredits.toString(),
+                  'required': set.requiredCredits.toString()
+                }))
                   .fontSize(13)
                   .fontColor(Theme.primary)
               }
@@ -143,7 +160,7 @@ export struct ProgramPage {
                     .fontColor(item.completed ? Theme.text : Theme.textMuted)
                     .layoutWeight(1)
 
-                  Text(`${item.credits} 学分`)
+                  Text(this.trp('campus.program.credits', { 'n': item.credits.toString() }))
                     .fontSize(12)
                     .fontColor(Theme.textMuted)
                     .margin({ right: 12 })

@@ -33,6 +33,7 @@ import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
 import { BackDispatcher, BackOwner, BackHandler } from '../../state/BackDispatcher';
 import { Log } from '../../utils/Logger';
+import { I18n } from '../../utils/I18n';
 
 /** 页内层级（不走路由） */
 const LEVEL_LIST: number = 0;
@@ -166,6 +167,12 @@ function getDemoMailDetail(item: MailMessageSummary): MailMessageDetail {
 struct MailRow {
   @Prop item: MailMessageSummary = new MailMessageSummary();
   @Prop isUnread: boolean = false;
+  /** 语言订阅：行内兜底文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
 
   build() {
     Row() {
@@ -179,7 +186,7 @@ struct MailRow {
 
       Column() {
         Row() {
-          Text(contactLabel(this.item.from).length > 0 ? contactLabel(this.item.from) : '未知发件人')
+          Text(contactLabel(this.item.from).length > 0 ? contactLabel(this.item.from) : this.tr('mail.unknownSender'))
             .fontSize(FontSize.label)
             .fontWeight(this.isUnread ? FontWeight.Bold : FontWeight.Normal)
             .fontColor(Theme.text)
@@ -235,8 +242,28 @@ struct MailRow {
 export struct MailPage {
   onBack: () => void = () => {};
 
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
+
+  /** 系统文件夹展示名（服务层 name 为中文常量，按 system 标识走词典） */
+  private folderLabel(folder: MailFolder): string {
+    if (folder.system.length === 0) {
+      return folder.name;
+    }
+    const label: string = this.tr('mail.folder.' + folder.system);
+    return label;
+  }
+
   @State level: number = LEVEL_LIST;
-  @State titleText: string = '校园邮件';
+  @State titleText: string = 'mail.title';
   @State loading: boolean = false;
   @State errorMessage: string = '';
 
@@ -284,7 +311,7 @@ export struct MailPage {
 
   private goBackOneLevel(): void {
     this.level = LEVEL_LIST;
-    this.titleText = '校园邮件';
+    this.titleText = 'mail.title';
   }
 
   private handleHeaderBack(): void {
@@ -368,7 +395,7 @@ export struct MailPage {
       this.total = result.total > 0 ? result.total : this.messages.length;
     } catch (e) {
       this.getUIContext().getPromptAction()
-        .showToast({ message: '加载更多失败：' + this.extractError(e), duration: 2000 });
+        .showToast({ message: this.trp('mail.loadMoreFailed', { 'msg': this.extractError(e) }), duration: 2000 });
     }
     this.loadingMore = false;
   }
@@ -474,7 +501,7 @@ export struct MailPage {
         Log.i('CampusMail', 'MARK_READ fail (ignore): %{public}s',
           e instanceof Error ? e.message : String(e));
         this.getUIContext().getPromptAction()
-          .showToast({ message: '已读状态同步失败，可稍后刷新', duration: 2000 });
+          .showToast({ message: this.tr('mail.markReadFailed'), duration: 2000 });
         return;
       }
     }
@@ -520,22 +547,22 @@ export struct MailPage {
     const ids: string[] = [item.id];
     const sheets: SheetInfo[] = [];
     sheets.push({
-      title: '删除邮件',
+      title: this.tr('mail.delete'),
       action: (): void => {
         this.confirmDeleteMessages(ids);
       },
     });
     sheets.push({
-      title: '移动邮件',
+      title: this.tr('mail.move'),
       action: (): void => {
         this.pickMoveFolder(ids);
       },
     });
     ActionSheet.show({
       title: item.subject,
-      message: '选择对该邮件的操作',
+      message: this.tr('mail.rowActionsMessage'),
       confirm: {
-        value: '取消',
+        value: this.tr('common.cancel'),
         action: (): void => {},
       },
       sheets: sheets,
@@ -545,14 +572,14 @@ export struct MailPage {
   /** 删除二次确认（AlertDialog） */
   private confirmDeleteMessages(ids: string[]): void {
     AlertDialog.show({
-      title: '删除邮件',
-      message: '确认删除所选邮件？删除的邮件可在"已删除"文件夹中找到。',
+      title: this.tr('mail.delete'),
+      message: this.tr('mail.deleteConfirmMessage'),
       primaryButton: {
-        value: '取消',
+        value: this.tr('common.cancel'),
         action: (): void => {},
       },
       secondaryButton: {
-        value: '确认删除',
+        value: this.tr('mail.deleteConfirmOk'),
         fontColor: Theme.error,
         action: (): void => {
           this.doDeleteMessages(ids);
@@ -568,7 +595,7 @@ export struct MailPage {
       if (fromDetail) {
         this.goBackOneLevel();
       }
-      this.getUIContext().getPromptAction().showToast({ message: '已删除', duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({ message: this.tr('mail.deletedToast'), duration: 2000 });
       return;
     }
     try {
@@ -576,11 +603,11 @@ export struct MailPage {
       if (fromDetail) {
         this.goBackOneLevel();
       }
-      this.getUIContext().getPromptAction().showToast({ message: '已删除', duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({ message: this.tr('mail.deletedToast'), duration: 2000 });
       await this.refreshListAfterWrite();
     } catch (e) {
       this.getUIContext().getPromptAction()
-        .showToast({ message: '删除失败：' + this.extractError(e), duration: 2500 });
+        .showToast({ message: this.trp('mail.deleteFailed', { 'msg': this.extractError(e) }), duration: 2500 });
     }
   }
 
@@ -593,7 +620,7 @@ export struct MailPage {
         continue;
       }
       const targetFid: number = folder.id;
-      const targetName: string = folder.name;
+      const targetName: string = this.folderLabel(folder);
       sheets.push({
         title: targetName,
         action: (): void => {
@@ -602,10 +629,10 @@ export struct MailPage {
       });
     }
     ActionSheet.show({
-      title: '移动邮件',
-      message: '选择目标文件夹',
+      title: this.tr('mail.move'),
+      message: this.tr('mail.pickFolderMessage'),
       confirm: {
-        value: '取消',
+        value: this.tr('common.cancel'),
         action: (): void => {},
       },
       sheets: sheets,
@@ -614,14 +641,14 @@ export struct MailPage {
 
   private confirmMoveMessages(ids: string[], fid: number, name: string): void {
     AlertDialog.show({
-      title: '移动邮件',
-      message: '确认将所选邮件移动到"' + name + '"？',
+      title: this.tr('mail.move'),
+      message: this.trp('mail.moveConfirmMessage', { 'name': name }),
       primaryButton: {
-        value: '取消',
+        value: this.tr('common.cancel'),
         action: (): void => {},
       },
       secondaryButton: {
-        value: '确认移动',
+        value: this.tr('mail.moveConfirmOk'),
         action: (): void => {
           this.doMoveMessages(ids, fid, name);
         },
@@ -636,7 +663,10 @@ export struct MailPage {
       if (fromDetail) {
         this.goBackOneLevel();
       }
-      this.getUIContext().getPromptAction().showToast({ message: '已移动到' + name, duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({
+        message: this.trp('mail.movedToast', { 'name': name }),
+        duration: 2000,
+      });
       return;
     }
     try {
@@ -644,11 +674,14 @@ export struct MailPage {
       if (fromDetail) {
         this.goBackOneLevel();
       }
-      this.getUIContext().getPromptAction().showToast({ message: '已移动到' + name, duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({
+        message: this.trp('mail.movedToast', { 'name': name }),
+        duration: 2000,
+      });
       await this.refreshListAfterWrite();
     } catch (e) {
       this.getUIContext().getPromptAction()
-        .showToast({ message: '移动失败：' + this.extractError(e), duration: 2500 });
+        .showToast({ message: this.trp('mail.moveFailed', { 'msg': this.extractError(e) }), duration: 2500 });
     }
   }
 
@@ -687,7 +720,7 @@ export struct MailPage {
           this.handleHeaderBack();
         })
 
-      Text(this.titleText)
+      Text(this.tr(this.titleText))
         .fontSize(FontSize.h3)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.text)
@@ -734,7 +767,7 @@ export struct MailPage {
         .width(36)
         .height(36)
         .color(Theme.primary)
-      Text('加载中…')
+      Text(this.tr('status.loading'))
         .fontSize(FontSize.caption)
         .fontColor(Theme.textMuted)
     }
@@ -748,9 +781,9 @@ export struct MailPage {
     Column() {
       StateBlock({
         tone: StateTone.Error,
-        title: '加载失败',
+        title: this.tr('status.failed'),
         message: this.errorMessage,
-        actionText: '重试',
+        actionText: this.tr('status.retry'),
         onAction: () => {
           this.refreshCurrentView();
         },
@@ -763,7 +796,7 @@ export struct MailPage {
 
   @Builder
   private FolderChip(folder: MailFolder) {
-    Text(folder.name)
+    Text(this.folderLabel(folder))
       .fontSize(FontSize.label)
       .fontWeight(FontWeight.Medium)
       .fontColor(this.selectedFid === folder.id ? Theme.textInvert : Theme.textSecondary)
@@ -779,7 +812,7 @@ export struct MailPage {
   private ListLayer() {
     Column() {
       if (this.isDemo) {
-        Text('演示数据 · 登录后查看真实邮箱')
+        Text(this.tr('mail.demoHint'))
           .fontSize(FontSize.caption)
           .fontColor(Theme.textMuted)
           .width('100%')
@@ -789,7 +822,7 @@ export struct MailPage {
 
       // 搜索框（空关键词搜索 = 清除，恢复文件夹视图）
       Row({ space: Space.sm }) {
-        TextInput({ placeholder: '搜索邮件', text: this.searchInput })
+        TextInput({ placeholder: this.tr('mail.searchPlaceholder'), text: this.searchInput })
           .fontSize(FontSize.caption)
           .fontColor(Theme.text)
           .height(40)
@@ -805,7 +838,7 @@ export struct MailPage {
           })
 
         if (this.searchMode) {
-          Text('清除')
+          Text(this.tr('common.clear'))
             .fontSize(FontSize.label)
             .fontColor(Theme.primary)
             .height(40)
@@ -815,7 +848,7 @@ export struct MailPage {
               this.clearSearch();
             })
         } else {
-          Text('搜索')
+          Text(this.tr('common.search'))
             .fontSize(FontSize.label)
             .fontColor(Theme.primary)
             .height(40)
@@ -846,11 +879,13 @@ export struct MailPage {
 
         // 未读计数 / 总数
         Row() {
-          Text(this.countUnread() > 0 ? String(this.countUnread()) + ' 封未读' : '无未读邮件')
+          Text(this.countUnread() > 0
+            ? this.trp('mail.unreadCount', { 'n': String(this.countUnread()) })
+            : this.tr('mail.noUnread'))
             .fontSize(FontSize.caption)
             .fontColor(this.countUnread() > 0 ? Theme.primary : Theme.textMuted)
           Blank()
-          Text('共 ' + String(this.total) + ' 封')
+          Text(this.trp('mail.totalCount', { 'n': String(this.total) }))
             .fontSize(FontSize.caption)
             .fontColor(Theme.textMuted)
         }
@@ -859,7 +894,10 @@ export struct MailPage {
       } else {
         // 搜索结果计数
         Row() {
-          Text('关键词"' + this.searchKeyword + '" · 找到 ' + String(this.total) + ' 封')
+          Text(this.trp('mail.searchResult', {
+            'k': this.searchKeyword,
+            'n': String(this.total),
+          }))
             .fontSize(FontSize.caption)
             .fontColor(Theme.textMuted)
           Blank()
@@ -872,9 +910,9 @@ export struct MailPage {
       if (this.messages.length === 0) {
         Column() {
           if (this.searchMode && this.hasSearched) {
-            EmptyHint({ title: '未找到相关邮件', message: '换个关键词试试' })
+            EmptyHint({ title: this.tr('mail.searchEmptyTitle'), message: this.tr('mail.searchEmptyMessage') })
           } else {
-            EmptyHint({ title: '暂无邮件', message: '该文件夹暂时没有邮件' })
+            EmptyHint({ title: this.tr('mail.emptyTitle'), message: this.tr('mail.emptyMessage') })
           }
         }
         .width('100%')
@@ -896,7 +934,7 @@ export struct MailPage {
           }, (item: MailMessageSummary) => item.id)
           if (this.messages.length < this.total) {
             ListItem() {
-              Text(this.loadingMore ? '加载中…' : '加载更多')
+              Text(this.loadingMore ? this.tr('status.loading') : this.tr('mail.loadMore'))
                 .fontSize(FontSize.caption)
                 .fontColor(Theme.primary)
                 .width('100%')
@@ -973,7 +1011,7 @@ export struct MailPage {
   /** 发送成功：返回列表 + 提示；停留在"已发送"文件夹时刷新列表 */
   private onComposeSent(): void {
     this.goBackOneLevel();
-    this.getUIContext().getPromptAction().showToast({ message: '发送成功', duration: 2000 });
+    this.getUIContext().getPromptAction().showToast({ message: this.tr('mail.sentToast'), duration: 2000 });
     if (!this.searchMode && this.selectedFid === 3) {
       this.loadFolderMessages(true);
     }

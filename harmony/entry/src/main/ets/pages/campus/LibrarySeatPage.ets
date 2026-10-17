@@ -26,7 +26,6 @@ import {
   LibraryBookingRecord,
   LibraryBookResult,
   LibraryDaySegment,
-  seatStatusLabel,
   dateForChoice,
 } from '../../services/campus/LibrarySeatService';
 import { AuthManager } from '../../state/AuthManager';
@@ -161,7 +160,7 @@ export struct LibrarySeatPage {
 
   @State level: number = LEVEL_LIBRARY;
   @State dateChoice: number = 0;
-  @State titleText: string = '图书馆座位';
+  @State titleText: string = '';
   @State loading: boolean = false;
   @State errorMessage: string = '';
   /** 写操作提交中标识（'seat-{id}' / 'cancel-{cancelId}'；非空时禁用全部写动作防重复提交） */
@@ -213,7 +212,7 @@ export struct LibrarySeatPage {
       this.titleText = this.currentFloorName;
     } else {
       this.level = LEVEL_LIBRARY;
-      this.titleText = '图书馆座位';
+      this.titleText = '';
     }
   }
 
@@ -234,7 +233,7 @@ export struct LibrarySeatPage {
   /** LIBRARY 层：馆列表（仅首次）+ 默认选中开放馆 + 楼层使用率 */
   private async loadLibraryLevel(): Promise<void> {
     this.level = LEVEL_LIBRARY;
-    this.titleText = '图书馆座位';
+    this.titleText = '';
     this.errorMessage = '';
     if (this.isDemo) {
       this.libraries = getDemoLibraries();
@@ -251,7 +250,7 @@ export struct LibrarySeatPage {
         this.libraries = await service.getLibraryList();
       }
       if (this.libraries.length === 0) {
-        throw new Error('未获取到图书馆列表');
+        throw new Error(this.tr('libseat.errorNoLibrary'));
       }
       // 默认选中开放馆（无开放馆时回退第一个）
       let found: boolean = false;
@@ -362,7 +361,7 @@ export struct LibrarySeatPage {
 
   private async openBookings(): Promise<void> {
     this.level = LEVEL_BOOKINGS;
-    this.titleText = '我的预约';
+    this.titleText = '';
     this.errorMessage = '';
     if (this.isDemo) {
       this.bookings = getDemoBookings();
@@ -410,7 +409,7 @@ export struct LibrarySeatPage {
         return zh.length > 0 ? zh : this.libraries[i].enName;
       }
     }
-    return '图书馆';
+    return this.tr('libseat.libraryFallback');
   }
 
   /** 成功预约后静默刷新当前区域座位状态（保留层级与加载态；失败保留原列表） */
@@ -596,6 +595,31 @@ export struct LibrarySeatPage {
     return BadgeTone.Default;
   }
 
+  /** 页内头部标题（LIBRARY/BOOKINGS 走词条；SECTION/SEAT 为服务数据名，存于 titleText） */
+  private headerTitle(): string {
+    if (this.level === LEVEL_BOOKINGS) {
+      return this.tr('libseat.bookingsTitle');
+    }
+    if (this.level === LEVEL_LIBRARY) {
+      return this.tr('libseat.title');
+    }
+    return this.titleText;
+  }
+
+  /** 座位状态 → 本地化标签（服务层 seatStatusLabel 为硬编码中文，页内改用词条映射） */
+  private seatStatusLabelLocal(status: number): string {
+    if (status === 1) {
+      return this.tr('libseat.seatAvailable');
+    }
+    if (status === 6) {
+      return this.tr('libseat.seatBooked');
+    }
+    if (status === 7) {
+      return this.tr('libseat.seatOccupied');
+    }
+    return this.tr('libseat.seatUnavailable');
+  }
+
   // ── UI ────────────────────────────────
 
   /**
@@ -617,7 +641,7 @@ export struct LibrarySeatPage {
           this.handleHeaderBack();
         })
 
-      Text(this.titleText)
+      Text(this.headerTitle())
         .fontSize(FontSize.h3)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.text)
@@ -656,7 +680,7 @@ export struct LibrarySeatPage {
         .width(36)
         .height(36)
         .color(Theme.primary)
-      Text('加载中…')
+      Text(this.tr('status.loading'))
         .fontSize(FontSize.caption)
         .fontColor(Theme.textMuted)
     }
@@ -670,9 +694,9 @@ export struct LibrarySeatPage {
     Column() {
       StateBlock({
         tone: StateTone.Error,
-        title: '加载失败',
+        title: this.tr('status.failed'),
         message: this.errorMessage,
-        actionText: '重试',
+        actionText: this.tr('status.retry'),
         onAction: () => {
           this.refreshCurrentLevel();
         },
@@ -716,11 +740,16 @@ export struct LibrarySeatPage {
   private FloorRow(floor: LibraryFloorInfo) {
     Row() {
       Column({ space: 2 }) {
-        Text(floor.zhName.length > 0 ? floor.zhName : ('楼层 ' + String(floor.id)))
+        Text(floor.zhName.length > 0 ? floor.zhName : this.trp('libseat.floorN', {
+          'n': String(floor.id)
+        }))
           .fontSize(FontSize.body)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.text)
-        Text(floor.valid ? ('可用 ' + String(floor.available) + ' / 共 ' + String(floor.total) + ' 座位') : '暂不开放')
+        Text(floor.valid ? this.trp('libseat.floorAvailability', {
+          'n': String(floor.available),
+          'total': String(floor.total)
+        }) : this.tr('libseat.notOpen'))
           .fontSize(FontSize.caption)
           .fontColor(floor.valid ? (floor.available > 0 ? Theme.success : Theme.textMuted) : Theme.textMuted)
       }
@@ -732,7 +761,7 @@ export struct LibrarySeatPage {
           .fontSize(FontSize.label)
           .fontColor(Theme.textMuted)
       } else {
-        StatusBadge({ text: '未开放', tone: BadgeTone.Default })
+        StatusBadge({ text: this.tr('libseat.closedBadge'), tone: BadgeTone.Default })
       }
     }
     .width('100%')
@@ -753,8 +782,8 @@ export struct LibrarySeatPage {
       Column() {
         // 今天 / 明天切换
         Row({ space: Space.xs }) {
-          this.DateChip('今天', 0)
-          this.DateChip('明天', 1)
+          this.DateChip(this.tr('libseat.today'), 0)
+          this.DateChip(this.tr('libseat.tomorrow'), 1)
         }
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
@@ -776,7 +805,7 @@ export struct LibrarySeatPage {
         Row() {
           Text('📋')
             .fontSize(20)
-          Text('我的预约')
+          Text(this.tr('libseat.bookingsTitle'))
             .fontSize(FontSize.body)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
@@ -806,7 +835,7 @@ export struct LibrarySeatPage {
 
         // 楼层使用率
         if (this.floors.length === 0) {
-          EmptyHint({ title: '暂无楼层信息', message: '该图书馆暂无可用楼层' })
+          EmptyHint({ title: this.tr('libseat.emptyFloorsTitle'), message: this.tr('libseat.emptyFloorsMessage') })
         } else {
           ForEach(this.floors, (floor: LibraryFloorInfo) => {
             this.FloorRow(floor)
@@ -825,14 +854,19 @@ export struct LibrarySeatPage {
   private SectionRow(section: LibrarySectionInfo) {
     Row() {
       Column({ space: 2 }) {
-        Text(section.zhName.length > 0 ? section.zhName : ('区域 ' + String(section.id)))
+        Text(section.zhName.length > 0 ? section.zhName : this.trp('libseat.sectionN', {
+          'n': String(section.id)
+        }))
           .fontSize(FontSize.body)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.text)
         Text(section.valid
-          ? ('可用 ' + String(section.available) + ' / 共 ' + String(section.total)
-            + ' · 已预约 ' + String(section.reservedCount))
-          : '暂不开放')
+          ? this.trp('libseat.sectionAvailability', {
+            'n': String(section.available),
+            'total': String(section.total),
+            'r': String(section.reservedCount)
+          })
+          : this.tr('libseat.notOpen'))
           .fontSize(FontSize.caption)
           .fontColor(section.valid ? (section.available > 0 ? Theme.success : Theme.textMuted) : Theme.textMuted)
       }
@@ -844,7 +878,7 @@ export struct LibrarySeatPage {
           .fontSize(FontSize.label)
           .fontColor(Theme.textMuted)
       } else {
-        StatusBadge({ text: '未开放', tone: BadgeTone.Default })
+        StatusBadge({ text: this.tr('libseat.closedBadge'), tone: BadgeTone.Default })
       }
     }
     .width('100%')
@@ -870,7 +904,7 @@ export struct LibrarySeatPage {
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
         if (this.sections.length === 0) {
-          EmptyHint({ title: '暂无区域信息', message: '该楼层暂无开放区域' })
+          EmptyHint({ title: this.tr('libseat.emptySectionsTitle'), message: this.tr('libseat.emptySectionsMessage') })
         } else {
           ForEach(this.sections, (section: LibrarySectionInfo) => {
             this.SectionRow(section)
@@ -892,7 +926,7 @@ export struct LibrarySeatPage {
         .fontSize(FontSize.body)
         .fontColor(Theme.text)
         .layoutWeight(1)
-      StatusBadge({ text: seatStatusLabel(seat.status), tone: this.seatTone(seat.status) })
+      StatusBadge({ text: this.seatStatusLabelLocal(seat.status), tone: this.seatTone(seat.status) })
 
       // 仅"可用"座位提供"预约"动作；提交中按钮转"提交中…"防重复（FR-014/FR-020）
       if (seat.status === 1) {
@@ -933,7 +967,7 @@ export struct LibrarySeatPage {
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
         if (this.seats.length === 0) {
-          EmptyHint({ title: '暂无座位信息', message: '该区域暂无可查询座位' })
+          EmptyHint({ title: this.tr('libseat.emptySeatsTitle'), message: this.tr('libseat.emptySeatsMessage') })
         } else {
           ForEach(this.seats, (seat: LibrarySeatInfo) => {
             this.SeatRow(seat)
@@ -951,7 +985,9 @@ export struct LibrarySeatPage {
   @Builder
   private BookingRow(record: LibraryBookingRecord) {
     Column({ space: Space.xs }) {
-      Text(record.pos.length > 0 ? record.pos : ('预约 ' + record.id))
+      Text(record.pos.length > 0 ? record.pos : this.trp('libseat.bookingFallback', {
+        'id': record.id
+      }))
         .fontSize(FontSize.body)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.text)
@@ -960,7 +996,7 @@ export struct LibrarySeatPage {
           .fontSize(FontSize.caption)
           .fontColor(Theme.textMuted)
           .layoutWeight(1)
-        StatusBadge({ text: record.status.length > 0 ? record.status : '未知', tone: this.bookingTone(record.status) })
+        StatusBadge({ text: record.status.length > 0 ? record.status : this.tr('libseat.unknownStatus'), tone: this.bookingTone(record.status) })
       }
       .width('100%')
 
@@ -1007,7 +1043,7 @@ export struct LibrarySeatPage {
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
         if (this.bookings.length === 0) {
-          EmptyHint({ title: '暂无预约记录', message: this.tr('libseat.bookingsEmptyMessage') })
+          EmptyHint({ title: this.tr('libseat.emptyBookingsTitle'), message: this.tr('libseat.bookingsEmptyMessage') })
         } else {
           ForEach(this.bookings, (record: LibraryBookingRecord) => {
             this.BookingRow(record)

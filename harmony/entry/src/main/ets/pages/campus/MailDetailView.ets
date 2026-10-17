@@ -18,10 +18,12 @@ import {
   MailMessageDetail,
   MailContact,
   MailAttachment,
-  mailFolderName,
+  MailFolder,
+  MAIL_FOLDERS,
 } from '../../services/campus/MailService';
 import { webview } from '@kit.ArkWeb';
 import { Log } from '../../utils/Logger';
+import { I18n } from '../../utils/I18n';
 
 // ============================================================
 // 展示辅助（模块级）
@@ -101,6 +103,31 @@ export struct MailDetailView {
   /** 移动当前邮件（父组件负责选择目标文件夹与二次确认） */
   onMove: () => void = () => {};
 
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
+
+  /** 系统文件夹展示名（服务层 name 为中文常量，按 system 标识走词典） */
+  private folderLabel(fid: number): string {
+    for (let i: number = 0; i < MAIL_FOLDERS.length; i++) {
+      const folder: MailFolder = MAIL_FOLDERS[i];
+      if (folder.id === fid) {
+        if (folder.system.length === 0) {
+          return folder.name;
+        }
+        return this.tr('mail.folder.' + folder.system);
+      }
+    }
+    return '';
+  }
+
   private webController: webview.WebviewController = new webview.WebviewController();
 
   private isRichBody(): boolean {
@@ -139,7 +166,7 @@ export struct MailDetailView {
       bodyHtml = '<p>' + escapeHtml(this.detail.contentText).replace(/\n/g, '<br/>') + '</p>';
     }
     if (bodyHtml.length === 0) {
-      bodyHtml = '<p class="empty">暂无正文</p>';
+      bodyHtml = '<p class="empty">' + escapeHtml(this.tr('mail.detail.emptyBody')) + '</p>';
     }
     return '<!DOCTYPE html><html lang="zh-cmn-Hans"><head>'
       + '<meta charset="utf-8"/>'
@@ -169,14 +196,14 @@ export struct MailDetailView {
       + '</style></head><body>'
       + '<div class="subject">' + escapeHtml(this.detail.subject) + '</div>'
       + '<div class="meta">'
-      + '<div><span class="k">发件人</span>' + escapeHtml(contactDetailLine(this.detail.from)) + '</div>'
-      + '<div><span class="k">收件人</span>' + escapeHtml(contactDetailLine(this.detail.to)) + '</div>'
+      + '<div><span class="k">' + escapeHtml(this.tr('mail.detail.from')) + '</span>' + escapeHtml(contactDetailLine(this.detail.from)) + '</div>'
+      + '<div><span class="k">' + escapeHtml(this.tr('mail.detail.to')) + '</span>' + escapeHtml(contactDetailLine(this.detail.to)) + '</div>'
       + (this.detail.cc.length > 0
-        ? '<div><span class="k">抄送</span>' + escapeHtml(contactDetailLine(this.detail.cc)) + '</div>'
+        ? '<div><span class="k">' + escapeHtml(this.tr('mail.detail.cc')) + '</span>' + escapeHtml(contactDetailLine(this.detail.cc)) + '</div>'
         : '')
-      + '<div><span class="k">时间</span>' + escapeHtml(formatMailFullDate(this.detail.date)) + '</div>'
-      + (mailFolderName(this.detail.fid).length > 0
-        ? '<div><span class="k">文件夹</span>' + escapeHtml(mailFolderName(this.detail.fid)) + '</div>'
+      + '<div><span class="k">' + escapeHtml(this.tr('mail.detail.time')) + '</span>' + escapeHtml(formatMailFullDate(this.detail.date)) + '</div>'
+      + (this.folderLabel(this.detail.fid).length > 0
+        ? '<div><span class="k">' + escapeHtml(this.tr('mail.detail.folder')) + '</span>' + escapeHtml(this.folderLabel(this.detail.fid)) + '</div>'
         : '')
       + '</div>'
       + '<div class="card">' + bodyHtml + '</div>'
@@ -192,7 +219,7 @@ export struct MailDetailView {
         .width(36)
         .height(36)
         .color(Theme.primary)
-      Text('正在加载邮件…')
+      Text(this.tr('mail.detail.loading'))
         .fontSize(FontSize.caption)
         .fontColor(Theme.textMuted)
     }
@@ -209,7 +236,7 @@ export struct MailDetailView {
         .fontColor(Theme.error)
         .textAlign(TextAlign.Center)
         .padding({ left: Space.lg, right: Space.lg })
-      Text('重试')
+      Text(this.tr('status.retry'))
         .fontSize(FontSize.label)
         .fontColor(Theme.primary)
         .padding({ left: Space.md, right: Space.md, top: 6, bottom: 6 })
@@ -253,14 +280,14 @@ export struct MailDetailView {
           .padding({ left: Space.md, right: Space.md, top: Space.md })
 
         Column({ space: Space.xs }) {
-          this.MetaRow('发件人', contactDetailLine(this.detail.from))
-          this.MetaRow('收件人', contactDetailLine(this.detail.to))
+          this.MetaRow(this.tr('mail.detail.from'), contactDetailLine(this.detail.from))
+          this.MetaRow(this.tr('mail.detail.to'), contactDetailLine(this.detail.to))
           if (this.detail.cc.length > 0) {
-            this.MetaRow('抄送', contactDetailLine(this.detail.cc))
+            this.MetaRow(this.tr('mail.detail.cc'), contactDetailLine(this.detail.cc))
           }
-          this.MetaRow('时间', formatMailFullDate(this.detail.date))
-          if (mailFolderName(this.detail.fid).length > 0) {
-            this.MetaRow('文件夹', mailFolderName(this.detail.fid))
+          this.MetaRow(this.tr('mail.detail.time'), formatMailFullDate(this.detail.date))
+    if (this.folderLabel(this.detail.fid).length > 0) {
+      this.MetaRow(this.tr('mail.detail.folder'), this.folderLabel(this.detail.fid))
           }
         }
         .width('100%')
@@ -269,7 +296,7 @@ export struct MailDetailView {
 
         // 正文白卡（外层 padding 防右缘溢出）
         Column() {
-          Text(this.detail.contentText.length > 0 ? this.detail.contentText : '暂无正文')
+          Text(this.detail.contentText.length > 0 ? this.detail.contentText : this.tr('mail.detail.emptyBody'))
             .fontSize(FontSize.body)
             .fontColor(this.detail.contentText.length > 0 ? Theme.text : Theme.textMuted)
             .lineHeight(24)
@@ -296,7 +323,7 @@ export struct MailDetailView {
   @Builder
   private AttachmentSection() {
     Column() {
-      Text('附件（' + String(this.detail.attachments.length) + '）')
+      Text(this.trp('mail.detail.attachments', { 'n': String(this.detail.attachments.length) }))
         .fontSize(FontSize.label)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.text)
@@ -340,7 +367,7 @@ export struct MailDetailView {
   @Builder
   private ActionBar() {
     Row({ space: Space.md }) {
-      Text('删除邮件')
+      Text(this.tr('mail.delete'))
         .fontSize(FontSize.label)
         .fontWeight(FontWeight.Bold)
         .fontColor(Theme.error)
@@ -354,7 +381,7 @@ export struct MailDetailView {
           this.onDelete();
         })
 
-      Text('移动邮件')
+      Text(this.tr('mail.move'))
         .fontSize(FontSize.label)
         .fontWeight(FontWeight.Bold)
         .fontColor(Theme.primary)
@@ -375,7 +402,7 @@ export struct MailDetailView {
 
   build() {
     Column() {
-      DetailHeader({ title: '邮件详情', onBack: () => { this.onBack(); } })
+      DetailHeader({ title: this.tr('mail.detail.title'), onBack: () => { this.onBack(); } })
       Divider().color(Theme.divider)
 
       if (this.loading) {

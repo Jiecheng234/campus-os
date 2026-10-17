@@ -25,6 +25,7 @@ import {
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
 import { BackDispatcher, BackOwner, BackHandler } from '../../state/BackDispatcher';
+import { I18n } from '../../utils/I18n';
 
 /** 页内视图（不走路由） */
 const VIEW_RESOURCES: number = 0;
@@ -83,12 +84,12 @@ function getDemoRecords(): SportsRecord[] {
 }
 
 /** 日期偏移 → chip 文案（今天 / 明天 / M/D） */
-function sportsDateLabel(offsetDays: number): string {
+function sportsDateLabel(offsetDays: number, locale: string): string {
   if (offsetDays === 0) {
-    return '今天';
+    return I18n.t('common.today', locale);
   }
   if (offsetDays === 1) {
-    return '明天';
+    return I18n.t('common.tomorrow', locale);
   }
   const d: Date = new Date();
   d.setDate(d.getDate() + offsetDays);
@@ -102,9 +103,19 @@ function sportsDateLabel(offsetDays: number): string {
 @Component
 export struct SportsBookingPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
 
   @State view: number = VIEW_RESOURCES;
-  @State titleText: string = '体育场馆';
+  @State titleText: string = 'campus.sports.title';
   @State loading: boolean = false;
   @State errorMessage: string = '';
 
@@ -139,7 +150,7 @@ export struct SportsBookingPage {
 
   private closeRecords(): void {
     this.view = VIEW_RESOURCES;
-    this.titleText = '体育场馆';
+    this.titleText = 'campus.sports.title';
   }
 
   private handleHeaderBack(): void {
@@ -153,7 +164,21 @@ export struct SportsBookingPage {
   // ── 数据加载（演示模式零网络请求） ────────────────────────────────
 
   private extractError(e: Object): string {
-    return e instanceof Error ? e.message : String(e);
+    const raw: string = e instanceof Error ? e.message : String(e);
+    // 服务层错误文案为中文常量：按已知语义映射到词典，避免英文模式泄露中文
+    if (raw.indexOf('无法获取体育场馆预约限额') >= 0) {
+      return this.tr('campus.sports.errorLimit');
+    }
+    if (raw.indexOf('会话未登录') >= 0) {
+      return this.tr('campus.sports.errorSession');
+    }
+    if (raw.indexOf('会话建立失败') >= 0) {
+      return this.tr('campus.sports.errorSessionBuild');
+    }
+    if (raw.indexOf('无法加载体育场馆预约订单') >= 0) {
+      return this.tr('campus.sports.errorOrders');
+    }
+    return this.tr('campus.sports.errorGeneric');
   }
 
   /** 当前选中场馆（索引越界回退第一个） */
@@ -200,7 +225,7 @@ export struct SportsBookingPage {
   /** 我的预约记录（未支付 + 已支付合并） */
   private async openRecords(): Promise<void> {
     this.view = VIEW_RECORDS;
-    this.titleText = '我的预约记录';
+    this.titleText = 'campus.sports.recordsTitle';
     this.errorMessage = '';
     if (this.isDemo) {
       this.records = getDemoRecords();
@@ -228,12 +253,12 @@ export struct SportsBookingPage {
 
   private resourceStatusLabel(res: SportsResource): string {
     if (res.locked) {
-      return '已锁定';
+      return this.tr('campus.sports.locked');
     }
     if (!res.canNetBook) {
-      return '不可预约';
+      return this.tr('campus.sports.notBookable');
     }
-    return '可预约';
+    return this.tr('campus.sports.bookable');
   }
 
   private resourceStatusTone(res: SportsResource): BadgeTone {
@@ -267,7 +292,7 @@ export struct SportsBookingPage {
           this.handleHeaderBack();
         })
 
-      Text(this.titleText)
+      Text(this.tr(this.titleText))
         .fontSize(FontSize.h3)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.text)
@@ -314,7 +339,7 @@ export struct SportsBookingPage {
         .width(36)
         .height(36)
         .color(Theme.primary)
-      Text('加载中…')
+      Text(this.tr('status.loading'))
         .fontSize(FontSize.caption)
         .fontColor(Theme.textMuted)
     }
@@ -328,9 +353,9 @@ export struct SportsBookingPage {
     Column() {
       StateBlock({
         tone: StateTone.Error,
-        title: '加载失败',
+        title: this.tr('status.failed'),
         message: this.errorMessage,
-        actionText: '重试',
+        actionText: this.tr('status.retry'),
         onAction: () => {
           this.refreshCurrent();
         },
@@ -359,7 +384,7 @@ export struct SportsBookingPage {
   /** 近 7 天日期 chip（默认今天） */
   @Builder
   private DateChip(offset: number) {
-    Text(sportsDateLabel(offset))
+    Text(sportsDateLabel(offset, this.locale))
       .fontSize(FontSize.label)
       .fontWeight(FontWeight.Medium)
       .fontColor(this.dateOffset === offset ? Theme.textInvert : Theme.textMuted)
@@ -377,12 +402,15 @@ export struct SportsBookingPage {
   private LimitCard() {
     Column({ space: Space.xs }) {
       Row() {
-        Text('今日限额')
+        Text(this.tr('campus.sports.limitTitle'))
           .fontSize(FontSize.body)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.text)
           .layoutWeight(1)
-        Text('已用 ' + String(this.info.count) + ' / 上限 ' + String(this.info.init))
+        Text(this.trp('campus.sports.limitUsed', {
+          'used': String(this.info.count),
+          'max': String(this.info.init)
+        }))
           .fontSize(FontSize.body)
           .fontColor(Theme.textSecondary)
       }
@@ -391,7 +419,7 @@ export struct SportsBookingPage {
       if (this.info.phone.length > 0) {
         Divider().color(Theme.divider)
         Row() {
-          Text('联系电话')
+          Text(this.tr('campus.sports.phone'))
             .fontSize(FontSize.body)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
@@ -418,13 +446,13 @@ export struct SportsBookingPage {
   private ResourceRow(res: SportsResource) {
     Row() {
       Column({ space: 2 }) {
-        Text(res.timeSession.length > 0 ? res.timeSession : '时段待发布')
+        Text(res.timeSession.length > 0 ? res.timeSession : this.tr('campus.sports.timeTbd'))
           .fontSize(FontSize.body)
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.text)
         Text(res.fieldName.length > 0
           ? (res.cost > 0 ? res.fieldName + ' · ¥' + String(res.cost) : res.fieldName)
-          : '场地待发布')
+          : this.tr('campus.sports.fieldTbd'))
           .fontSize(FontSize.caption)
           .fontColor(Theme.textMuted)
       }
@@ -446,25 +474,27 @@ export struct SportsBookingPage {
   @Builder
   private RecordRow(record: SportsRecord) {
     Column({ space: Space.xs }) {
-      Text(record.name.length > 0 ? record.name : '体育场馆预约')
+      Text(record.name.length > 0 ? record.name : this.tr('campus.reservation.sports'))
         .fontSize(FontSize.body)
         .fontWeight(FontWeight.Medium)
         .fontColor(Theme.text)
-      Text((record.field.length > 0 ? record.field : '场地') + ' · '
-        + (record.time.length > 0 ? record.time : '时间待定'))
+      Text((record.field.length > 0 ? record.field : this.tr('campus.sports.fieldFallback')) + ' · '
+        + (record.time.length > 0 ? record.time : this.tr('campus.sports.timeFallback')))
         .fontSize(FontSize.caption)
         .fontColor(Theme.textMuted)
       Row({ space: Space.sm }) {
-        Text((record.price.length > 0 ? record.price : '-') + ' 元 · '
-          + (record.method.length > 0 ? record.method : '支付方式待定'))
+        Text(this.trp('campus.sports.priceLine', {
+          'price': record.price.length > 0 ? record.price : '-',
+          'method': record.method.length > 0 ? record.method : this.tr('campus.sports.methodFallback')
+        }))
           .fontSize(FontSize.caption)
           .fontColor(Theme.textSecondary)
           .layoutWeight(1)
         if (record.payId.length > 0) {
-          StatusBadge({ text: '可支付', tone: BadgeTone.Warning })
+          StatusBadge({ text: this.tr('campus.sports.payable'), tone: BadgeTone.Warning })
         }
         if (record.bookId.length > 0) {
-          StatusBadge({ text: '可取消', tone: BadgeTone.Default })
+          StatusBadge({ text: this.tr('campus.sports.cancellable'), tone: BadgeTone.Default })
         }
       }
       .width('100%')
@@ -519,7 +549,7 @@ export struct SportsBookingPage {
         Row() {
           Text('📋')
             .fontSize(20)
-          Text('我的预约记录')
+          Text(this.tr('campus.sports.recordsTitle'))
             .fontSize(FontSize.body)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
@@ -543,13 +573,13 @@ export struct SportsBookingPage {
         // 只读引导
         StateBlock({
           tone: StateTone.Info,
-          message: '资源信息仅供查询，下单与支付请通过官方渠道完成',
+          message: this.tr('campus.sports.readonlyHint'),
         })
         .margin({ left: Space.md, right: Space.md, bottom: Space.md })
 
         // 资源列表 / 空态
         if (this.info.data.length === 0) {
-          EmptyHint({ title: '暂无可预约资源', message: '该场馆当日暂无发布资源' })
+          EmptyHint({ title: this.tr('campus.sports.emptyResourcesTitle'), message: this.tr('campus.sports.emptyResourcesMessage') })
         } else {
           ForEach(this.info.data, (res: SportsResource) => {
             this.ResourceRow(res)
@@ -571,12 +601,12 @@ export struct SportsBookingPage {
       Column() {
         StateBlock({
           tone: StateTone.Info,
-          message: '记录仅供查询，下单与支付请通过官方渠道完成',
+          message: this.tr('campus.sports.recordsHint'),
         })
         .margin({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
 
         if (this.records.length === 0) {
-          EmptyHint({ title: '暂无预约记录', message: '预约场馆请通过官方渠道完成' })
+          EmptyHint({ title: this.tr('campus.sports.emptyRecordsTitle'), message: this.tr('campus.sports.emptyRecordsMessage') })
         } else {
           ForEach(this.records, (record: SportsRecord, index: number) => {
             this.RecordRow(record)

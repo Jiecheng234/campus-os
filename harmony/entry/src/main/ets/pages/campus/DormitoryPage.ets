@@ -13,15 +13,31 @@ import { StateManager } from '../../state/StateManager';
 import { LaundryPage } from './LaundryPage';
 import { I18n } from '../../utils/I18n';
 
-/** 缴费记录列名（对齐原项目 RECORD_COLUMNS） */
-const RECORD_COLUMNS: string[] = ['充值时间', '充值', '充值前', '充值后', '操作员', '备注'];
+/** 缴费记录列名（对齐原项目 RECORD_COLUMNS）；存 i18n 键，展示时经 tr() 本地化 */
+const RECORD_COLUMN_KEYS: string[] = [
+  'campus.dormitory.colTime',
+  'campus.dormitory.colAmount',
+  'campus.dormitory.colBefore',
+  'campus.dormitory.colAfter',
+  'campus.dormitory.colOperator',
+  'campus.dormitory.colNote',
+];
+
+/** 缴费记录列名 → 本地化文本（index 0 为时间列，摘要行不重复展示） */
+function recordColumns(locale: string): string[] {
+  const columns: string[] = [];
+  for (let i: number = 0; i < RECORD_COLUMN_KEYS.length; i++) {
+    columns.push(I18n.t(RECORD_COLUMN_KEYS[i], locale));
+  }
+  return columns;
+}
 
 /** 缴费记录行 → 单行摘要文本（列名 + 值，'—' 兜底空值） */
-function formatRecordMeta(row: string[]): string {
+function formatRecordMeta(row: string[], columns: string[]): string {
   const parts: string[] = [];
-  for (let i: number = 1; i < RECORD_COLUMNS.length; i++) {
+  for (let i: number = 1; i < columns.length; i++) {
     const cell: string = i < row.length ? row[i] : '';
-    parts.push(RECORD_COLUMNS[i] + ' ' + (cell.length > 0 ? cell : '—'));
+    parts.push(columns[i] + ' ' + (cell.length > 0 ? cell : '—'));
   }
   return parts.join(' · ');
 }
@@ -111,6 +127,10 @@ export struct DormitoryPage {
     return I18n.t(key, this.locale);
   }
 
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
+
   /** 顶部"电费 / 洗衣机"分段切换（FR-001：与电费并列，不新增校园主列表入口） */
   @Builder SegmentTabs() {
     Row({ space: Space.xs }) {
@@ -143,7 +163,7 @@ export struct DormitoryPage {
         .height(20)
         .color(Theme.primary)
     } else {
-      Text('刷新')
+      Text(this.tr('common.refresh'))
         .fontSize(14)
         .fontColor(Theme.primary)
         .padding({ left: 12, right: 4, top: 8, bottom: 8 })
@@ -189,7 +209,7 @@ export struct DormitoryPage {
           .layoutWeight(1)
       } else {
         DetailHeader({
-          title: '宿舍服务',
+          title: this.tr('campus.dormitory.title'),
           onBack: () => { this.onBack(); },
           right: (): void => { this.RightAction(); },
         })
@@ -199,7 +219,7 @@ export struct DormitoryPage {
         this.SegmentTabs()
 
         if (!this.isReal) {
-          Text('演示数据 · 登录后显示真实电费')
+          Text(this.tr('campus.dormitory.demoHint'))
             .fontSize(12)
             .fontColor(Theme.textMuted)
             .width('100%')
@@ -211,7 +231,7 @@ export struct DormitoryPage {
         Column() {
           // 剩余电量卡片
           Column() {
-            Text('当前剩余电量')
+            Text(this.tr('campus.dormitory.powerTitle'))
               .fontSize(13)
               .fontColor(Theme.textMuted)
             Row() {
@@ -225,7 +245,7 @@ export struct DormitoryPage {
                   .fontSize(40)
                   .fontWeight(FontWeight.Bold)
                   .fontColor(Theme.primary)
-                Text('度')
+                Text(this.tr('campus.dormitory.kwh'))
                   .fontSize(16)
                   .fontColor(Theme.textMuted)
                   .margin({ left: 6, bottom: 6 })
@@ -234,7 +254,7 @@ export struct DormitoryPage {
             .alignItems(VerticalAlign.Bottom)
             .margin({ top: 8 })
             if (this.updateTimeText.length > 0) {
-              Text(`更新于 ${this.updateTimeText}`)
+              Text(this.trp('campus.dormitory.updatedAt', { 'name': this.updateTimeText }))
                 .fontSize(12)
                 .fontColor(Theme.textMuted)
                 .margin({ top: 6 })
@@ -246,7 +266,7 @@ export struct DormitoryPage {
 
           if (this.errorText.length > 0) {
             Column({ space: Space.sm }) {
-              Text('电费余额加载失败')
+              Text(this.tr('campus.dormitory.powerError'))
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
@@ -254,7 +274,7 @@ export struct DormitoryPage {
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .textAlign(TextAlign.Center)
-              Text('重试')
+              Text(this.tr('status.retry'))
                 .fontSize(13)
                 .fontColor(Theme.primary)
                 .padding({ left: Space.md, right: Space.md, top: Space.xs, bottom: Space.xs })
@@ -270,15 +290,15 @@ export struct DormitoryPage {
           // 房间信息
           if (this.room.userName.length > 0 || this.room.building.length > 0 ||
             this.room.room.length > 0 || this.room.studentId.length > 0) {
-            this.SectionTitle('房间信息')
+            this.SectionTitle(this.tr('campus.dormitory.roomInfo'))
             Column() {
-              this.InfoRow('户名', this.room.userName)
+              this.InfoRow(this.tr('campus.dormitory.owner'), this.room.userName)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('楼号', this.room.building)
+              this.InfoRow(this.tr('campus.dormitory.building'), this.room.building)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('房间', this.room.room)
+              this.InfoRow(this.tr('campus.dormitory.room'), this.room.room)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('学号', this.room.studentId)
+              this.InfoRow(this.tr('campus.dormitory.studentId'), this.room.studentId)
             }
             .width('100%')
             .constraintSize({ maxWidth: '100%' })
@@ -290,7 +310,7 @@ export struct DormitoryPage {
 
           // 缴费记录
           if (this.records.length > 0) {
-            this.SectionTitle('缴费记录')
+            this.SectionTitle(this.tr('campus.dormitory.records'))
             Column() {
               ForEach(this.records, (row: string[], index: number) => {
                 Column() {
@@ -298,7 +318,7 @@ export struct DormitoryPage {
                     .fontSize(14)
                     .fontWeight(FontWeight.Medium)
                     .fontColor(Theme.text)
-                  Text(formatRecordMeta(row))
+                  Text(formatRecordMeta(row, recordColumns(this.locale)))
                     .fontSize(12)
                     .fontColor(Theme.textMuted)
                     .margin({ top: 4 })
@@ -320,7 +340,7 @@ export struct DormitoryPage {
           }
 
           // 去充值（充值链不迁移，提示走网页）
-          Button('去充值')
+          Button(this.tr('campus.dormitory.topUp'))
             .width('100%')
             .constraintSize({ maxWidth: '100%' })
             .height(44)
@@ -331,7 +351,7 @@ export struct DormitoryPage {
             .margin({ left: 16, right: 16, top: 20, bottom: 24 })
             .onClick(() => {
               this.getUIContext().getPromptAction().showToast({
-                message: '充值请通过网页版电费系统操作',
+                message: this.tr('campus.dormitory.topUpToast'),
                 duration: 2000,
               });
             })

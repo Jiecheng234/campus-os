@@ -9,6 +9,7 @@ import { SessionManager } from '../../services/auth/SessionManager';
 import { CampusCardService, CampusCardInfo, CampusCardTransaction } from '../../services/campus/CampusCardService';
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
+import { I18n } from '../../utils/I18n';
 
 /** 卡号打码（对齐原项目 mask：空→'—'；≤4→'****'；否则 ab***yz） */
 function mask(value: string): string {
@@ -73,12 +74,22 @@ function getMockTransactions(): CampusCardTransaction[] {
 @Component
 export struct FinancePage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
   @State info: CampusCardInfo = new CampusCardInfo();
   @State infoLoaded: boolean = false;
   @State transactions: CampusCardTransaction[] = [];
   @State loading: boolean = false;
   @State errorText: string = '';
   private isReal: boolean = false;
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
 
   aboutToAppear(): void {
     this.isReal = AuthManager.isLoggedIn() && !StateManager.isDemoMode();
@@ -135,7 +146,8 @@ export struct FinancePage {
 
   /** 流水副文本：时间 · 余额 x.xx · 地点 */
   private txMeta(item: CampusCardTransaction): string {
-    let meta: string = `${formatTxDate(item.timestamp)} · 余额 ${item.balance.toFixed(2)}`;
+    let meta: string = `${formatTxDate(item.timestamp)} · `
+      + this.trp('campus.finance.balanceLabel', { 'n': item.balance.toFixed(2) });
     if (item.address.length > 0) {
       meta += ` · ${item.address}`;
     }
@@ -153,7 +165,7 @@ export struct FinancePage {
     if (item.txName.length > 0) {
       return item.txName;
     }
-    return '校园卡交易';
+    return this.tr('campus.finance.txFallback');
   }
 
   @Builder RightAction() {
@@ -163,7 +175,7 @@ export struct FinancePage {
         .height(20)
         .color(Theme.primary)
     } else {
-      Text('刷新')
+      Text(this.tr('common.refresh'))
         .fontSize(14)
         .fontColor(Theme.primary)
         .padding({ left: 12, right: 4, top: 8, bottom: 8 })
@@ -200,7 +212,7 @@ export struct FinancePage {
       SafeTop()
 
       DetailHeader({
-        title: '校园财务',
+        title: this.tr('campus.finance.pageTitle'),
         onBack: () => { this.onBack(); },
         right: (): void => { this.RightAction(); },
       })
@@ -208,7 +220,7 @@ export struct FinancePage {
       Divider().color(Theme.divider)
 
       if (!this.isReal) {
-        Text('演示数据 · 登录后显示真实校园卡信息')
+        Text(this.tr('campus.finance.demoHint'))
           .fontSize(12)
           .fontColor(Theme.textMuted)
           .width('100%')
@@ -220,7 +232,7 @@ export struct FinancePage {
         Column() {
           // 校园卡余额 hero
           Column() {
-            Text('校园卡余额')
+            Text(this.tr('campus.finance.balanceTitle'))
               .fontSize(13)
               .fontColor(Theme.textMuted)
             Row() {
@@ -234,7 +246,7 @@ export struct FinancePage {
                   .fontSize(40)
                   .fontWeight(FontWeight.Bold)
                   .fontColor(Theme.primary)
-                Text('元')
+                Text(this.tr('campus.finance.yuan'))
                   .fontSize(16)
                   .fontColor(Theme.textMuted)
                   .margin({ left: 6, bottom: 6 })
@@ -243,7 +255,7 @@ export struct FinancePage {
             .alignItems(VerticalAlign.Bottom)
             .margin({ top: 8 })
             if (this.infoLoaded && this.info.lastTransactionTimestamp.length > 0) {
-              Text(`最近交易 ${formatTxDate(this.info.lastTransactionTimestamp)}`)
+              Text(this.trp('campus.finance.lastTx', { 'name': formatTxDate(this.info.lastTransactionTimestamp) }))
                 .fontSize(12)
                 .fontColor(Theme.textMuted)
                 .margin({ top: 6 })
@@ -255,7 +267,7 @@ export struct FinancePage {
 
           if (this.errorText.length > 0) {
             Column({ space: Space.sm }) {
-              Text('校园财务加载失败')
+              Text(this.tr('campus.finance.errorTitle'))
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
@@ -263,7 +275,7 @@ export struct FinancePage {
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .textAlign(TextAlign.Center)
-              Text('重试')
+              Text(this.tr('status.retry'))
                 .fontSize(13)
                 .fontColor(Theme.primary)
                 .padding({ left: Space.md, right: Space.md, top: Space.xs, bottom: Space.xs })
@@ -278,19 +290,21 @@ export struct FinancePage {
 
           // 校园卡信息
           if (this.infoLoaded) {
-            this.SectionTitle('校园卡信息')
+            this.SectionTitle(this.tr('campus.finance.cardInfo'))
             Column() {
-              this.InfoRow('姓名', this.info.userName)
+              this.InfoRow(this.tr('campus.finance.name'), this.info.userName)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('院系', this.info.departmentName)
+              this.InfoRow(this.tr('campus.finance.department'), this.info.departmentName)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('卡号', mask(this.info.cardId))
+              this.InfoRow(this.tr('campus.finance.cardId'), mask(this.info.cardId))
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('状态', this.info.cardStatus)
+              this.InfoRow(this.tr('campus.finance.status'), this.info.cardStatus)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('单笔限额', `${this.info.maxOneTimeTransactionAmount.toFixed(2)} 元`)
+              this.InfoRow(this.tr('campus.finance.perTxLimit'),
+                this.trp('campus.finance.yuanAmount', { 'n': this.info.maxOneTimeTransactionAmount.toFixed(2) }))
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('日限额', `${this.info.maxDailyTransactionAmount.toFixed(2)} 元`)
+              this.InfoRow(this.tr('campus.finance.dailyLimit'),
+                this.trp('campus.finance.yuanAmount', { 'n': this.info.maxDailyTransactionAmount.toFixed(2) }))
             }
             .width('100%')
             .constraintSize({ maxWidth: '100%' })
@@ -301,7 +315,7 @@ export struct FinancePage {
           }
 
           // 近 7 天流水
-          this.SectionTitle('近 7 天流水')
+          this.SectionTitle(this.tr('campus.finance.recentTx'))
           Column() {
             if (this.loading) {
               Row({ space: Space.sm }) {
@@ -309,7 +323,7 @@ export struct FinancePage {
                   .width(18)
                   .height(18)
                   .color(Theme.primary)
-                Text('正在读取近期流水')
+                Text(this.tr('campus.finance.loadingTx'))
                   .fontSize(13)
                   .fontColor(Theme.textMuted)
               }
@@ -318,11 +332,11 @@ export struct FinancePage {
               .padding({ top: 20, bottom: 20 })
             } else if (this.transactions.length === 0) {
               Column({ space: Space.xs }) {
-                Text('暂无近期流水')
+                Text(this.tr('campus.finance.emptyTxTitle'))
                   .fontSize(14)
                   .fontWeight(FontWeight.Medium)
                   .fontColor(Theme.text)
-                Text('近 7 天没有查询到校园卡交易记录。')
+                Text(this.tr('campus.finance.emptyTxMessage'))
                   .fontSize(12)
                   .fontColor(Theme.textMuted)
               }
@@ -372,7 +386,7 @@ export struct FinancePage {
           .margin({ left: 16, right: 16 })
 
           // 去充值（充值链不迁移，提示走支付宝/网页）
-          Button('去充值')
+          Button(this.tr('campus.finance.topUp'))
             .width('100%')
             .constraintSize({ maxWidth: '100%' })
             .height(44)
@@ -383,7 +397,7 @@ export struct FinancePage {
             .margin({ left: 16, right: 16, top: 20, bottom: 24 })
             .onClick(() => {
               this.getUIContext().getPromptAction().showToast({
-                message: '充值请通过支付宝或网页版校园卡系统操作',
+                message: this.tr('campus.finance.topUpToast'),
                 duration: 2000,
               });
             })

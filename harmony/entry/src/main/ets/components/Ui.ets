@@ -94,8 +94,9 @@ export enum BadgeTone {
 
 @Component
 export struct StatusBadge {
-  text: string = '';
-  tone: BadgeTone = BadgeTone.Default;
+  /** @Prop：父组件状态（如 i18n locale、状态文案）更新时需跟随刷新 */
+  @Prop text: string = '';
+  @Prop tone: BadgeTone = BadgeTone.Default;
 
   private bgColor(): string {
     if (this.tone === BadgeTone.Success) { return Theme.successMuted; }
@@ -200,8 +201,9 @@ export struct InfoRow {
 // ────────────────────────────────
 @Component
 export struct EmptyHint {
-  title: string = '';
-  message: string = '';
+  /** @Prop：父组件状态（如 i18n locale）更新时需跟随刷新 */
+  @Prop title: string = '';
+  @Prop message: string = '';
 
   build() {
     Column({ space: Space.xs }) {
@@ -234,10 +236,11 @@ export enum StateTone {
 
 @Component
 export struct StateBlock {
-  tone: StateTone = StateTone.Neutral;
-  title: string = '';
-  message: string = '';
-  actionText: string = '';
+  /** @Prop：父组件状态（如 i18n locale）更新时需跟随刷新 */
+  @Prop tone: StateTone = StateTone.Neutral;
+  @Prop title: string = '';
+  @Prop message: string = '';
+  @Prop actionText: string = '';
   onAction: () => void = () => {};
 
   private accentColor(): string {
@@ -334,7 +337,8 @@ export struct MetricPill {
 // ────────────────────────────────
 @Component
 export struct DetailHeader {
-  title: string = '';
+  /** @Prop：父组件状态（如 i18n locale）更新时需跟随刷新 */
+  @Prop title: string = '';
   onBack: () => void = () => {};
   @BuilderParam right: () => void = emptyContent;
 

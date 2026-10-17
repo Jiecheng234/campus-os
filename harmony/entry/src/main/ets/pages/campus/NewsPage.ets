@@ -10,6 +10,7 @@ import { StateManager } from '../../state/StateManager';
 import { BackDispatcher, BackOwner, BackHandler } from '../../state/BackDispatcher';
 import { webview } from '@kit.ArkWeb';
 import { Log } from '../../utils/Logger';
+import { I18n } from '../../utils/I18n';
 
 class NewsItem {
   id: string = '';
@@ -55,6 +56,12 @@ function escapeHtml(value: string): string {
 @Component
 export struct NewsPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
   @State news: NewsItem[] = getMockNews();
   @State isDemo: boolean = true;
   @State loading: boolean = false;
@@ -128,7 +135,7 @@ export struct NewsPage {
       this.detail = new CampusNewsDetail();
       // 列表项标题兜底（对齐原项目 detail?.title || news.name）：标题立即可见
       this.detail.title = item.title;
-      this.detailError = '该资讯缺少详情链接';
+      this.detailError = this.tr('campus.news.noDetailUrl');
       return;
     }
     this.detailLoading = true;
@@ -159,7 +166,7 @@ export struct NewsPage {
       bodyHtml = '<p>' + escapeHtml(this.detail.content).replace(/\n/g, '<br/>') + '</p>';
     }
     if (bodyHtml.length === 0) {
-      bodyHtml = '<p class="empty">暂无内容</p>';
+      bodyHtml = '<p class="empty">' + escapeHtml(this.tr('campus.news.emptyContent')) + '</p>';
     }
     let metaHtml: string = '';
     if (this.currentNews !== undefined) {
@@ -167,7 +174,7 @@ export struct NewsPage {
         ? '<span class="badge">' + escapeHtml(this.currentNews.channel) + '</span>'
         : '';
       const source: string = this.currentNews.summary.length > 0
-        ? escapeHtml(this.currentNews.summary) : '清华信息门户';
+        ? escapeHtml(this.currentNews.summary) : escapeHtml(this.tr('campus.news.sourceFallback'));
       metaHtml = '<div class="meta">' + badge
         + '<span>' + source + '</span>'
         + '<span>' + escapeHtml(this.currentNews.publishTime) + '</span>'
@@ -223,7 +230,7 @@ export struct NewsPage {
           .backgroundColor(Theme.surfaceAlt)
       }
       if (this.currentNews !== undefined) {
-        Text(this.currentNews.summary.length > 0 ? this.currentNews.summary : '清华信息门户')
+        Text(this.currentNews.summary.length > 0 ? this.currentNews.summary : this.tr('campus.news.sourceFallback'))
           .fontSize(FontSize.micro)
           .fontColor(Theme.textMuted)
           .maxLines(1)
@@ -240,7 +247,7 @@ export struct NewsPage {
   }
 
   @Builder DetailView() {
-    DetailHeader({ title: '新闻详情', onBack: () => { this.closeDetail(); } })
+    DetailHeader({ title: this.tr('campus.news.detailTitle'), onBack: () => { this.closeDetail(); } })
     Divider().color(Theme.divider)
     if (this.detailLoading) {
       // 标题即时可见（列表标题兜底），正文区内联加载（对齐原项目 InlineLoader 语义）
@@ -251,7 +258,7 @@ export struct NewsPage {
             .width(24)
             .height(24)
             .color(Theme.primary)
-          Text('正在加载正文...')
+          Text(this.tr('campus.news.loadingDetail'))
             .fontSize(FontSize.caption)
             .fontColor(Theme.textMuted)
         }
@@ -271,7 +278,7 @@ export struct NewsPage {
             .fontColor(Theme.error)
             .textAlign(TextAlign.Center)
             .padding({ left: Space.lg, right: Space.lg })
-          Text('重试')
+              Text(this.tr('status.retry'))
             .fontSize(FontSize.label)
             .fontColor(Theme.primary)
             .padding({ left: Space.md, right: Space.md, top: 6, bottom: 6 })
@@ -324,12 +331,12 @@ export struct NewsPage {
       if (this.showDetail) {
         this.DetailView()
       } else {
-        DetailHeader({ title: '校园新闻', onBack: () => { this.onBack(); } })
+        DetailHeader({ title: this.tr('campus.news.pageTitle'), onBack: () => { this.onBack(); } })
 
         Divider().color(Theme.divider)
 
         if (this.isDemo) {
-          Text('演示数据 · 登录后显示真实资讯')
+          Text(this.tr('campus.news.demoHint'))
             .fontSize(FontSize.caption)
             .fontColor(Theme.textMuted)
             .width('100%')
@@ -343,11 +350,11 @@ export struct NewsPage {
                 .height(16)
                 .color(Theme.primary)
             }
-            Text(this.loading ? '加载中...' : this.errorText)
+            Text(this.loading ? this.tr('status.loading') : this.errorText)
               .fontSize(FontSize.caption)
               .fontColor(this.errorText.length > 0 ? Theme.warning : Theme.textMuted)
             if (!this.loading && this.errorText.length > 0) {
-              Text('重试')
+          Text(this.tr('status.retry'))
                 .fontSize(FontSize.caption)
                 .fontColor(Theme.primary)
                 .padding({ left: Space.sm, right: Space.sm, top: 2, bottom: 2 })
@@ -367,7 +374,7 @@ export struct NewsPage {
               Column() {
                 Row() {
                   if (item.isNew) {
-                    Text('置顶')
+                    Text(this.tr('campus.news.topped'))
                       .fontSize(10)
                       .fontColor(Theme.warning)
                       .padding({ left: 5, right: 5, top: 1, bottom: 1 })

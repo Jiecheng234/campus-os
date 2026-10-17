@@ -12,6 +12,7 @@ import { CampusNetworkService, NetworkAccountInfo, NetworkBalance, NetworkDevice
   NetworkLogoutResult, NetworkSnapshot, isNetworkCaptchaRequiredError } from '../../services/campus/CampusNetworkService';
 import { AuthManager } from '../../state/AuthManager';
 import { StateManager } from '../../state/StateManager';
+import { I18n } from '../../utils/I18n';
 
 /** IP/MAC/账号打码（空→'—'；≤4→'****'；否则 ab***yz，对齐原项目 mask） */
 function mask(value: string): string {
@@ -39,6 +40,8 @@ function mockDevice(key: number, ip4: string, ip6: string, loggedAt: string,
 @Component
 export struct NetworkPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
   @State balance: NetworkBalance = new NetworkBalance();
   @State account: NetworkAccountInfo = new NetworkAccountInfo();
   @State devices: NetworkDevice[] = [];
@@ -57,6 +60,14 @@ export struct NetworkPage {
   /** 注销进行中的设备 key（-1 = 无） */
   @State busyKey: number = -1;
   private isReal: boolean = false;
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
 
   aboutToAppear(): void {
     this.isReal = AuthManager.isLoggedIn() && !StateManager.isDemoMode();
@@ -136,7 +147,10 @@ export struct NetworkPage {
     } catch (e) {
       this.captchaImage = '';
       const message: string = e instanceof Error ? e.message : String(e);
-      this.getUIContext().getPromptAction().showToast({ message: '验证码获取失败：' + message, duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({
+        message: this.trp('campus.network.captchaFailed', { 'msg': message }),
+        duration: 2000,
+      });
     }
     this.captchaLoading = false;
   }
@@ -147,7 +161,7 @@ export struct NetworkPage {
       return;
     }
     if (this.captchaInput.trim().length === 0) {
-      this.getUIContext().getPromptAction().showToast({ message: '请输入验证码', duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({ message: this.tr('campus.network.captchaEmpty'), duration: 2000 });
       return;
     }
     this.captchaSubmitting = true;
@@ -157,7 +171,7 @@ export struct NetworkPage {
       this.captchaInput = '';
       this.captchaImage = '';
       this.captchaRequired = false;
-      this.getUIContext().getPromptAction().showToast({ message: '校园网登录成功', duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({ message: this.tr('campus.network.loginSuccess'), duration: 2000 });
       await this.load();
     } catch (e) {
       const message: string = e instanceof Error ? e.message : String(e);
@@ -180,14 +194,14 @@ export struct NetworkPage {
   /** 注销二次确认（取消 / 确认注销；文案含权限、掩码 IP/MAC 与断网提示） */
   private confirmLogout(device: NetworkDevice): void {
     AlertDialog.show({
-      title: '注销校园网设备',
-      message: `${device.authPermission}\n${mask(device.ip4)} · ${mask(device.mac)}\n\n设备可能立刻断网，需要重新认证后才能联网。`,
+      title: this.tr('campus.network.logoutTitle'),
+      message: `${device.authPermission}\n${mask(device.ip4)} · ${mask(device.mac)}\n\n${this.tr('campus.network.logoutWarning')}`,
       primaryButton: {
-        value: '取消',
+        value: this.tr('common.cancel'),
         action: (): void => {},
       },
       secondaryButton: {
-        value: '确认注销',
+        value: this.tr('campus.network.logoutOk'),
         fontColor: Theme.error,
         action: (): void => { this.doLogout(device); },
       },
@@ -204,7 +218,7 @@ export struct NetworkPage {
         }
       }
       this.devices = rest;
-      this.getUIContext().getPromptAction().showToast({ message: '设备已注销', duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({ message: this.tr('campus.network.loggedOutToast'), duration: 2000 });
       return;
     }
     this.busyKey = device.key;
@@ -215,7 +229,10 @@ export struct NetworkPage {
       await this.load();
     } catch (e) {
       const message: string = e instanceof Error ? e.message : String(e);
-      this.getUIContext().getPromptAction().showToast({ message: '注销失败：' + message, duration: 2000 });
+      this.getUIContext().getPromptAction().showToast({
+        message: this.trp('campus.network.logoutFailed', { 'msg': message }),
+        duration: 2000,
+      });
     }
     this.busyKey = -1;
   }
@@ -227,7 +244,7 @@ export struct NetworkPage {
         .height(20)
         .color(Theme.primary)
     } else {
-      Text('刷新')
+      Text(this.tr('common.refresh'))
         .fontSize(14)
         .fontColor(Theme.primary)
         .padding({ left: 12, right: 4, top: 8, bottom: 8 })
@@ -264,7 +281,7 @@ export struct NetworkPage {
       SafeTop()
 
       DetailHeader({
-        title: '校园网络',
+        title: this.tr('campus.network.pageTitle'),
         onBack: () => { this.onBack(); },
         right: (): void => { this.RightAction(); },
       })
@@ -272,7 +289,7 @@ export struct NetworkPage {
       Divider().color(Theme.divider)
 
       if (!this.isReal) {
-        Text('演示数据 · 登录后显示真实校园网信息')
+        Text(this.tr('campus.network.demoHint'))
           .fontSize(12)
           .fontColor(Theme.textMuted)
           .width('100%')
@@ -284,7 +301,7 @@ export struct NetworkPage {
         Column() {
           // 余额/用量 Hero 卡
           Column() {
-            Text('账户余额')
+            Text(this.tr('campus.network.balance'))
               .fontSize(13)
               .fontColor(Theme.textMuted)
             Row() {
@@ -298,7 +315,7 @@ export struct NetworkPage {
                   .fontSize(40)
                   .fontWeight(FontWeight.Bold)
                   .fontColor(Theme.primary)
-                Text('元')
+                Text(this.tr('campus.network.yuan'))
                   .fontSize(16)
                   .fontColor(Theme.textMuted)
                   .margin({ left: 6, bottom: 6 })
@@ -315,7 +332,7 @@ export struct NetworkPage {
             }
 
             Row() {
-              Text('已用流量')
+              Text(this.tr('campus.network.usedBytes'))
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
               Blank()
@@ -328,7 +345,7 @@ export struct NetworkPage {
             .margin({ top: 16 })
 
             Row() {
-              Text('已用时长')
+              Text(this.tr('campus.network.usedTime'))
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
               Blank()
@@ -341,7 +358,7 @@ export struct NetworkPage {
             .margin({ top: 10 })
 
             if (this.balance.settlementDate.length > 0) {
-              Text(`结算日期 ${this.balance.settlementDate}`)
+              Text(this.trp('campus.network.settlementDate', { 'name': this.balance.settlementDate }))
                 .fontSize(12)
                 .fontColor(Theme.textMuted)
                 .margin({ top: 12 })
@@ -359,7 +376,7 @@ export struct NetworkPage {
           // 错误态（会话两次恢复仍失败等，可重试）
           if (this.errorText.length > 0) {
             Column({ space: Space.sm }) {
-              Text('校园网信息加载失败')
+              Text(this.tr('campus.network.errorTitle'))
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
@@ -367,7 +384,7 @@ export struct NetworkPage {
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .textAlign(TextAlign.Center)
-              Text('重试')
+              Text(this.tr('status.retry'))
                 .fontSize(13)
                 .fontColor(Theme.primary)
                 .padding({ left: Space.md, right: Space.md, top: Space.xs, bottom: Space.xs })
@@ -383,11 +400,11 @@ export struct NetworkPage {
           // 验证码登录态（取图 + 输入 + 提交/换一张；成功自动重载，失败自动换图）
           if (this.captchaRequired) {
             Column({ space: Space.sm }) {
-              Text('校园网需要验证码')
+              Text(this.tr('campus.network.captchaTitle'))
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
-              Text('输入图片中的字符完成校园网登录')
+              Text(this.tr('campus.network.captchaHint'))
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .textAlign(TextAlign.Center)
@@ -407,7 +424,7 @@ export struct NetworkPage {
                   .margin({ top: 4, bottom: 4 })
                   .onClick(() => { this.refreshCaptcha(); })
               } else {
-                Text('点击获取验证码')
+                Text(this.tr('campus.network.getCaptcha'))
                   .fontSize(13)
                   .fontColor(Theme.primary)
                   .padding({ left: Space.md, right: Space.md, top: 10, bottom: 10 })
@@ -418,7 +435,7 @@ export struct NetworkPage {
               }
 
               Row({ space: Space.sm }) {
-                TextInput({ placeholder: '请输入验证码', text: this.captchaInput })
+                TextInput({ placeholder: this.tr('campus.network.captchaPlaceholder'), text: this.captchaInput })
                   .type(InputType.Normal)
                   .fontSize(14)
                   .height(40)
@@ -426,7 +443,7 @@ export struct NetworkPage {
                   .enabled(!this.captchaSubmitting)
                   .onChange((v: string) => { this.captchaInput = v; })
                   .onSubmit(() => { this.submitCaptcha(); })
-                Text('换一张')
+                Text(this.tr('campus.network.refreshCaptcha'))
                   .fontSize(13)
                   .fontColor(Theme.primary)
                   .padding({ left: 4, right: 4, top: 10, bottom: 10 })
@@ -435,7 +452,9 @@ export struct NetworkPage {
               }
               .width('100%')
 
-              Button(this.captchaSubmitting ? '登录中…' : '登录校园网')
+              Button(this.captchaSubmitting
+                ? this.tr('campus.network.loggingIn')
+                : this.tr('campus.network.loginButton'))
                 .type(ButtonType.Capsule)
                 .height(40)
                 .fontSize(14)
@@ -445,7 +464,7 @@ export struct NetworkPage {
                 .enabled(!this.captchaSubmitting && this.captchaInput.trim().length > 0)
                 .onClick(() => { this.submitCaptcha(); })
 
-              Text('重试原查询')
+              Text(this.tr('campus.network.retryQuery'))
                 .fontSize(12)
                 .fontColor(Theme.textMuted)
                 .padding({ top: 2, bottom: 2 })
@@ -458,25 +477,25 @@ export struct NetworkPage {
 
           // 账户信息（9 字段）
           if (this.loaded) {
-            this.SectionTitle('账户信息')
+            this.SectionTitle(this.tr('campus.network.accountInfo'))
             Column() {
-              this.InfoRow('用户名', this.account.username)
+              this.InfoRow(this.tr('campus.network.username'), this.account.username)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('联系邮箱', this.account.contactEmail)
+              this.InfoRow(this.tr('campus.network.contactEmail'), this.account.contactEmail)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('联系电话', this.account.contactPhone)
+              this.InfoRow(this.tr('campus.network.contactPhone'), this.account.contactPhone)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('固定电话', this.account.contactLandline)
+              this.InfoRow(this.tr('campus.network.contactLandline'), this.account.contactLandline)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('真实姓名', this.account.realName)
+              this.InfoRow(this.tr('campus.network.realName'), this.account.realName)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('用户组', this.account.userGroup)
+              this.InfoRow(this.tr('campus.network.userGroup'), this.account.userGroup)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('状态', this.account.status)
+              this.InfoRow(this.tr('campus.network.status'), this.account.status)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('所在位置', this.account.location)
+              this.InfoRow(this.tr('campus.network.location'), this.account.location)
               Divider().color(Theme.divider).margin({ left: 16 })
-              this.InfoRow('允许在线设备数', String(this.account.allowedDevices))
+              this.InfoRow(this.tr('campus.network.allowedDevices'), String(this.account.allowedDevices))
             }
             .width('100%')
             .constraintSize({ maxWidth: '100%' })
@@ -487,7 +506,7 @@ export struct NetworkPage {
           }
 
           // 在线设备
-          this.SectionTitle('在线设备')
+          this.SectionTitle(this.tr('campus.network.devices'))
           Column() {
             if (this.loading && !this.loaded) {
               Row({ space: Space.sm }) {
@@ -495,7 +514,7 @@ export struct NetworkPage {
                   .width(18)
                   .height(18)
                   .color(Theme.primary)
-                Text('正在读取在线设备')
+                Text(this.tr('campus.network.loadingDevices'))
                   .fontSize(13)
                   .fontColor(Theme.textMuted)
               }
@@ -504,11 +523,11 @@ export struct NetworkPage {
               .padding({ top: 20, bottom: 20 })
             } else if (this.devices.length === 0) {
               Column({ space: Space.xs }) {
-                Text('暂无在线设备')
+                Text(this.tr('campus.network.emptyDevicesTitle'))
                   .fontSize(14)
                   .fontWeight(FontWeight.Medium)
                   .fontColor(Theme.text)
-                Text('当前账号没有查询到在线设备。')
+                Text(this.tr('campus.network.emptyDevicesMessage'))
                   .fontSize(12)
                   .fontColor(Theme.textMuted)
               }
@@ -520,28 +539,28 @@ export struct NetworkPage {
                 Column() {
                   Row() {
                     Column({ space: 3 }) {
-                      Text(device.authPermission.length > 0 ? device.authPermission : '在线设备')
+                      Text(device.authPermission.length > 0 ? device.authPermission : this.tr('campus.network.deviceFallback'))
                         .fontSize(14)
                         .fontWeight(FontWeight.Medium)
                         .fontColor(Theme.text)
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      Text('IPv4 ' + (device.ip4.length > 0 ? device.ip4 : '—'))
+                      Text(this.trp('campus.network.ip4', { 'name': device.ip4.length > 0 ? device.ip4 : '—' }))
                         .fontSize(12)
                         .fontColor(Theme.textMuted)
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      Text('IPv6 ' + (device.ip6.length > 0 ? device.ip6 : '—'))
+                      Text(this.trp('campus.network.ip6', { 'name': device.ip6.length > 0 ? device.ip6 : '—' }))
                         .fontSize(12)
                         .fontColor(Theme.textMuted)
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      Text('登录时间 ' + (device.loggedAt.length > 0 ? device.loggedAt : '—'))
+                      Text(this.trp('campus.network.loginTime', { 'name': device.loggedAt.length > 0 ? device.loggedAt : '—' }))
                         .fontSize(12)
                         .fontColor(Theme.textMuted)
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      Text('MAC ' + (device.mac.length > 0 ? device.mac : '—'))
+                      Text(this.trp('campus.network.mac', { 'name': device.mac.length > 0 ? device.mac : '—' }))
                         .fontSize(12)
                         .fontColor(Theme.textMuted)
                         .maxLines(1)
@@ -550,7 +569,9 @@ export struct NetworkPage {
                     .alignItems(HorizontalAlign.Start)
                     .layoutWeight(1)
 
-                    Button(this.busyKey === device.key ? '处理中' : '注销')
+                    Button(this.busyKey === device.key
+                      ? this.tr('campus.network.processing')
+                      : this.tr('campus.network.logout'))
                       .type(ButtonType.Capsule)
                       .fontSize(11)
                       .fontColor(Theme.error)

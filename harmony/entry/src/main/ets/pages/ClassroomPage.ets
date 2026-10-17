@@ -15,8 +15,8 @@ import {
 } from '../services/campus/CampusDataService';
 import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
+import { I18n } from '../utils/I18n';
 
-const DAYS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
 /** 每天 6 节（与上游 status 7×6 约定绑定） */
 const PERIODS_PER_DAY: number = CLASSROOM_PERIODS.length;
 
@@ -44,23 +44,23 @@ function statusColorOf(status: ClassroomStatus): string {
   return '#9CA3AF';
 }
 
-function statusLabelOf(status: ClassroomStatus): string {
+function statusLabelOf(status: ClassroomStatus, locale: string): string {
   if (status === ClassroomStatus.AVAILABLE) {
-    return '空闲';
+    return I18n.t('classroom.statusAvailable', locale);
   }
   if (status === ClassroomStatus.TEACHING) {
-    return '上课';
+    return I18n.t('classroom.statusTeaching', locale);
   }
   if (status === ClassroomStatus.EXAM) {
-    return '考试';
+    return I18n.t('classroom.statusExam', locale);
   }
   if (status === ClassroomStatus.BORROWED) {
-    return '借用';
+    return I18n.t('classroom.statusBorrowed', locale);
   }
   if (status === ClassroomStatus.DISABLED) {
-    return '停用';
+    return I18n.t('classroom.statusDisabled', locale);
   }
-  return '保留';
+  return I18n.t('classroom.statusReserved', locale);
 }
 
 function todayWeekdayIndex(): number {
@@ -194,6 +194,16 @@ function buildDemoState(buildingIdx: number, week: number): ClassroomStateResult
 @Component
 export struct ClassroomPage {
   onBack: () => void = () => {};
+  /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
+  @StorageLink('locale') locale: string = 'zh';
+
+  private tr(key: string): string {
+    return I18n.t(key, this.locale);
+  }
+
+  private trp(key: string, args: Record<string, string>): string {
+    return I18n.tp(key, args, this.locale);
+  }
   @State buildings: ClassroomBuilding[] = [];
   @State selectedSearchName: string = '';
   @State week: number = 0;
@@ -314,7 +324,7 @@ export struct ClassroomPage {
         .height(18)
         .color(Theme.primary)
     } else {
-      Text('刷新')
+      Text(this.tr('common.refresh'))
         .fontSize(13)
         .fontColor(Theme.primary)
         .onClick(() => {
@@ -335,7 +345,10 @@ export struct ClassroomPage {
           .fontWeight(FontWeight.Medium)
           .fontColor(Theme.text)
           .maxLines(1)
-        Text(`${freeCountOf(row, this.activeDay)}/${statusSlice(row, this.activeDay).length} 节空`)
+        Text(this.trp('classroom.periodsFree', {
+          'n': String(freeCountOf(row, this.activeDay)),
+          'total': String(statusSlice(row, this.activeDay).length)
+        }))
           .fontSize(10)
           .fontColor(Theme.textMuted)
           .margin({ top: 2 })
@@ -378,7 +391,7 @@ export struct ClassroomPage {
       SafeTop()
 
       DetailHeader({
-        title: '空教室查询',
+        title: this.tr('classroom.title'),
         onBack: () => { this.onBack(); },
         right: (): void => { this.RightAction(); },
       })
@@ -391,7 +404,7 @@ export struct ClassroomPage {
             .width(32)
             .height(32)
             .color(Theme.primary)
-          Text('正在加载教学楼列表...')
+          Text(this.tr('classroom.loadingList'))
             .fontSize(13)
             .fontColor(Theme.textMuted)
             .margin({ top: 8 })
@@ -401,7 +414,7 @@ export struct ClassroomPage {
         .justifyContent(FlexAlign.Center)
       } else if (this.errorText.length > 0) {
         Column({ space: 8 }) {
-          Text('教学楼列表加载失败')
+          Text(this.tr('classroom.errorList'))
             .fontSize(15)
             .fontWeight(FontWeight.Medium)
             .fontColor(Theme.text)
@@ -409,7 +422,7 @@ export struct ClassroomPage {
             .fontSize(12)
             .fontColor(Theme.textMuted)
             .textAlign(TextAlign.Center)
-          Text('重试')
+              Text(this.tr('status.retry'))
             .fontSize(13)
             .fontColor(Theme.primary)
             .padding({ left: 16, right: 16, top: 6, bottom: 6 })
@@ -456,7 +469,7 @@ export struct ClassroomPage {
             Scroll() {
               Row() {
                 ForEach(this.stateResult.validWeekNumbers, (w: number) => {
-                  Text(`第 ${w} 周`)
+                  Text(this.trp('schedule.week', { 'n': w.toString() }))
                     .fontSize(12)
                     .fontWeight(this.week === w ? FontWeight.Medium : FontWeight.Normal)
                     .fontColor(this.week === w ? Theme.primary : Theme.textSecondary)
@@ -481,9 +494,9 @@ export struct ClassroomPage {
 
           // 周一 → 周日
           Row() {
-            ForEach(DAYS, (d: string, i: number) => {
+            ForEach([0, 1, 2, 3, 4, 5, 6], (i: number) => {
               Column() {
-                Text(`周${d}${this.isTodayCell(i) ? '·今' : ''}`)
+                Text(this.tr('classroom.day' + String(i)) + (this.isTodayCell(i) ? this.tr('classroom.todayMark') : ''))
                   .fontSize(12)
                   .fontWeight(FontWeight.Medium)
                   .fontColor(this.activeDay === i ? Theme.textInvert : Theme.text)
@@ -500,7 +513,7 @@ export struct ClassroomPage {
               .alignItems(HorizontalAlign.Center)
               .backgroundColor(this.activeDay === i ? Theme.primary : Color.Transparent)
               .onClick(() => { this.activeDay = i; })
-            }, (d: string) => d)
+            }, (i: number) => String(i))
           }
           .width('100%')
           .margin({ left: 16, right: 16 })
@@ -511,7 +524,7 @@ export struct ClassroomPage {
 
           // 汇总条
           Row() {
-            Text(`${this.currentBuildingName()} · 周${DAYS[this.activeDay]}${
+            Text(`${this.currentBuildingName()} · ${this.tr('classroom.day' + String(this.activeDay))}${
               this.hasState && this.activeDay < this.stateResult.datesOfCurrentWeek.length
               && this.stateResult.datesOfCurrentWeek[this.activeDay].length > 0
                 ? ` (${this.stateResult.datesOfCurrentWeek[this.activeDay]})` : ''}`)
@@ -520,7 +533,10 @@ export struct ClassroomPage {
               .layoutWeight(1)
               .maxLines(1)
             if (this.hasState && this.stateResult.classroomStates.length > 0) {
-              Text(`${this.freeRoomCount()}/${this.stateResult.classroomStates.length} 间全天空闲`)
+              Text(this.trp('classroom.freeAllDay', {
+                'n': String(this.freeRoomCount()),
+                'total': String(this.stateResult.classroomStates.length)
+              }))
                 .fontSize(12)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.primary)
@@ -536,7 +552,7 @@ export struct ClassroomPage {
                 .width(32)
                 .height(32)
                 .color(Theme.primary)
-              Text('加载教室状态...')
+              Text(this.tr('classroom.loadingState'))
                 .fontSize(13)
                 .fontColor(Theme.textMuted)
                 .margin({ top: 8 })
@@ -546,7 +562,7 @@ export struct ClassroomPage {
             .justifyContent(FlexAlign.Center)
           } else if (this.stateErrorText.length > 0) {
             Column({ space: 8 }) {
-              Text('教室状态加载失败')
+              Text(this.tr('classroom.errorState'))
                 .fontSize(15)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(Theme.text)
@@ -554,7 +570,7 @@ export struct ClassroomPage {
                 .fontSize(12)
                 .fontColor(Theme.textMuted)
                 .textAlign(TextAlign.Center)
-              Text('重试')
+          Text(this.tr('status.retry'))
                 .fontSize(13)
                 .fontColor(Theme.primary)
                 .padding({ left: 16, right: 16, top: 6, bottom: 6 })
@@ -568,10 +584,10 @@ export struct ClassroomPage {
             .padding({ left: 32, right: 32 })
           } else if (!this.hasState || this.stateResult.classroomStates.length === 0) {
             Column({ space: 4 }) {
-              Text('该教学楼无教室数据')
+              Text(this.tr('classroom.emptyTitle'))
                 .fontSize(14)
                 .fontColor(Theme.textSecondary)
-              Text('可以切换其它教学楼、周次或稍后刷新')
+              Text(this.tr('classroom.emptyMessage'))
                 .fontSize(12)
                 .fontColor(Theme.textMuted)
             }
@@ -586,7 +602,7 @@ export struct ClassroomPage {
                   ForEach(ALL_STATUSES, (s: ClassroomStatus) => {
                     Row() {
                       LegendDot({ color: statusColorOf(s) })
-                      Text(statusLabelOf(s))
+                      Text(statusLabelOf(s, this.locale))
                         .fontSize(11)
                         .fontColor(Theme.textMuted)
                     }
@@ -614,16 +630,16 @@ export struct ClassroomPage {
 
                 // 表头
                 Row() {
-                  Text('教室')
+                  Text(this.tr('classroom.colRoom'))
                     .fontSize(11)
                     .fontColor(Theme.textMuted)
                     .layoutWeight(3)
-                  Text('容量')
+                  Text(this.tr('classroom.colCapacity'))
                     .fontSize(11)
                     .fontColor(Theme.textMuted)
                     .layoutWeight(1)
                     .textAlign(TextAlign.Center)
-                  Text('1  2  3  4  5  6')
+                  Text(this.tr('classroom.colPeriods'))
                     .fontSize(11)
                     .fontColor(Theme.textMuted)
                     .layoutWeight(5)
