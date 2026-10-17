@@ -1,0 +1,57 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# .githooks/commit-msg — Conventional Commits + scope 白名单
+# 目标耗时: < 100ms
+#
+# scope 可省略（当前约 72% 的提交没有 scope）；
+# 一旦写了 scope 就必须在白名单里，防止 HttpClient / SM2 / phase-4 这类漂移。
+# 紧急绕过: git commit --no-verify
+# ---------------------------------------------------------------------------
+msg_file="$1"
+subject=$(head -1 "$msg_file")
+
+# merge / revert 自动消息直接放行
+case "$subject" in
+  "Merge "*|"Revert "*|"revert:"*|"fixup!"*|"squash!"*|"fixup "*|"squash "*) exit 0 ;;
+esac
+
+TYPES="feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert"
+SCOPES="ai|auth|campus|schedule|i18n|ui|home|settings|learn|mail|library|sports|specs|git|ci|upstream|deps|build|docs"
+
+regex="^($TYPES)(\(($SCOPES)\))?!?: .{4,}$"
+if ! printf '%s\n' "$subject" | grep -Eq "$regex"; then
+  echo ""
+  echo "✗ commit-msg 校验失败"
+  echo "  格式: <type>(<scope>): <subject>"
+  echo "  type : $TYPES"
+  echo "  scope: 可省略；若写必须在白名单 —— $SCOPES"
+  echo "  当前: $subject"
+  echo ""
+  echo "  ✅ feat(campus): 图书馆座位预约"
+  echo "  ✅ fix(auth): 重登录后刷新 learn csrf"
+  echo "  ❌ feat(HttpClient): ...    → 用 auth"
+  echo "  ❌ feat(CampusDataService)  → 用 campus"
+  echo "  ❌ feat(phase-4): ...       → 阶段号已废止"
+  echo ""
+  echo "  紧急绕过: git commit --no-verify"
+  exit 1
+fi
+
+# subject 过长只提示不阻断（按字节计，中文会偏大，故阈值放宽到 100）
+if [ "$(printf '%s' "$subject" | wc -c)" -gt 100 ]; then
+  echo "⚠ subject 偏长（>100 字节），建议精简到一行可读"
+fi
+
+# feat / fix 且无正文 → 温和提示补 spec / verify / risk
+if [ "$(sed -n '2,$p' "$msg_file" | grep -c '[^[:space:]]')" -eq 0 ]; then
+  case "$subject" in
+    feat*|fix*)
+      echo "⚠ 建议补正文（不阻断）："
+      echo "    spec:   harmony/specs/<feature>"
+      echo "    verify: devecocli build --modules entry; verify_ui US1-US2"
+      echo "    risk:   <高危文件>"
+      ;;
+  esac
+fi
+
+exit 0

@@ -1,0 +1,49 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# .githooks/pre-push — 推送前 L1（lint）+ L2（build）
+#
+# 推送频率远低于提交，所以重活放这里。
+# 跳过方式（需在提交/日志里说明原因）:
+#   SKIP_VERIFY=1 git push
+# 自定义 CLI 路径:
+#   DEVECO_CLI="/path/to/devecocli" git push
+# ---------------------------------------------------------------------------
+if [ "${SKIP_VERIFY:-}" = "1" ]; then
+  echo "⚠ SKIP_VERIFY=1 → 跳过 pre-push 校验"
+  exit 0
+fi
+
+# 只对触及 harmony/ 的推送做构建；纯文档/配置推送直接放行
+base=$(git merge-base HEAD '@{upstream}' 2>/dev/null || echo 'HEAD~1')
+if ! git diff --name-only "$base" HEAD 2>/dev/null | grep -q '^harmony/'; then
+  echo "→ 本次推送未触及 harmony/，跳过 L1/L2"
+  exit 0
+fi
+
+# 定位 DevEco CLI
+CLI=""
+if command -v devecocli >/dev/null 2>&1; then
+  CLI="devecocli"
+elif [ -n "${DEVECO_CLI:-}" ] && [ -e "$DEVECO_CLI" ]; then
+  CLI="$DEVECO_CLI"
+fi
+if [ -z "$CLI" ]; then
+  echo "⚠ 未找到 devecocli（PATH 未包含 DevEco CLI，也未设置 DEVECO_CLI）"
+  echo "  跳过 L1/L2；确认无误后推送，或设置 DEVECO_CLI 后重试"
+  exit 0
+fi
+
+echo "→ [L1] $CLI check lint"
+if ! "$CLI" check lint; then
+  echo "✗ L1 未通过。修好再推；确需紧急推送: SKIP_VERIFY=1 git push"
+  exit 1
+fi
+
+echo "→ [L2] $CLI build --modules entry --build-mode debug"
+if ! "$CLI" build --modules entry --build-mode debug; then
+  echo "✗ L2 构建未通过。修好再推；确需紧急推送: SKIP_VERIFY=1 git push"
+  exit 1
+fi
+
+echo "✓ pre-push 校验通过"
+exit 0

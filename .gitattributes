@@ -19,6 +19,10 @@
 *.yaml   text eol=lf
 *.yml    text eol=lf
 *.sh     text eol=lf
+
+# Git hooks 脚本必须 LF，否则 Git for Windows 的 sh 会把 shebang 读成 "#!/bin/sh\r"
+.githooks/*  text eol=lf
+
 *.gitignore    text eol=lf
 *.gitattributes text eol=lf
 

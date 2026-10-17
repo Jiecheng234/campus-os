@@ -1,0 +1,51 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# .githooks/pre-commit — 安全门禁（目标 < 3s）
+#
+# 这里**不跑** arkts_check / build：47 提交/周的节奏下会被 --no-verify 绕过。
+# 静态与构建检查放在 pre-push。
+# ---------------------------------------------------------------------------
+set -e
+
+# 1) 暂存区是否残留冲突标记
+if git diff --cached -U0 2>/dev/null | grep -Eq '^\+(<<<<<<<|>>>>>>>|=======)'; then
+  echo ""
+  echo "✗ 暂存区含冲突标记，请先解决冲突再提交"
+  exit 1
+fi
+
+# 2) 构建产物 / 依赖 / 签名材料（.gitignore 之外的双保险）
+bad=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | \
+      grep -E '(^|/)(oh_modules|node_modules|build|\.hvigor|\.cache|\.deveco)/|\.(hap|hsp|app|so|keystore|p12|p7b)$' || true)
+if [ -n "$bad" ]; then
+  echo ""
+  echo "✗ 暂存了不该入库的文件："
+  printf '%s\n' "$bad" | sed 's/^/    /'
+  echo ""
+  echo "  解除暂存: git restore --staged <file>"
+  echo "  确需入库: git commit --no-verify"
+  exit 1
+fi
+
+# 3) 单文件 > 2MB（防误提交二进制）
+big=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        sz=$(wc -c < "$f" 2>/dev/null || echo 0)
+        if [ "$sz" -gt 2097152 ]; then
+          printf '    %s (%d KB)\n' "$f" $((sz / 1024))
+        fi
+      done)
+if [ -n "$big" ]; then
+  echo ""
+  echo "✗ 单个文件超过 2MB，请确认是否应入库："
+  printf '%s\n' "$big"
+  echo "  确需入库: git commit --no-verify"
+  exit 1
+fi
+
+# 4) 行尾空白 / 缩进错误（仅提示，不阻断）
+if ! git diff --cached --check >/dev/null 2>&1; then
+  echo "⚠ 存在行尾空白或缩进问题（不阻断）"
+fi
+
+exit 0
