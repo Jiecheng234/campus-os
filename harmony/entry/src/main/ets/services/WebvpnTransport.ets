@@ -31,7 +31,7 @@ export class WebvpnTransport {
       'Referer': WEBVPN_OAUTH_LOGIN_URL,
       'Origin': WEBVPN_BASE_URL,
     };
-    return this.http.postForm(url, formData, headers);
+    return this.http.postFormWithHeaders(url, formData, headers);
   }
 
   async post2FAForm(formData: Record<string, string>): Promise<HttpResponse> {
@@ -39,7 +39,7 @@ export class WebvpnTransport {
       'Referer': WEBVPN_OAUTH_LOGIN_URL,
       'Origin': WEBVPN_BASE_URL,
     };
-    return this.http.postForm(WEBVPN_OAUTH_LOGIN_URL, formData, headers);
+    return this.http.postFormWithHeaders(WEBVPN_OAUTH_LOGIN_URL, formData, headers);
   }
 
   async roamToSubsystem(subsystem: string): Promise<boolean> {
