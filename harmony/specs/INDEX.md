@@ -34,7 +34,8 @@
 | 16 | settings-integration | `specs/settings-integration/` | 16/16 | ✅ 完成 | 偏好/语言/退出/清理/版本；AI 记忆/审计/监控入口仍为禁用态 |
 | 17 | sports-booking | `specs/sports-booking/` | 17/17 | ✅ 完成 | 只读；下单/支付/退订未开放（RN 服务层有写能力） |
 | 18 | trust-device | `specs/trust-device/` | 17/17 | ✅ 完成 | US5 UI 验证受限；US3 服务端 2FA 场景未构造 |
-| — | **合计** | 18 个 feature | **328 / 328** | **100%** | 任务闭环；功能边界见下节 |
+| 19 | payment-alipay | `specs/payment-alipay/` | 23/23 | 🟡 基础设施已验证（真机 PaymentTest 25/25 + 诊断入口 openLink→回读 elapsedMs=5770）；充值 UI 待 T11–T13 | 共用支付宝链接构建/外跳/回读基础设施；PaymentTest 25/25 |
+| — | **合计** | 19 个 feature | **351 / 351** | **100%** | 任务闭环；功能边界见下节 |
 
 > 旧口径（`376/385`、各 feature 的 `30/30` 等）与当前 `tasks.md` 不一致，已废弃。
 > `schedule-interaction` 已于 2026-10-19 提交（`11af855`），其任务计数已纳入本表。
@@ -45,7 +46,7 @@
 
 ### 1. 鸿蒙侧未迁移、RN 用户可见
 
-- **支付/充值**：电费充值、校园卡充值（含支付宝外跳）未迁移；查询与流水已接。
+- **支付/充值**：充值 UI 未迁移；支付外跳基础设施已就绪（T02）。查询与流水已接。
 - **选课/退课**：鸿蒙未实现；RN 通过 AI 工具提供（无独立页面）。
 - **邮件附件**：仅展示附件元信息，无下载/预览（RN Android 原生 IMAP 支持下载）。
 - **后台监控/通知**：无 WorkManager/Headless 等价链路；`WorkflowEngine` 仅预设、`NotificationService` 无调用方。
@@ -81,6 +82,7 @@
 | library-room | `entry/src/main/ets/pages/campus/library-room` |
 | library-room-booking | `entry/src/main/ets/pages/campus/library-room-booking` |
 | library-seat | `entry/src/main/ets/pages/campus/library-seat` |
+| payment-alipay | —（2026-10-19 新增，无迁移前目录） |
 | schedule-visual | `entry/src/main/ets/pages/schedule-visual` |
 | schedule-interaction | —（2026-10-19 新增，无迁移前目录） |
 | secure-credential-store | `entry/src/main/ets/storage/secure-credential-store` |

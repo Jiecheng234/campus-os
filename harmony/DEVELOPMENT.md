@@ -126,6 +126,21 @@ GET  learnStudentHome                   学生首页
 
 **learn API 通用规则**：URL 用 `withCsrf(url, csrf)` 拼 `_csrf`；`aoData` 是 `[{"name":"wlkcid","value":"课程id"}]` 的 JSON 字符串，POST urlencoded 提交。
 
+### 3.5 支付基础设施（T02，2026-10-19）
+
+为电费、校园卡、体育三个子系统共用的支付宝外跳与回读能力，不包含具体充值/下单 UI（见 T11–T13）。
+
+- **入口**：`services/payment/AlipayPaymentService.ets`（构建/校验/探测/外跳/pending/回读事件）与 `services/payment/PaymentSelfTest.ets`（启动自检）。
+- **链接格式**：主链接与 RN 基线逐字符一致——`alipayqr://platformapi/startapp?saId=10000007&qrcode=` + 固定编码前缀 `https%3A%2F%2Fqr.alipay.com%2F` + 原始 payCode（保留 `+` 等字符）；设备只注册 `alipays` 时用相同路径与参数回退。
+- **scheme 白名单**：`module.json5` 的 `module.querySchemes` 声明 `alipayqr`、`alipays`；未声明时 `bundleManager.canOpenLink` 会抛 `17700056`。
+- **外跳**：先 `bundleManager.canOpenLink` 探测，再 `common.UIAbilityContext.openLink(link, { appLinkingOnly: false })`；未安装/失败返回 `not_installed` / `launch_failed` 与 i18n 键，可重试、不崩溃。
+- **待回读**：仅进程内存（`CampusPaymentIntent`），调用 `openLink` 前写入、`openLink` 失败时清除，TTL 30 分钟，新支付覆盖旧支付；`EntryAbility.onForeground` 调用 `notifyForeground()`，有未过期 pending 时投递一次事件并清除。
+- **事件**：生产 ID `11001`，payload 仅 `subsystem` / `amount` / `startedAt` / `elapsedMs`；事件只表示“用户已返回 CampusOS”，不表示支付结果。启动自检使用隔离测试 ID `11002`，不会投递到生产订阅方。
+- **debug 自检入口**：`SettingsPage` 中由 `BuildProfile.DEBUG` 门控的“支付通道自检”分组，提供探测支付宝与打开固定测试链接；release 构建不渲染。
+- **启动自检**：`runPaymentSelfTest()` 在 `loadContent` 回调中紧随 `runPhase4SelfTest()` 运行，日志标签 `PaymentTest`，覆盖链接构建/提取与回读事件；不发网络、不调用 `openLink`。
+- **日志脱敏**：只记录子系统、状态码、错误码与耗时；不记录 payCode、二维码 URL、金额明文、Cookie、学号或 API Key。
+- **已知限制**：进程在支付宝期间被杀后不补发回读事件（页面重新加载时按正常流程刷新）；真实充值/下单 UI 待 T11–T13；真机启动自检 `PaymentTest 25/25 passed, 0 failed`，真机诊断入口 `openLink`→回读已验证（`elapsedMs=5770`），模拟器已验证未安装支付宝的可读路径；未用真实 payCode 发起支付。
+
 ---
 
 ## 4. 设计系统（`pages/Theme.ets` + `components/Ui.ets`）

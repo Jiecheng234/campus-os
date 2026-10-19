@@ -60,8 +60,10 @@ HarmonyOS 原生版位于 `harmony/`。
 - 已对齐：统一认证 / 2FA、六 Tab、学习列表、课表、校园 9 个子系统、
   图书馆座位 / 研读间、体育只读、邮箱核心、AI 对话 / Agent、设置、中英 i18n。
 - 主要边界：电费 / 校园卡充值、体育下单 / 支付、选课 / 退课、邮件附件下载、
-  后台监控 / 通知、AI 治理 UI、个人日程 UI 等尚未迁移。
+  后台监控 / 通知、AI 治理 UI、个人日程 UI 等尚未迁移；其中支付、体育写操作、
+  选课 / 退课已纳入 `harmony-v0.2.0` 计划。
 - 功能级进度与证据：`docs/RN-FEATURE-SYNC.md`
+- 实施计划与交接提示词：`docs/RN-FEATURE-SYNC-PLAN.md`
 - 任务级进度：`harmony/specs/INDEX.md`
 - 实现说明与已知限制：`harmony/DEVELOPMENT.md`
 

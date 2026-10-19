@@ -1111,6 +1111,35 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'campus.dormitory.colAfter': { zh: '充值后', en: 'After' },
   'campus.dormitory.colOperator': { zh: '操作员', en: 'Operator' },
   'campus.dormitory.colNote': { zh: '备注', en: 'Note' },
+
+  // ── 支付基础设施（payment.*，T02）──
+  'payment.error.invalidCode': { zh: '支付码无效，请重试', en: 'Payment code is invalid. Please try again.' },
+  'payment.error.alipayNotInstalled': {
+    zh: '未检测到支付宝，请先安装支付宝后重试',
+    en: 'Alipay was not found. Install Alipay and try again.'
+  },
+  'payment.error.launchFailed': { zh: '打开支付宝失败，请重试', en: 'Could not open Alipay. Please try again.' },
+  'payment.error.unsupported': {
+    zh: '当前设备不支持外部支付链接',
+    en: 'This device does not support external payment links.'
+  },
+  'payment.link.ready': { zh: '支付链接已生成', en: 'Payment link is ready.' },
+  'payment.launch.opened': { zh: '已请求打开支付宝，请完成支付', en: 'Alipay was opened. Complete payment there.' },
+  'payment.return.refreshing': {
+    zh: '已返回 CampusOS，正在刷新余额与记录…',
+    en: 'Back in CampusOS. Refreshing balance and records…'
+  },
+  'payment.return.unconfirmed': {
+    zh: '未确认支付结果。若已完成支付，请刷新查看；若未支付，可重试。',
+    en: 'Payment is not confirmed. Refresh if you paid; retry if you did not.'
+  },
+  'payment.diag.section': { zh: '支付通道自检（仅调试）', en: 'Payment channel diagnostics (debug)' },
+  'payment.diag.probe': { zh: '探测支付宝', en: 'Check Alipay' },
+  'payment.diag.openTest': { zh: '打开支付宝测试链接', en: 'Open Alipay test link' },
+  'payment.diag.available': { zh: '支付宝可用', en: 'Alipay is available' },
+  'payment.diag.notInstalled': { zh: '未检测到支付宝', en: 'Alipay was not found' },
+  'payment.diag.noPayment': { zh: '此操作不会发起支付', en: 'This does not start a payment' },
+  'payment.diag.returned': { zh: '已收到支付回读事件', en: 'Payment return event received' },
 };
 
 export class I18n {

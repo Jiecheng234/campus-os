@@ -7,6 +7,8 @@ import { runPhase4SelfTest } from '../utils/Phase4SelfTest';
 import { PreferencesStorage } from '../storage/PreferencesStorage';
 import { SettingsManager } from '../state/SettingsManager';
 import { I18n } from '../utils/I18n';
+import { AlipayPaymentService } from '../services/payment/AlipayPaymentService';
+import { runPaymentSelfTest } from '../services/payment/PaymentSelfTest';
 
 const DOMAIN = 0xCAFE;
 
@@ -74,6 +76,11 @@ export default class EntryAbility extends UIAbility {
         }
         hilog.info(DOMAIN, 'CampusOS', 'Content loaded successfully.');
         runPhase4SelfTest();
+        runPaymentSelfTest().then((paymentFailures: number): void => {
+          hilog.info(DOMAIN, 'CampusOS', 'Payment self-test failures: %{public}d', paymentFailures);
+        }).catch((error: BusinessError): void => {
+          hilog.error(DOMAIN, 'CampusOS', 'Payment self-test failed to run code=%{public}d', error.code);
+        });
       });
     });
   }
@@ -84,6 +91,8 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, 'CampusOS', 'CampusOS onForeground');
+    // 从支付宝返回时投递一次性支付回读事件；无 pending 时为零次。
+    AlipayPaymentService.notifyForeground();
     // TODO(Phase 6): Trigger workflow checks on foreground (migrate from AppState listener)
     // Equivalent to: AppState.addEventListener('change', 'active') => runWorkflowChecks()
   }

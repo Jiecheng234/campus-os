@@ -17,7 +17,7 @@
  */
 import { Theme, SafeTop, Space, Radius, FontSize } from './Theme';
 import { ScreenHeader, SectionHeader, InfoRow } from '../components/Ui';
-import { bundleManager } from '@kit.AbilityKit';
+import { bundleManager, common } from '@kit.AbilityKit';
 import { SettingsManager, AIProviderSettings } from '../state/SettingsManager';
 import { AuthManager } from '../state/AuthManager';
 import { SessionManager } from '../services/auth/SessionManager';
@@ -26,6 +26,20 @@ import { LocalDataCleaner } from '../storage/LocalDataCleaner';
 import { ApiKeyStore } from '../services/ai/ApiKeyStore';
 import { LLMService, LLMProviderPreset } from '../services/ai/LLMService';
 import { I18n } from '../utils/I18n';
+import {
+  AlipayPaymentService,
+  CampusPaymentI18n,
+  CampusPaymentLaunchResult,
+  CampusPaymentProbeResult,
+  CampusPaymentReturnEvent,
+  CampusPaymentReturnSubscription,
+  CampusPaymentStatus,
+  CampusPaymentSubsystem
+} from '../services/payment/AlipayPaymentService';
+import BuildProfile from 'BuildProfile';
+
+/** 调试自检固定测试码：只验证外跳链路，不发起真实支付。 */
+const PAYMENT_TEST_CODE: string = 'campusosdebug';
 
 /** 导航行：label + 右侧值 + › */
 @Component
@@ -127,6 +141,12 @@ export struct SettingsPage {
   @State accountStudentId: string = '';
   @State versionName: string = '';
 
+  // ── 支付通道自检（仅 debug 构建渲染）──
+  @State paymentProbeChecked: boolean = false;
+  @State paymentProbeAvailable: boolean = false;
+  @State paymentReturnText: string = '';
+  private paymentReturnSub: CampusPaymentReturnSubscription | null = null;
+
   // ── AI 模型配置（ai-chat 特性）──
   @State aiPreset: string = 'openai';
   @State aiBaseUrl: string = '';
@@ -143,6 +163,11 @@ export struct SettingsPage {
     this.loadAccountStudentId();
     this.loadVersionInfo();
     this.loadAIConfig();
+    this.subscribePaymentReturn();
+  }
+
+  aboutToDisappear(): void {
+    this.unsubscribePaymentReturn();
   }
 
   /**
@@ -521,6 +546,64 @@ export struct SettingsPage {
     }
   }
 
+  // ============================================================
+  // 支付通道自检（仅 debug）：只验证探测与外跳，不发起支付
+  // ============================================================
+
+  private paymentProbeValue(): string {
+    if (!this.paymentProbeChecked) {
+      return '';
+    }
+    return this.paymentProbeAvailable
+      ? this.tr(CampusPaymentI18n.DIAG_AVAILABLE)
+      : this.tr(CampusPaymentI18n.DIAG_NOT_INSTALLED);
+  }
+
+  private handlePaymentProbe(): void {
+    const probe: CampusPaymentProbeResult = AlipayPaymentService.probe();
+    this.paymentProbeChecked = true;
+    this.paymentProbeAvailable = probe.available;
+    this.showToast(this.tr(probe.messageKey));
+  }
+
+  private handlePaymentTestLink(): void {
+    const context: common.UIAbilityContext =
+      this.getUIContext().getHostContext() as common.UIAbilityContext;
+    AlipayPaymentService.launch(context, PAYMENT_TEST_CODE, CampusPaymentSubsystem.DIAGNOSTICS, 0)
+      .then((result: CampusPaymentLaunchResult): void => {
+        if (result.status === CampusPaymentStatus.LAUNCHED) {
+          this.showToast(this.tr(CampusPaymentI18n.DIAG_NO_PAYMENT));
+        } else {
+          this.showToast(this.tr(result.messageKey));
+        }
+      })
+      .catch((): void => {
+        this.showToast(this.tr(CampusPaymentI18n.ERROR_LAUNCH_FAILED));
+      });
+  }
+
+  private subscribePaymentReturn(): void {
+    if (!BuildProfile.DEBUG) {
+      return;
+    }
+    this.paymentReturnSub = AlipayPaymentService.subscribeReturn(
+      (event: CampusPaymentReturnEvent): void => {
+        // 诊断分组只展示本入口发起的测试外跳；文案全部走 i18n。
+        if (event.intent.subsystem === CampusPaymentSubsystem.DIAGNOSTICS) {
+          this.paymentReturnText = this.tr(CampusPaymentI18n.DIAG_RETURNED);
+          this.showToast(this.tr(CampusPaymentI18n.DIAG_RETURNED));
+        }
+      }
+    );
+  }
+
+  private unsubscribePaymentReturn(): void {
+    if (this.paymentReturnSub !== null) {
+      AlipayPaymentService.unsubscribeReturn(this.paymentReturnSub);
+      this.paymentReturnSub = null;
+    }
+  }
+
   build() {
     Scroll() {
       Column() {
@@ -748,6 +831,55 @@ export struct SettingsPage {
         .backgroundColor(Theme.surface)
         .border({ width: 1, color: Theme.borderSubtle })
         .margin({ left: Space.lg, right: Space.lg })
+
+        // ── 支付通道自检（仅 debug 构建；release 不渲染）──
+        if (BuildProfile.DEBUG) {
+          SectionHeader({ title: this.tr(CampusPaymentI18n.DIAG_SECTION) })
+            .padding({ left: Space.lg, right: Space.lg })
+
+          Column() {
+            SettingRow({
+              label: this.tr(CampusPaymentI18n.DIAG_PROBE),
+              value: this.paymentProbeValue(),
+              onItemClick: () => { this.handlePaymentProbe(); }
+            })
+            Divider().color(Theme.divider)
+              .width('100%')
+              .constraintSize({ maxWidth: '100%' })
+              .margin({ left: Space.md })
+            Column() {
+              Button(this.tr(CampusPaymentI18n.DIAG_OPEN_TEST))
+                .type(ButtonType.Capsule)
+                .height(40)
+                .fontSize(FontSize.body)
+                .fontColor(Theme.textInvert)
+                .backgroundColor(Theme.primary)
+                .width('100%')
+                .onClick(() => { this.handlePaymentTestLink(); })
+              Text(this.tr(CampusPaymentI18n.DIAG_NO_PAYMENT))
+                .fontSize(FontSize.micro)
+                .fontColor(Theme.textMuted)
+                .width('100%')
+                .margin({ top: Space.sm })
+              if (this.paymentReturnText.length > 0) {
+                Text(this.paymentReturnText)
+                  .fontSize(FontSize.caption)
+                  .fontColor(Theme.success)
+                  .width('100%')
+                  .margin({ top: Space.sm })
+              }
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+            .padding({ left: Space.md, right: Space.md, top: Space.md, bottom: Space.md })
+          }
+          .width('100%')
+          .constraintSize({ maxWidth: '100%' })
+          .borderRadius(Radius.lg)
+          .backgroundColor(Theme.surface)
+          .border({ width: 1, color: Theme.borderSubtle })
+          .margin({ left: Space.lg, right: Space.lg })
+        }
 
         // ── 功能组 ──
         SectionHeader({ title: this.tr('settings.sectionFeatures') })
