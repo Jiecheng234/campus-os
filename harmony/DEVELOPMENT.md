@@ -391,6 +391,16 @@ AI 页从本地 mock 应答升级为**真实 OpenAI 兼容 LLM 流式对话**。
 - **已知限制**：不信任设备时**每次启动都需重新登录**（预期行为）；"信任"仅控制本机凭证落盘，不与服务端 2FA 策略/指纹复用联动（见"其他待办"）。
 - **与参考实现的对照结论**：原 React 项目（`src/services/auth/tsinghuaAuth.ts`）**未实现本能力**——其 `trustDevice` 参数仅控制 2FA 成功后是否调服务端 `saveFinger` 收藏"可信浏览器"（服务端指纹白名单，另一概念）；本特性的"登录页信任开关＋本机凭证落盘门控＋取消信任清理＋会话门控"在参考实现中均不存在，为 HarmonyOS 端新增能力。
 
+### 课表交互增强：时间指示线 / 课程详情 / 16 色（2026-10-18）
+
+在 `schedule-visual` 块状课表之上追加三项交互能力（设计文档 `harmony/specs/schedule-interaction/`），不新增网络请求、不改动 `CampusDataService.ScheduleEvent`。
+
+- **课程详情弹层（US1）**：课程块 `onClick` → 组件 `onBlockSelect(block)` 回调（普通成员，默认空实现）→ 页面根节点**唯一** `bindSheet`（`$$this.detailVisible` 双向绑定，`showClose` + `dragBar: false` + `onWillDismiss` 拦截 `SLIDE_DOWN`（仅关闭按钮/遮罩/返回键可关），高 360、内容区 `Scroll` 可滚动，`onDisappear` 清空 `detailBlock`）；六项信息＝课程名/地点/日期（`schedule.dateMd` 格式化）/星期（`schedule.day0-6`）/节次区间（1 基，`schedule.detail.periodRange` 经 `tp` 占位 `{start}`/`{end}`）/起止时间（`endTime` 为空只显示 `startTime`）；地点空/纯空白显示 `schedule.detail.noLocation`（未填写/Not set）；关闭后周次、滚动位置、配色不变。`ScheduleBlock` 新增 `date`/`startTime`/`endTime` 展示字段（页面映射阶段填充，演示数据同构补齐）。
+- **当前时间指示线（US2）**：换算规则＝`scheduleNowLineOffset(nowMinuteOfDay, cellHeight)`（ScheduleGrid 导出，与时间轴同源解析 `SCHEDULE_PERIOD_STARTS/ENDS` 为分钟）——早于 08:00 或晚于 21:45 → 隐藏；落在大节内 → `periodIndex × cellHeight + 节内时间比例 × cellHeight`；课间间隔 → 吸附到下一节上边界（= 前一大节索引+1）。渲染＝仅 `todayIndex` 日列内 `Stack({ alignContent: Alignment.TopStart })` 叠加"左端圆点 + 2vp 横线"（`Theme.error` 红），`.offset({ y })` 定位、`.hitTestBehavior(HitTestMode.None)` 不挡课程点击；不自动滚动。页面 `aboutToAppear` 启动 60s `setInterval`（`aboutToDisappear` 清理），`todayIndex` 仅 `weekOffset === 0` 时为 `(getDay()+6)%7`（切周立即经 `loadWeek` 内 `recomputeNowState()` 失效/生效）；仅在跨大节或进入隐藏态时打一条 `NOW_LINE day/minute/offset` 日志（tag `SchedAct`），每分钟不重复。
+- **16 色与冲突顺延（US3）**：`SCHEDULE_PALETTE` 8 → 16 组（新增 柠绿/湖蓝/正蓝/靛蓝/洋红/玫红/红/棕，按色相环补齐，浅底 + 深字 + 同系边框，与既有 8 组不重复）；配色改**两段式**——先映射全部块，再 `assignScheduleColorIndexes(titles)`（去重 → 字典序 → `scheduleColorIndexForTitle` 散列基址 → 已占用线性探测下一空闲色）统一回填 `colorIndex`；本周不同课名 ≤16 零撞色、同名同色、未冲突课程跨周稳定；>16 门剩余回落基址并打一次 `COLOR_OVERFLOW` 告警（tag `SchedGrid`）。真实数据与 `getMockBlocks` 演示数据共用 `applyScheduleColors` 同一分配逻辑。
+- **i18n**：新增 `schedule.detail.*` 7 键（zh/en，含 `periodRange` 占位符），复用既有 `schedule.location`/`schedule.day0-6`；无硬编码中文。
+- **已知边界**：非 `@Entry` 组件无 `onPageShow`，"页面重新可见立即重算"由 60s 计时器覆盖（最长 1 分钟滞后）。`scheduleColorIndexForTitle` 保留导出作为散列基址函数（供分配算法与后续复用）。
+
 ### 其他待办
 
 - 体测上游缺陷跟进（JSONP 括号包裹响应，待上游修复后复验）

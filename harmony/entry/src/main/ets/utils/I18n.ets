@@ -307,6 +307,15 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'schedule.day5': { zh: '六', en: 'Sat' },
   'schedule.day6': { zh: '日', en: 'Sun' },
 
+  // ── 课表交互增强（schedule.detail.*，第三批追加；periodRange 用 tp 的 {start}/{end} 占位符，1 基节次）──
+  'schedule.detail.title': { zh: '课程详情', en: 'Class details' },
+  'schedule.detail.date': { zh: '日期', en: 'Date' },
+  'schedule.detail.weekday': { zh: '星期', en: 'Weekday' },
+  'schedule.detail.periods': { zh: '节次', en: 'Periods' },
+  'schedule.detail.time': { zh: '时间', en: 'Time' },
+  'schedule.detail.periodRange': { zh: '第 {start}–{end} 节', en: 'Periods {start}–{end}' },
+  'schedule.detail.noLocation': { zh: '未填写', en: 'Not set' },
+
   'settings.eyebrow': { zh: 'SETTINGS', en: 'SETTINGS' },
   'settings.title': { zh: '设置', en: 'Settings' },
   'settings.statusDemo': { zh: '演示模式', en: 'Demo mode' },

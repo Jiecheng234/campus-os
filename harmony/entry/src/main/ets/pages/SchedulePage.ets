@@ -9,7 +9,7 @@
  */
 import { Theme, SafeTop, Space, Radius, FontSize } from './Theme';
 import { ScreenHeader } from '../components/Ui';
-import { ScheduleGrid, ScheduleBlock, scheduleColorIndexForTitle, SCHEDULE_PERIOD_STARTS, SCHEDULE_PERIOD_ENDS, SCHEDULE_PERIOD_COUNT } from '../components/ScheduleGrid';
+import { ScheduleGrid, ScheduleBlock, assignScheduleColorIndexes, scheduleNowLineOffset, SCHEDULE_PERIOD_STARTS, SCHEDULE_PERIOD_ENDS, SCHEDULE_PERIOD_COUNT } from '../components/ScheduleGrid';
 import { SessionManager } from '../services/auth/SessionManager';
 import { CampusDataService, ScheduleEvent } from '../services/campus/CampusDataService';
 import { AuthManager } from '../state/AuthManager';
@@ -18,6 +18,10 @@ import { Log } from '../utils/Logger';
 import { I18n } from '../utils/I18n';
 
 const MAX_WEEK_OFFSET: number = 12;
+/** 网格单大节单元高度（vp；与 ScheduleGrid cellHeight 同值） */
+const GRID_CELL_HEIGHT: number = 72;
+/** 时间线刷新间隔（ms）：每分钟重算当前时刻 */
+const NOW_TICK_INTERVAL_MS: number = 60000;
 /** 各大节结束时间（分钟）：09:35 / 12:15 / 15:05 / 16:55 / 18:40 / 21:45（结束节次判定 + 与时间轴同源） */
 const PERIOD_END_MINUTES: number[] = [575, 735, 905, 1015, 1120, 1305];
 
@@ -59,7 +63,7 @@ function endPeriodIndex(endMin: number, startIdx: number): number {
 }
 
 /** 演示示例（与真实数据同构的块模型；含跨两节/空地点/长地点等边界样例） */
-function getMockBlocks(): ScheduleBlock[] {
+function getMockBlocks(monday: Date): ScheduleBlock[] {
   const defs: string[][] = [
     ['0', '0', '1', '高等数学(1)', '第六教学楼6A118'],
     ['0', '2', '2', '线性代数', '六教6A215'],
@@ -78,8 +82,30 @@ function getMockBlocks(): ScheduleBlock[] {
     b.endPeriod = Number(defs[i][2]);
     b.title = defs[i][3];
     b.location = defs[i][4];
-    b.colorIndex = scheduleColorIndexForTitle(b.title);
+    // 与真实数据同构：日期 = 当周周一 + dayIndex；起止时间取对应大节起止
+    const d: Date = addDays(monday, b.dayIndex);
+    b.date = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    b.startTime = SCHEDULE_PERIOD_STARTS[b.startPeriod];
+    b.endTime = SCHEDULE_PERIOD_ENDS[b.endPeriod];
     blocks.push(b);
+  }
+  return applyScheduleColors(blocks);
+}
+
+/**
+ * 两段式配色第二段：对整周课程块统一分配 colorIndex（真实/演示共用同一逻辑）。
+ * 先映射全部块，再按「课名去重 → 字典序 → 散列基址 → 线性探测顺延」回填，
+ * 保证本周不同课名（≤16）零撞色、同名同色、未冲突课程跨周稳定。
+ */
+function applyScheduleColors(blocks: ScheduleBlock[]): ScheduleBlock[] {
+  const titles: string[] = [];
+  for (let i: number = 0; i < blocks.length; i++) {
+    titles.push(blocks[i].title);
+  }
+  const colorMap: Map<string, number> = assignScheduleColorIndexes(titles);
+  for (let i: number = 0; i < blocks.length; i++) {
+    const idx: number | undefined = colorMap.get(blocks[i].title);
+    blocks[i].colorIndex = idx !== undefined ? idx : 0;
   }
   return blocks;
 }
@@ -130,6 +156,52 @@ export struct SchedulePage {
   @State dateLabels: string[] = [];
   @State loading: boolean = false;
   @State hint: string = '';
+  /** 详情弹层：是否展开（bindSheet $$ 双向绑定） */
+  @State detailVisible: boolean = false;
+  /** 详情弹层：当前选中的课程块（关闭时清空） */
+  @State detailBlock: ScheduleBlock | null = null;
+  /** 当前时刻距 0 点的分钟数（-1 = 未初始化；驱动时间指示线） */
+  @State nowMinuteOfDay: number = -1;
+  /** 今天所在日列下标 0-6（仅 weekOffset === 0 有效，否则 -1 不显示指示线） */
+  @State todayIndex: number = -1;
+  /** 时间线 60s 计时器句柄（aboutToDisappear 清理） */
+  private nowTimerId: number = -1;
+  /** NOW_LINE 日志去重键：仅跨大节/进入隐藏态时输出，避免每分钟一条 */
+  private lastNowLineLogKey: string = '';
+
+  /** 立即重算当前时刻与今日列索引；仅在指示线状态跨大节变化时输出一条换算日志 */
+  private recomputeNowState(): void {
+    const now: Date = new Date();
+    this.nowMinuteOfDay = now.getHours() * 60 + now.getMinutes();
+    this.todayIndex = this.weekOffset === 0 ? (now.getDay() + 6) % 7 : -1;
+    if (this.todayIndex < 0) {
+      this.lastNowLineLogKey = '';
+      return;
+    }
+    const offset: number = scheduleNowLineOffset(this.nowMinuteOfDay, GRID_CELL_HEIGHT);
+    const logKey: string = String(this.todayIndex) + ':'
+      + (offset >= 0 ? String(Math.min(5, Math.floor(offset / GRID_CELL_HEIGHT))) : 'hidden');
+    if (logKey !== this.lastNowLineLogKey) {
+      this.lastNowLineLogKey = logKey;
+      Log.i('SchedAct', 'NOW_LINE day=%{public}d minute=%{public}d offset=%{public}s',
+        this.todayIndex, this.nowMinuteOfDay, offset.toFixed(1));
+    }
+  }
+
+  /** 启动时间线计时器：立即重算一次 + 每 60s 刷新 */
+  private startNowTicker(): void {
+    this.recomputeNowState();
+    this.nowTimerId = setInterval((): void => {
+      this.recomputeNowState();
+    }, NOW_TICK_INTERVAL_MS);
+  }
+
+  aboutToDisappear(): void {
+    if (this.nowTimerId >= 0) {
+      clearInterval(this.nowTimerId);
+      this.nowTimerId = -1;
+    }
+  }
 
   /** 当周周一 → 7 个日列日期标签（MM-DD，随周导航更新） */
   private buildDateLabels(monday: Date): string[] {
@@ -160,12 +232,13 @@ export struct SchedulePage {
   }
 
   aboutToAppear(): void {
+    this.startNowTicker();
     if (AuthManager.isLoggedIn() && !StateManager.isDemoMode()) {
       this.loadWeek(0);
       return;
     }
     const monday: Date = mondayOf(new Date());
-    this.blocks = getMockBlocks();
+    this.blocks = getMockBlocks(monday);
     this.dateLabels = this.buildDateLabels(monday);
     this.rangeLabel = this.fmtDate(monday) + ' – ' + this.fmtDate(addDays(monday, 6));
     this.hint = 'schedule.demoHint';
@@ -174,6 +247,8 @@ export struct SchedulePage {
   /** 加载指定周（相对本周偏移）的课表 */
   private async loadWeek(offset: number): Promise<void> {
     this.weekOffset = offset;
+    // 切周后今日列立即失效/生效（不等下一次 60s 计时）
+    this.recomputeNowState();
     this.loading = true;
     this.hint = '';
     const monday: Date = addDays(mondayOf(new Date()), offset * 7);
@@ -248,10 +323,132 @@ export struct SchedulePage {
       block.endPeriod = endIdx;
       block.title = ev.title;
       block.location = ev.location;
-      block.colorIndex = scheduleColorIndexForTitle(ev.title);
+      block.date = ev.date.substring(0, 10);
+      block.startTime = ev.startTime;
+      block.endTime = ev.endTime;
       blocks.push(block);
     }
-    return blocks;
+    return applyScheduleColors(blocks);
+  }
+
+  // ── 课程详情弹层（US1）：取值方法（detailBlock 空安全兜底，文案全部走词典） ──
+
+  private detailTitleText(): string {
+    return this.detailBlock !== null ? this.detailBlock.title : '';
+  }
+
+  /** 详情日期：YYYY-MM-DD → 按语言格式化；解析失败原样展示 */
+  private detailDateText(): string {
+    const b: ScheduleBlock | null = this.detailBlock;
+    if (b === null) {
+      return '';
+    }
+    if (b.date.length >= 10) {
+      const d: Date = new Date(b.date.substring(0, 10) + 'T00:00:00');
+      if (!isNaN(d.getTime())) {
+        return this.fmtDate(d);
+      }
+    }
+    return b.date;
+  }
+
+  /** 星期：schedule.day0-6（周一为 0） */
+  private detailWeekdayText(): string {
+    const b: ScheduleBlock | null = this.detailBlock;
+    if (b === null || b.dayIndex < 0 || b.dayIndex > 6) {
+      return '';
+    }
+    return this.tr('schedule.day' + String(b.dayIndex));
+  }
+
+  /** 节次区间（1 基）：第 {start}–{end} 节 */
+  private detailPeriodText(): string {
+    const b: ScheduleBlock | null = this.detailBlock;
+    if (b === null) {
+      return '';
+    }
+    return this.trp('schedule.detail.periodRange',
+      { 'start': String(b.startPeriod + 1), 'end': String(b.endPeriod + 1) });
+  }
+
+  /** 起止时间：endTime 为空时只显示 startTime */
+  private detailTimeText(): string {
+    const b: ScheduleBlock | null = this.detailBlock;
+    if (b === null) {
+      return '';
+    }
+    if (b.endTime.trim().length === 0) {
+      return b.startTime;
+    }
+    return b.startTime + ' – ' + b.endTime;
+  }
+
+  /** 地点：空/纯空白 → 「未填写」占位 */
+  private detailLocationText(): string {
+    const b: ScheduleBlock | null = this.detailBlock;
+    if (b === null) {
+      return '';
+    }
+    const loc: string = b.location.trim();
+    return loc.length > 0 ? loc : this.tr('schedule.detail.noLocation');
+  }
+
+  @Builder
+  private DetailRowBuilder(label: string, value: string) {
+    Row() {
+      Text(label)
+        .fontSize(FontSize.caption)
+        .fontColor(Theme.textMuted)
+        .width(76)
+      Text(value)
+        .fontSize(FontSize.body)
+        .fontColor(Theme.text)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
+  }
+
+  @Builder
+  private DetailSheetBuilder() {
+    // 内容区可滚动：360vp 固定高度下，超长课程名/地点仍可完整查看
+    Scroll() {
+      Column() {
+        // 弹层标题区：小标签 + 课程名（完整展示，不截断）
+        Column({ space: Space.xs }) {
+          Text(this.tr('schedule.detail.title'))
+            .fontSize(FontSize.micro)
+            .fontColor(Theme.textMuted)
+          Text(this.detailTitleText())
+            .fontSize(FontSize.h2)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Theme.text)
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Center)
+        .padding({ top: Space.lg, bottom: Space.md })
+
+        Divider()
+          .color(Theme.divider)
+
+        // 详情字段：日期 / 星期 / 节次 / 时间 / 地点
+        Column({ space: Space.md }) {
+          this.DetailRowBuilder(this.tr('schedule.detail.date'), this.detailDateText())
+          this.DetailRowBuilder(this.tr('schedule.detail.weekday'), this.detailWeekdayText())
+          this.DetailRowBuilder(this.tr('schedule.detail.periods'), this.detailPeriodText())
+          this.DetailRowBuilder(this.tr('schedule.detail.time'), this.detailTimeText())
+          this.DetailRowBuilder(this.tr('schedule.location'), this.detailLocationText())
+        }
+        .width('100%')
+        .padding({ left: Space.lg, right: Space.lg, top: Space.md, bottom: Space.lg })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .height('100%')
+    .align(Alignment.Top)
+    .scrollBar(BarState.Off)
   }
 
   build() {
@@ -356,7 +553,13 @@ export struct SchedulePage {
           axisLabels: this.axisLabelList(),
           dayLabels: this.dayLabelList(),
           dateLabels: this.dateLabels,
-          cellHeight: 72,
+          cellHeight: GRID_CELL_HEIGHT,
+          todayIndex: this.todayIndex,
+          nowMinuteOfDay: this.nowMinuteOfDay,
+          onBlockSelect: (block: ScheduleBlock): void => {
+            this.detailBlock = block;
+            this.detailVisible = true;
+          },
         })
       }
       .layoutWeight(1)
@@ -367,5 +570,21 @@ export struct SchedulePage {
     .width('100%')
     .height('100%')
     .backgroundColor(Theme.surface)
+    // 课程详情底部弹层（唯一 bindSheet；$$ 双向绑定关闭，onDisappear 清空选中块）
+    .bindSheet($$this.detailVisible, this.DetailSheetBuilder(), {
+      height: 360,
+      dragBar: false,
+      showClose: true,
+      // 仅禁用下滑关闭；关闭按钮 / 点击遮罩 / 返回键仍可关闭
+      onWillDismiss: (dismissAction: DismissSheetAction) => {
+        if (dismissAction.reason !== DismissReason.SLIDE_DOWN) {
+          dismissAction.dismiss();
+        }
+      },
+      onDisappear: () => {
+        this.detailBlock = null;
+        this.detailVisible = false;
+      },
+    })
   }
 }

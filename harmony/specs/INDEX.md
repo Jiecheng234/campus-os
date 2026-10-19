@@ -22,13 +22,14 @@
 | 9 | library-room | `specs/library-room/` | 18/18 | ✅ 完成 |
 | 10 | library-room-booking | `specs/library-room-booking/` | 14/14 | ✅ 完成 |
 | 11 | library-seat | `specs/library-seat/` | 24/24 | ✅ 完成 |
-| 12 | schedule-visual | `specs/schedule-visual/` | 20/20 | ✅ 完成 |
-| 13 | secure-credential-store | `specs/secure-credential-store/` | 14/14 | ✅ 完成 |
-| 14 | session-reset-unification | `specs/session-reset-unification/` | 20/20 | ✅ 完成 |
-| 15 | settings-integration | `specs/settings-integration/` | 24/24 | ✅ 完成 |
-| 16 | sports-booking | `specs/sports-booking/` | 20/20 | ✅ 完成 |
-| 17 | trust-device | `specs/trust-device/` | 20/20 | ✅ 完成 |
-| — | **合计** | 17 个 feature | **350 / 359** | 97.5% |
+| 12 | schedule-interaction | `specs/schedule-interaction/` | 26/26 | ✅ 完成 |
+| 13 | schedule-visual | `specs/schedule-visual/` | 20/20 | ✅ 完成 |
+| 14 | secure-credential-store | `specs/secure-credential-store/` | 14/14 | ✅ 完成 |
+| 15 | session-reset-unification | `specs/session-reset-unification/` | 20/20 | ✅ 完成 |
+| 16 | settings-integration | `specs/settings-integration/` | 24/24 | ✅ 完成 |
+| 17 | sports-booking | `specs/sports-booking/` | 20/20 | ✅ 完成 |
+| 18 | trust-device | `specs/trust-device/` | 20/20 | ✅ 完成 |
+| — | **合计** | 18 个 feature | **376 / 385** | 97.7% |
 
 > 完成度来自各 `tasks.md` 的 `- [X]` / `- [ ]` 计数，可随时重算。
 
