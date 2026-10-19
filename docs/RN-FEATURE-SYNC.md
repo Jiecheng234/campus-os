@@ -1,8 +1,8 @@
 # RN → HarmonyOS 功能同步进度
 
-**RN 基线**：v2.1.1（`src/` + `android/`），上游 `a2dbb9f`（2026-07-11）后冻结。  
-**Harmony 基线**：`11af855`（2026-10-19），18 个 SDD feature，任务 **328 / 328**。  
-**最后更新**：2026-10-19
+- **RN 基线**：v2.1.1（`src/` + `android/`），上游 `a2dbb9f`（2026-07-11）后冻结。
+- **Harmony 代码基线**：`11af855`（2026-10-19），18 个 SDD feature，任务 **328 / 328**。
+- **最后更新**：2026-10-19
 
 > 本文件记录**功能层**同步进度；SDD 任务层进度见 `harmony/specs/INDEX.md`，
 > 上游仓库同步见 `docs/UPSTREAM-SYNC.md`，实现细节与已知限制见 `harmony/DEVELOPMENT.md`。
@@ -171,10 +171,12 @@
 
 ## 5. 维护流程
 
+> 维护规则同时写入 `harmony/AGENTS.md` 的“RN 功能同步进度”小节；本文件是执行记录。
+
 1. **RN 侧冻结**：`src/`、`android/` 默认不改；确需改动时先按 `docs/UPSTREAM-SYNC.md` 的 `[shared]` 流程处理。
 2. **上游新增功能**：先在 `docs/UPSTREAM-SYNC.md` 登记，再在本文件新增/更新对应行，最后在 `harmony/specs/INDEX.md` 建 spec。
 3. **Harmony 功能完成**：以源码行为为准更新本文件；不要只凭 `tasks.md` 复选框把状态改成 ✅。
-4. **每次更新**：修改顶部“最后更新”，并在第 7 节追加一行变更记录。
+4. **每次更新**：修改顶部“最后更新”，并在第 8 节追加一行变更记录。
 5. **证据要求**：每行状态应能指向页面/服务/Manager 路径；无法指向源码的能力按“未迁移/未确认”处理。
 
 ---
@@ -191,13 +193,66 @@
 | 设置页未支持项 | `harmony/entry/src/main/ets/pages/SettingsPage.ets` |
 | SDD 任务进度 | `harmony/specs/INDEX.md` |
 | 开发进展/限制 | `harmony/DEVELOPMENT.md` |
+| 维护约定 | `harmony/AGENTS.md`（“RN 功能同步进度”小节） |
 | 上游同步 | `docs/UPSTREAM-SYNC.md` |
 | RN 基线 | `src/app/navigation/AppNavigator.tsx`、`src/services/ai/tools.ts`、`android/app/src/main/java/com/campusos/` |
 
 ---
 
-## 7. 变更记录
+## 7. 达成功能同步的实施顺序
+
+> 目标：把本文件中的 ⛔/🟡 行清零；确实不做的能力（支付/选课等）由产品决策后标为 ➖，
+> 并在本节记录理由。每个阶段完成后更新第 3 节矩阵与第 8 节变更记录。
+> 工期为单人粗估，仅用于排期，不含需求评审与真机等待时间。
+
+### Phase 0：范围决策与验收口径（1–2 天）
+
+1. 产品决策：电费/校园卡充值、体育下单、选课/退课、课程评估是否纳入本轮。
+2. 对不纳入的能力，在矩阵中标 ➖ 并写明“产品决策不做”，而不是留 ⛔。
+3. 定义每个模块的“功能等价”验收项，写入对应 `spec.md`。
+4. 建立里程碑 `harmony-v0.2.0`（或按实际版本）。
+
+### Phase 1：低风险只读/详情补齐（约 5–8 人日）
+
+1. 学习详情深链：课程聚合、通知正文、资料下载/预览、手动 DDL 持久化。
+2. 个人日程 UI：新增/编辑/删除，展示 AI 写入 Preferences 的个人事件。
+3. 天气详情页、成绩研究生切换、健康打卡/报修入口。
+4. 邮件附件下载（复用 `MailService` 的 MIME 解析结果）。
+5. App 内文件预览/打开补全。
+
+### Phase 2：AI 治理与平台能力（约 8–12 人日）
+
+1. AI 权限 UI（复用 `disabledPermissions`）。
+2. AI 操作记录持久化 + 设置页入口。
+3. AI 记忆管理页。
+4. `WorkflowEngine` 执行器 + 监控 UI（预设/启停/立即检查/免打扰）。
+5. 本地通知接入 + 后台调度等价方案（`workScheduler` / `reminderAgent` /
+   `backgroundTaskManager`，按系统限制选型）。
+6. 缓存新鲜度页。
+
+### Phase 3：高风险写操作（需产品决策，约 8–15 人日）
+
+1. 电费/校园卡充值：支付宝外跳 + 回执/验证 + 失败兜底。
+2. 体育预约/支付/退订：先补服务层，再决定 UI/AI 暴露。
+3. 选课/退课：先补 `CourseRegService`，再接入 AI 强确认链；不可逆操作必须有 verify。
+4. 课程评估：RN 也未完整接入，建议单独立项。
+
+### Phase 4：验证与发布（约 3–5 人日）
+
+1. 每个 feature 走 SDD：spec → plan → tasks → implementation → `spec-verify`。
+2. 逐故事 UI 验证；对 `verify_ui` 不可靠的动态行为改用日志 + 人工确认。
+3. 全量 `build` + `arkts` + `lint`；必要时 clean build。
+4. 更新本文件状态与证据，打 `harmony-v0.2.0` tag（附注 tag）。
+
+### 验收口径
+
+- 本文件第 3 节不再有 ⛔；🟡 要么升级为 ✅，要么有明确的产品决策/上游限制说明。
+- 每个 ✅ 行都能指向页面/服务/Manager 路径，并通过至少一次构建 + 对应 UI 验证。
+- `harmony/specs/INDEX.md` 的任务计数与 `tasks.md` 一致；本文件与 INDEX 不矛盾。
+
+## 8. 变更记录
 
 | 日期 | 变更 |
 |---|---|
 | 2026-10-19 | 初版：基于 `11af855` 与源码审计，记录 18 个 feature / 328 任务的同步状态与缺口 |
+| 2026-10-19 | 补充“达成功能同步的实施顺序”与 AGENTS.md 维护约定 |

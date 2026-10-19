@@ -1,6 +1,7 @@
 # Campus OS
 
-> 面向清华大学学生的 AI-native 校园操作系统（React Native 0.76 + TypeScript）。
+> 面向清华大学学生的 AI-native 校园操作系统。Android 版基于 React Native 0.76 + TypeScript；
+> HarmonyOS 版为纯 ArkTS 原生重写。
 
 [![Release](https://img.shields.io/github/v/release/yf-w23/campus-os?label=APK)](https://github.com/yf-w23/campus-os/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -8,7 +9,9 @@
 
 将课表、作业、成绩、教室、新闻动态、电费、校园卡、校园网、图书馆座位、AI 助手、AI 记忆、AI 工作流与主动监控整合到一个 App。主流程使用原生 UI；官方网页入口、富文本和附件预览使用 WebView。项目没有自建业务后端，账号凭证和 API Key 仅保存在设备安全存储中。
 
-**当前版本：v2.1.1** · [下载 APK](https://github.com/yf-w23/campus-os/releases/latest)
+**Android 版当前版本：v2.1.1** · [下载 APK](https://github.com/yf-w23/campus-os/releases/latest)
+
+**HarmonyOS 版当前版本：`harmony-v0.1.0`**（纯 ArkTS 原生重写，见 `harmony/`）
 
 ---
 
@@ -41,7 +44,38 @@ cd android
 # 产物：app/build/outputs/apk/release/app-release.apk
 ```
 
-依赖前置：Node 18+、JDK 17、Android SDK 与 NDK。仓库当前只维护 Android 工程。
+依赖前置：Node 18+、JDK 17、Android SDK 与 NDK。Android 工程位于仓库根目录；
+HarmonyOS 原生版位于 `harmony/`。
+
+---
+
+## HarmonyOS 原生版
+
+`harmony/` 是面向 HarmonyOS 的纯 ArkTS 原生重写版，不是 React Native 运行时；
+与 Android 版共享同一套清华校园协议与数据模型。
+
+### 当前状态
+
+- 18 个 SDD feature，任务 **328 / 328**（任务闭环，不代表功能完全等价）。
+- 已对齐：统一认证 / 2FA、六 Tab、学习列表、课表、校园 9 个子系统、
+  图书馆座位 / 研读间、体育只读、邮箱核心、AI 对话 / Agent、设置、中英 i18n。
+- 主要边界：电费 / 校园卡充值、体育下单 / 支付、选课 / 退课、邮件附件下载、
+  后台监控 / 通知、AI 治理 UI、个人日程 UI 等尚未迁移。
+- 功能级进度与证据：`docs/RN-FEATURE-SYNC.md`
+- 任务级进度：`harmony/specs/INDEX.md`
+- 实现说明与已知限制：`harmony/DEVELOPMENT.md`
+
+### 构建与运行
+
+前置：DevEco Studio、HarmonyOS SDK（API 24）、`devecocli`。
+
+```bash
+cd harmony
+devecocli build
+devecocli run --skip-build
+```
+
+> HarmonyOS 版当前使用 debug 签名，可侧载测试，不可直接上架应用市场。
 
 ---
 
@@ -58,6 +92,9 @@ cd android
 ## 功能一览
 
 底部六个 Tab：**首页 · 学习 · 日程 · 校园 · AI · 设置**。
+
+> 以下为 Android/RN 版功能基线；HarmonyOS 版的实际对齐情况见
+> [`docs/RN-FEATURE-SYNC.md`](docs/RN-FEATURE-SYNC.md)。
 
 ### 首页 `home`
 
@@ -150,6 +187,9 @@ src/
 └── utils/                # 日期、编码、HTML 工具
 ```
 
+> HarmonyOS 版目录结构见 `harmony/entry/src/main/ets/`
+> （`pages/` / `components/` / `state/` / `services/` / `storage/` / `domain/`）。
+
 ### 核心设计：AI-native OS
 
 ```
@@ -191,6 +231,8 @@ src/
 
 ## 已知限制
 
+### Android / RN 版
+
 - 仅支持 Android arm64-v8a
 - 课程评估、培养方案详情和新闻收藏 / 订阅管理尚未完整接入
 - 培养方案 adapter 仍是占位；新闻已在原生 UI 和 AI 只读工具中接入，但收藏、订阅与附件下载管理尚未开放
@@ -198,6 +240,12 @@ src/
 - 后台监控受 WorkManager、省电策略、网络和 WebVPN / 2FA 会话影响，无法保证固定的触发时刻
 - 邮箱仅 Android 原生 IMAP/SMTP 可用，需清华邮箱客户端专用密码；附件发送尚未接入系统文件选择器
 - 设备指纹信任过期后可能需再次完成 2FA
+
+### HarmonyOS 版
+
+- 已知限制与未同步项见 [`docs/RN-FEATURE-SYNC.md`](docs/RN-FEATURE-SYNC.md)；
+  构建与运行见上方“HarmonyOS 原生版”。
+- 当前使用 debug 签名，可侧载测试，不可直接上架应用市场。
 
 ---
 
@@ -220,6 +268,9 @@ npm run release:android
 ```
 
 发版前请遵循 [`docs/RELEASE.md`](docs/RELEASE.md) 的版本、测试、校验和签名检查。当前 Release APK 使用 debug keystore：可用于 GitHub APK 分发和测试，**不能作为应用商店正式分发包**。
+
+HarmonyOS 版构建见上方“HarmonyOS 原生版”；当前没有独立的 HarmonyOS Release Guide，
+发布记录见 `harmony-v0.1.0` tag 与 [`harmony/DEVELOPMENT.md`](harmony/DEVELOPMENT.md)。
 
 ---
 
