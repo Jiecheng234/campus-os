@@ -246,5 +246,5 @@ Task: "T011 [US4] HomePage emit site review in harmony/entry/src/main/ets/pages/
 - **并行机会**: T002 可并行于 US1 起步；T008 与 T009 可并行；T010/T011 可并行；T012 可并行
 - **独立测试标准**: US1 会话失效后重试自愈；US2 冷启动"查空教室"一次到位；US3 冷启动"添加 DDL"直达作业；US4 既有导航不回归
 - **建议 MVP 范围**: US1（P1）+ US2（P1）
-- **格式校验**: 所有任务 `- [ ]` 起始、ID 连续唯一、US 任务含 `[USx]` 标签、Setup/Foundational/Polish/Verification 无故事标签 ✅
+- **格式校验**: 任务行以 `- [ ]` 或 `- [X]` 起始、ID 连续唯一、US 任务含 `[USx]` 标签、Setup/Foundational/Polish/Verification 无故事标签 ✅
 - **Verification 范围**: `build+ui`（构建 + 部署 + UI 验证）
