@@ -1140,6 +1140,23 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'payment.diag.notInstalled': { zh: '未检测到支付宝', en: 'Alipay was not found' },
   'payment.diag.noPayment': { zh: '此操作不会发起支付', en: 'This does not start a payment' },
   'payment.diag.returned': { zh: '已收到支付回读事件', en: 'Payment return event received' },
+
+  // ── 选课系统错误（courseReg.error.*，T03 CourseRegService）──
+  'courseReg.error.notLoggedIn': { zh: '需要登录后才能访问选课系统', en: 'Please sign in to access course registration' },
+  'courseReg.error.sessionExpired': { zh: '选课系统会话已失效，请重新登录', en: 'Your course registration session has expired' },
+  'courseReg.error.network': { zh: '网络请求失败，请检查网络后重试', en: 'Network request failed. Please try again' },
+  'courseReg.error.http': { zh: '选课系统返回异常状态', en: 'The course registration service returned an error' },
+  'courseReg.error.parse': { zh: '选课系统响应格式异常', en: 'Unexpected course registration response' },
+  'courseReg.error.noSemester': { zh: '未找到可用学期', en: 'No available semester was found' },
+  'courseReg.error.noFormToken': { zh: '选课表单缺少令牌，请重新登录后重试', en: 'The form token is missing. Please sign in again' },
+  'courseReg.error.rejected': { zh: '选课系统拒绝了本次操作', en: 'The course registration request was rejected' },
+  'courseReg.error.unconfirmed': {
+    zh: '选课系统未返回明确结果，请回查已选课程',
+    en: 'The result is unconfirmed. Please check your selected courses'
+  },
+  'courseReg.error.unsupportedPriority': { zh: '不支持的选课类型', en: 'Unsupported course selection type' },
+  'courseReg.error.invalidParam': { zh: '请求参数不完整或不合法', en: 'Invalid request parameters' },
+  'courseReg.error.server': { zh: '选课系统暂时不可用', en: 'The course registration service is unavailable' },
 };
 
 export class I18n {

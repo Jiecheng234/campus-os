@@ -35,6 +35,7 @@ import { LibraryRoomService } from '../campus/LibraryRoomService';
 import { LaundryService } from '../campus/LaundryService';
 import { MailService } from '../campus/MailService';
 import { SportsService } from '../campus/SportsService';
+import { CourseRegService } from '../campus/CourseRegService';
 import { generateUUID } from '../../utils/CryptoUtils';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
 
@@ -50,6 +51,7 @@ export class SessionManager {
   private static laundryService: LaundryService | undefined = undefined;
   private static mailService: MailService | undefined = undefined;
   private static sportsService: SportsService | undefined = undefined;
+  private static courseRegService: CourseRegService | undefined = undefined;
 
   static getAuthService(): TsinghuaAuthService {
     if (SessionManager.authService === undefined) {
@@ -73,6 +75,15 @@ export class SessionManager {
       SessionManager.campusCardService = new CampusCardService(auth.getHttpClient(), auth);
     }
     return SessionManager.campusCardService;
+  }
+
+  /** 选课系统服务（学期/已选课程/课余量搜索/选课/退课，T03） */
+  static getCourseRegService(): CourseRegService {
+    if (SessionManager.courseRegService === undefined) {
+      const auth: TsinghuaAuthService = SessionManager.getAuthService();
+      SessionManager.courseRegService = new CourseRegService(auth.getHttpClient(), auth);
+    }
+    return SessionManager.courseRegService;
   }
 
   static getNetworkService(): CampusNetworkService {
@@ -178,7 +189,7 @@ export class SessionManager {
    *   不触及 Cookie/凭证/网络/持久化。
    *
    * 【扇出清单】campusDataService（既有）→ sportsService → librarySeatService
-   *   → libraryRoomService → mailService → campusCardService。
+   *   → libraryRoomService → mailService → campusCardService → courseRegService。
    *
    * 【惰性】仅对已实例化服务调用（`!== undefined` 判据），不为复位触发懒加载；
    * 未实例化服务的瞬态态本为初值，无需复位。
@@ -236,6 +247,13 @@ export class SessionManager {
         SessionManager.campusCardService.resetSessionState();
       } catch (e) {
         // 异常隔离：同上
+      }
+    }
+    if (SessionManager.courseRegService !== undefined) {
+      try {
+        SessionManager.courseRegService.resetSessionState();
+      } catch (e) {
+        // 异常隔离：同上（选课会话"已激活"标志，RD-10）
       }
     }
   }

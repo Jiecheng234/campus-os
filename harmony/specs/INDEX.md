@@ -6,7 +6,8 @@
 >
 > **迁移记录**：2026-10-17 由 `entry/src/main/ets/**` 下迁出
 > （17 个目录 / 68 个文件，用 `git mv` 保留历史）；2026-10-19 新增
-> `schedule-interaction`（新建，无迁移前目录）。
+> `schedule-interaction`（新建，无迁移前目录）、
+> `course-registration-service`（新建，无迁移前目录）。
 
 ## 进度总览
 
@@ -35,7 +36,8 @@
 | 17 | sports-booking | `specs/sports-booking/` | 17/17 | ✅ 完成 | 只读；下单/支付/退订未开放（RN 服务层有写能力） |
 | 18 | trust-device | `specs/trust-device/` | 17/17 | ✅ 完成 | US5 UI 验证受限；US3 服务端 2FA 场景未构造 |
 | 19 | payment-alipay | `specs/payment-alipay/` | 23/23 | 🟡 基础设施已验证（真机 PaymentTest 25/25 + 诊断入口 openLink→回读 elapsedMs=5770）；充值 UI 待 T11–T13 | 共用支付宝链接构建/外跳/回读基础设施；PaymentTest 25/25 |
-| — | **合计** | 19 个 feature | **351 / 351** | **100%** | 任务闭环；功能边界见下节 |
+| 20 | course-registration-service | `specs/course-registration-service/` | 29/29 | 🟡 构建+部署验证通过（build-only）；选课/退课真实增删待开放时段 | 选课系统服务：学期/已选/课余量搜索/选课/退课；写操作 POST 仅一次 + 三态判定；AI 工具注册归 course-registration-agent（T14），真实增删待开放时段受控验证 |
+| — | **合计** | 20 个 feature | **380 / 380** | **100%** | 任务闭环；功能边界见下节 |
 
 > 旧口径（`376/385`、各 feature 的 `30/30` 等）与当前 `tasks.md` 不一致，已废弃。
 > `schedule-interaction` 已于 2026-10-19 提交（`11af855`），其任务计数已纳入本表。
@@ -47,7 +49,7 @@
 ### 1. 鸿蒙侧未迁移、RN 用户可见
 
 - **支付/充值**：充值 UI 未迁移；支付外跳基础设施已就绪（T02）。查询与流水已接。
-- **选课/退课**：鸿蒙未实现；RN 通过 AI 工具提供（无独立页面）。
+- **选课/退课**：服务层已完成（`CourseRegService`，T03：学期/已选/课余量搜索/选课/退课）；AI 工具未注册（RN 通过 AI 工具触达，鸿蒙待 T14 `course-registration-agent`）；真实增删待选课开放时段按受控步骤验证。
 - **邮件附件**：仅展示附件元信息，无下载/预览（RN Android 原生 IMAP 支持下载）。
 - **后台监控/通知**：无 WorkManager/Headless 等价链路；`WorkflowEngine` 仅预设、`NotificationService` 无调用方。
 - **AI 治理 UI**：AI 权限页、操作记录页、智能监控页、记忆管理入口未交付；AI 记忆/审计仅后端/会话级实现。

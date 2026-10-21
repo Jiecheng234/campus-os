@@ -12,6 +12,7 @@ import { LearningManager } from '../state/LearningManager';
 import { ScheduleManager } from '../state/ScheduleManager';
 import { AIChatManager } from '../state/AIChatManager';
 import { SettingsManager } from '../state/SettingsManager';
+import { runCourseRegSelfTest, CourseRegSelfTestSummary } from './CourseRegSelfTest';
 
 const DOMAIN: number = 0xCAFE;
 const TAG: string = 'Phase4Test';
@@ -58,9 +59,13 @@ export function runPhase4SelfTest(): number {
   runCookieTests();
   runStateTests();
 
+  // T03 选课系统纯函数 fixture 自测（内嵌 fixture，无网络请求）
+  const courseReg: CourseRegSelfTestSummary = runCourseRegSelfTest();
+  const courseRegTotal: number = courseReg.passed + courseReg.failed;
+
   const total: number = TestRunner.passed + TestRunner.failed;
-  TestRunner.log(`===== Phase4 Self-Test Done: ${TestRunner.passed}/${total} passed, ${TestRunner.failed} failed =====`);
-  return TestRunner.failed;
+  TestRunner.log(`===== Phase4 Self-Test Done: ${TestRunner.passed}/${total} passed, ${TestRunner.failed} failed; CourseReg: ${courseReg.passed}/${courseRegTotal} passed, ${courseReg.failed} failed =====`);
+  return TestRunner.failed + courseReg.failed;
 }
 
 function runCryptoTests(): void {

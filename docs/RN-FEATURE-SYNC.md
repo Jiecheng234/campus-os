@@ -1,8 +1,8 @@
 # RN → HarmonyOS 功能同步进度
 
 - **RN 基线**：v2.1.1（`src/` + `android/`），上游 `a2dbb9f`（2026-07-11）后冻结。
-- **Harmony 代码基线**：`11af855` + 当前工作区未提交 T02；19 个 feature，任务 **351 / 351**。
-- **最后更新**：2026-10-19（T02 支付基础设施验证 + 真机自检 + 真机外跳/回读）
+- **Harmony 代码基线**：`11af855` + 当前工作区未提交 T02/T03；20 个 feature，任务 **380 / 380**（T03 实现 + 构建/部署验证完成；选课/退课真实增删待开放时段）。
+- **最后更新**：2026-10-19（T03 选课系统服务层完成 + build-only 验证通过；AI 工具待 T14；写操作待开放时段）
 
 > 本文件记录**功能层**同步进度；SDD 任务层进度见 `harmony/specs/INDEX.md`，
 > 上游仓库同步见 `docs/UPSTREAM-SYNC.md`，实现细节与已知限制见 `harmony/DEVELOPMENT.md`。
@@ -102,7 +102,7 @@
 | 健康打卡/报修入口 | WebView 入口 | 未找到对应入口 | ⛔ |
 | 培养方案 | 服务层占位，返回 0/空数组 | mock 页且入口隐藏 | ➖ |
 | 课程评估 | README 明确未完整接入 | 未实现；Phase 0 决策：本轮不做 | ➖ |
-| 选课/退课 | AI 工具提供（无独立页面） | 未实现，AI 工具未注册 | ⛔ |
+| 选课/退课 | AI 工具提供（无独立页面） | 服务层完成（T03 `CourseRegService`：学期 / 已选课程 / 课余量搜索 / 选课 / 退课，写操作 POST 仅一次 + 三态结果判定）；AI 工具待 T14 注册；真实增删待选课开放时段，按受控步骤验证（选课 → 回查已选 → 退课 → 再回查） | 🟡 |
 | 邮件门户 WebView | 路由已注册，无导航入口 | 未实现 | ➖ |
 
 ### 3.4 AI
@@ -278,3 +278,5 @@
 | 2026-10-19 | T02 真机自检：真机日志 `PaymentTest 25/25 passed, 0 failed`（含链接构建/提取、回读一次性、TTL、最新覆盖、payload 四字段、取消订阅）；日志标签为 `PaymentTest`，未污染生产 `Payment` 标签 |
 | 2026-10-19 | T02 真机外跳/回读：真机诊断入口 `PAYMENT launch requested subsystem=diagnostics status=launched` → `PAYMENT return delivered subsystem=diagnostics elapsedMs=5770`；证明生产 openLink→返回事件链路可用；未用真实 payCode 发起支付，充值 UI 待 T11–T13 |
 | 2026-10-19 | 评审后修正：自检隔离测试事件 ID、BUILD_READY 语义、RN 链接逐字符对齐；真机 openLink 待验证 |
+| 2026-10-19 | T03：新增选课系统服务 `CourseRegService`（学期 / 已选课程 / 课余量搜索 / 选课 / 退课；会话激活 + `crRequest` 三标记归一 + 写操作 POST 仅一次、成功/拒绝/未确认三态判定）；"选课/退课"由 ⛔ 更新为 🟡：AI 工具待 T14，真实增删待开放时段（受控步骤：选课 → 回查已选 → 退课 → 再回查） |
+| 2026-10-19 | T03 验证（build-only）：`devecocli build` 成功（exit 0）；Mate 80 Pro Max 模拟器安装启动 + Smoke PASS；设备日志 `CourseReg Self-Test 70/70 passed`；Phase4 仍为既有 20/21（Base64 empty 基线失败，与本特性无关） |
