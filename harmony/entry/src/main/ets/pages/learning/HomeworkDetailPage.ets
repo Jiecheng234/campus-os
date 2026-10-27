@@ -18,10 +18,16 @@ export struct HomeworkDetailPage {
     return I18n.tp(key, args, this.locale);
   }
   item: CampusHomework = new CampusHomework();
+  /** 演示模式：不补拉详情（演示原始数据 url 为空，双保险保证零请求） */
+  demoMode: boolean = false;
   @State detail: HomeworkDetailData = new HomeworkDetailData();
   @State detailLoaded: boolean = false;
 
   aboutToAppear(): void {
+    if (this.demoMode) {
+      this.detailLoaded = true;
+      return;
+    }
     if (this.item.url.length > 0) {
       const service: CampusDataService = SessionManager.getCampusDataService();
       service.fetchHomeworkDetail(this.item.url).then((d: HomeworkDetailData) => {

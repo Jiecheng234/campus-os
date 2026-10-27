@@ -303,6 +303,10 @@ export class CampusHomework {
 
 export class CampusNotification {
   id: string = '';
+  /** 课程归属外键（fetchNotifications 的课程循环写入；课程详情聚合与正文补拉用） */
+  courseId: string = '';
+  /** 课程名（与 courseId 同源写入；通知详情展示课程上下文） */
+  courseName: string = '';
   title: string = '';
   publisher: string = '';
   publishTime: string = '';
@@ -313,6 +317,8 @@ export class CampusNotification {
 export class CampusFile {
   id: string = '';
   fileId: string = '';
+  /** 课程归属外键（fetchFiles 的课程循环写入；课程详情聚合用） */
+  courseId: string = '';
   title: string = '';
   courseName: string = '';
   size: string = '';
@@ -1459,6 +1465,47 @@ export class CampusDataService {
     }
   }
 
+  /**
+   * 将 learn 域会话 Cookie 同步到 ArkWeb（资料预览 WebView 用）。
+   * learn 预览页（beforePlay）对 Cookie 敏感，无会话 Cookie 会跳登录页；
+   * 同时补同步 id 域（预览页内跳转可能用到）。异常仅记录日志，不抛出。
+   */
+  syncLearnCookiesForWebView(): void {
+    const domains: string[] = ['https://learn.tsinghua.edu.cn/', 'https://id.tsinghua.edu.cn/'];
+    let totalPairs: number = 0;
+    for (let di: number = 0; di < domains.length; di++) {
+      try {
+        const header: string = this.http.getCookieManager().getCookieHeader(domains[di]);
+        if (header.length === 0) {
+          continue;
+        }
+        const pairs: string[] = header.split(';');
+        for (let i: number = 0; i < pairs.length; i++) {
+          const pair: string = pairs[i].trim();
+          if (pair.length > 0) {
+            webview.WebCookieManager.configCookieSync(domains[di], pair);
+            totalPairs++;
+          }
+        }
+      } catch (e) {
+        Log.i('LearnAct', 'LEARN_COOKIE_SYNC fail domain_idx=%{public}d', di);
+      }
+    }
+    Log.i('LearnAct', 'LEARN_COOKIE_SYNC pairs=%{public}d', totalPairs);
+  }
+
+  /**
+   * 下载资料文件字节（FR-013）：复用 HttpClient.getBytes（自动带 Cookie、
+   * 手动跟随重定向、二进制安全）。空 URL 抛可读错误；网络异常由底层抛出，
+   * 调用方（FileDetailPage）负责转成可读失败提示。
+   */
+  async downloadFileBytes(url: string): Promise<Uint8Array> {
+    if (url.length === 0) {
+      throw new Error('Empty download url');
+    }
+    return this.http.getBytes(url);
+  }
+
   /** 作业：对每门课遍历 未交(Wj)/已交未批改(Yjwg)/已批改(Ypg)，POST aoData */
   async fetchHomework(courses: CampusCourse[]): Promise<CampusHomework[]> {
     const csrf: string = await this.getCsrfToken();
@@ -1532,6 +1579,8 @@ export class CampusDataService {
             const row = rows[ri] as Record<string, Object>;
             const item: CampusNotification = new CampusNotification();
             item.id = String(row['ggid'] ?? '');
+            item.courseId = course.id;
+            item.courseName = course.name;
             item.title = decodeHtmlEntities(String(row['bt'] ?? ''));
             item.publisher = String(row['fbrxm'] ?? '');
             item.publishTime = formatDateTime(row['fbsj']);
@@ -1588,6 +1637,7 @@ export class CampusDataService {
           const item: CampusFile = new CampusFile();
           item.id = String(row['kjxxid'] ?? '');
           item.fileId = String(row['wjid'] ?? '');
+          item.courseId = course.id;
           item.title = decodeHtmlEntities(String(row['bt'] ?? ''));
           item.courseName = course.name;
           item.size = String(row['fileSize'] ?? row['wjdx'] ?? '');

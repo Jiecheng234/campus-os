@@ -71,4 +71,10 @@ export class AuditRecord {
   confirmation: string = '';
   resultSummary: string = '';
   errorMessage: string = '';
+  /** 扩展字段（ai-governance 特性：审计持久化 + 权限治理） */
+  permission: string = '';
+  paramsJson: string = '';
+  previewAffectedResource: string = '';
+  verificationOk: boolean = false;
+  verificationMessage: string = '';
 }

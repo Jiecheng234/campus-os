@@ -8,6 +8,8 @@ const MANUAL_DEADLINES_KEY: string = STORAGE_KEY_PREFIX + 'manual_deadlines';
 const AI_MEMORY_KEY: string = STORAGE_KEY_PREFIX + 'ai_memory';
 const WORKFLOW_KEY: string = STORAGE_KEY_PREFIX + 'workflows';
 const ACTION_AUDIT_KEY: string = STORAGE_KEY_PREFIX + 'action_audit';
+/** AI 工具权限开关（ai-governance 特性：key 为权限键，value 为 true=禁用） */
+const AI_DISABLED_PERMISSIONS_KEY: string = STORAGE_KEY_PREFIX + 'ai_disabled_permissions';
 const SETTINGS_KEY: string = STORAGE_KEY_PREFIX + 'settings';
 /** 是否曾显式选择过"信任此设备"（trust-device 特性：决定登录页开关默认值） */
 const TRUST_CHOICE_MADE_KEY: string = STORAGE_KEY_PREFIX + 'trust_choice_made';
@@ -23,6 +25,7 @@ interface StorageKeysMap {
   AI_MEMORY: string;
   WORKFLOWS: string;
   ACTION_AUDIT: string;
+  AI_DISABLED_PERMISSIONS: string;
   SETTINGS: string;
   TRUST_CHOICE_MADE: string;
   TRUST_PENDING_CLEAR: string;
@@ -37,6 +40,7 @@ export const StorageKeys: StorageKeysMap = {
   'AI_MEMORY': AI_MEMORY_KEY,
   'WORKFLOWS': WORKFLOW_KEY,
   'ACTION_AUDIT': ACTION_AUDIT_KEY,
+  'AI_DISABLED_PERMISSIONS': AI_DISABLED_PERMISSIONS_KEY,
   'SETTINGS': SETTINGS_KEY,
   'TRUST_CHOICE_MADE': TRUST_CHOICE_MADE_KEY,
   'TRUST_PENDING_CLEAR': TRUST_PENDING_CLEAR_KEY,

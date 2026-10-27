@@ -27,6 +27,7 @@ import { ManualDeadline } from '../../domain/DeadlineTypes';
 import { PreferencesStorage } from '../../storage/PreferencesStorage';
 import { StorageKeys } from '../../storage/StorageKeys';
 import { AIMemoryStore } from '../../state/AIMemoryStore';
+import { ManualDeadlineStore } from '../../state/ManualDeadlineStore';
 import { SettingsManager } from '../../state/SettingsManager';
 import { SessionManager } from '../auth/SessionManager';
 import { LibraryBookResult, LibraryBookingRecord, LibrarySeatInfo, LibrarySeatService, seatStatusLabel } from '../campus/LibrarySeatService';
@@ -437,70 +438,8 @@ function personalEventSummary(e: AgentPersonalEvent): Record<string, Object> {
 }
 
 // ============================================================
-// 自建 DDL 存储（domain ManualDeadline；StorageKeys.MANUAL_DEADLINES）
+// 自建 DDL 存取（委托 state/ManualDeadlineStore，保留 AI 工具的参数适配）
 // ============================================================
-
-let manualDeadlinesCache: ManualDeadline[] = [];
-let manualDeadlinesLoaded: boolean = false;
-
-async function loadManualDeadlinesInternal(): Promise<ManualDeadline[]> {
-  if (manualDeadlinesLoaded) {
-    return manualDeadlinesCache;
-  }
-  const items: ManualDeadline[] = [];
-  try {
-    const raw: string = await PreferencesStorage.getString(StorageKeys.MANUAL_DEADLINES, '');
-    if (raw.length > 0) {
-      const parsed: Object = JSON.parse(raw) as Object;
-      if (Array.isArray(parsed)) {
-        const arr: Object[] = parsed as Object[];
-        for (let i: number = 0; i < arr.length; i++) {
-          const item: ManualDeadline | undefined = parseManualDeadline(arr[i]);
-          if (item !== undefined) {
-            items.push(item);
-          }
-        }
-      }
-    }
-  } catch (e) {
-    Log.w(LOG_TAG, 'manual deadlines load failed, fallback to empty');
-  }
-  manualDeadlinesCache = items;
-  manualDeadlinesLoaded = true;
-  return manualDeadlinesCache;
-}
-
-function parseManualDeadline(entry: Object): ManualDeadline | undefined {
-  if (entry === null || typeof entry !== 'object') {
-    return undefined;
-  }
-  const rec: Record<string, Object> = entry as Record<string, Object>;
-  const id: Object | undefined = rec['id'];
-  const title: Object | undefined = rec['title'];
-  const date: Object | undefined = rec['date'];
-  if (typeof id !== 'string' || typeof title !== 'string' || typeof date !== 'string') {
-    return undefined;
-  }
-  const item: ManualDeadline = new ManualDeadline();
-  item.id = id;
-  item.title = title;
-  item.date = date;
-  item.time = strOr(rec['time']);
-  item.course = strOr(rec['course']);
-  item.note = strOr(rec['note']);
-  item.createdAt = strOr(rec['createdAt']);
-  return item;
-}
-
-async function persistManualDeadlines(items: ManualDeadline[]): Promise<void> {
-  manualDeadlinesCache = items;
-  manualDeadlinesLoaded = true;
-  try {
-    await PreferencesStorage.setJson<ManualDeadline[]>(StorageKeys.MANUAL_DEADLINES, items);
-  } catch (e) {
-    Log.w(LOG_TAG, 'manual deadlines persist failed len=%{public}d', items.length);
-  }
-}
 
 /** 截止时间文本拆分（date：YYYY-MM-DD；time：HH:mm；纯日期默认 23:59） */
 class DeadlineParts {
@@ -532,74 +471,26 @@ function splitDeadline(raw: string): DeadlineParts {
 
 async function appendManualDeadline(title: string, deadline: string,
   courseName: string, note: string): Promise<ManualDeadline> {
-  const items: ManualDeadline[] = await loadManualDeadlinesInternal();
   const parts: DeadlineParts = splitDeadline(deadline);
-  const item: ManualDeadline = new ManualDeadline();
-  item.id = 'md-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
-  item.title = title;
-  item.date = parts.date;
-  item.time = parts.time;
-  item.course = courseName;
-  item.note = note;
-  item.createdAt = new Date().toISOString();
-  items.push(item);
-  await persistManualDeadlines(items);
+  const item: ManualDeadline | undefined = await ManualDeadlineStore.append(
+    title, parts.date, parts.time, courseName, note);
+  if (item === undefined) {
+    throw new Error('自建 DDL 保存失败');
+  }
   return item;
 }
 
 async function deleteManualDeadlineById(id: string): Promise<boolean> {
-  const trimmed: string = id.trim();
-  if (trimmed.length === 0) {
-    return false;
-  }
-  const items: ManualDeadline[] = await loadManualDeadlinesInternal();
-  const next: ManualDeadline[] = [];
-  let removed: boolean = false;
-  for (let i: number = 0; i < items.length; i++) {
-    if (items[i].id === trimmed) {
-      removed = true;
-    } else {
-      next.push(items[i]);
-    }
-  }
-  if (!removed) {
-    return false;
-  }
-  await persistManualDeadlines(next);
-  return true;
+  return ManualDeadlineStore.remove(id);
 }
 
 /** DDL 定位：id → 标题全等 → 标题包含（对齐 RN findManualDeadline） */
 async function findManualDeadline(key: string): Promise<ManualDeadline | undefined> {
-  const trimmed: string = key.trim();
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-  const items: ManualDeadline[] = await loadManualDeadlinesInternal();
-  for (let i: number = 0; i < items.length; i++) {
-    if (items[i].id === trimmed) {
-      return items[i];
-    }
-  }
-  for (let i: number = 0; i < items.length; i++) {
-    if (items[i].title === trimmed) {
-      return items[i];
-    }
-  }
-  for (let i: number = 0; i < items.length; i++) {
-    if (items[i].title.includes(trimmed)) {
-      return items[i];
-    }
-  }
-  return undefined;
+  return ManualDeadlineStore.findAsync(key);
 }
 
 async function listManualDeadlinesInternal(): Promise<ManualDeadline[]> {
-  const items: ManualDeadline[] = await loadManualDeadlinesInternal();
-  const sorted: ManualDeadline[] = items.slice();
-  sorted.sort((a: ManualDeadline, b: ManualDeadline): number =>
-    (a.date + ' ' + a.time).localeCompare(b.date + ' ' + b.time));
-  return sorted;
+  return ManualDeadlineStore.listAsync();
 }
 
 // ============================================================

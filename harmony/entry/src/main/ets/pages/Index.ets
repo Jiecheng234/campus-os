@@ -92,6 +92,9 @@ struct Index {
     if (this.currentIndex === 3) {
       return BackOwner.CAMPUS;
     }
+    if (this.currentIndex === 5) {
+      return BackOwner.SETTINGS;
+    }
     return '';
   }
   private lastBackAt: number = 0;

@@ -18,6 +18,9 @@ import { AuthManager } from '../state/AuthManager';
 import { StateManager } from '../state/StateManager';
 import { Log } from '../utils/Logger';
 import { I18n } from '../utils/I18n';
+import { parseDeadlineMs, manualDeadlineMs, formatDeadlineDistance } from '../utils/DeadlineFormat';
+import { ManualDeadlineStore } from '../state/ManualDeadlineStore';
+import { ManualDeadline } from '../domain/DeadlineTypes';
 
 /** 解析 "HH:MM(:SS)" 为当日分钟数；解析失败返回 -1（对齐原项目 findNextClass 的时间比较） */
 function parseHHmm(text: string): number {
@@ -31,30 +34,6 @@ function parseHHmm(text: string): number {
     return -1;
   }
   return h * 60 + m;
-}
-
-/** 解析 "YYYY-MM-DD HH:mm" 截止时间为毫秒；失败返回 NaN（对齐原项目 parseDeadline） */
-function parseDeadlineMs(deadline: string): number {
-  return new Date(deadline.replace(' ', 'T')).getTime();
-}
-
-/** 截止时间距离文案（对齐原项目 formatDeadlineDistance；无法解析时回退原文，空串给占位） */
-function formatDeadlineDistance(deadline: string, locale: string): string {
-  const time: number = parseDeadlineMs(deadline);
-  if (isNaN(time)) {
-    return deadline.length > 0 ? deadline : I18n.t('home.suggest.noDeadline', locale);
-  }
-  const diffDays: number = Math.ceil((time - Date.now()) / (24 * 60 * 60 * 1000));
-  if (diffDays < 0) {
-    return I18n.t('home.suggest.overdue', locale);
-  }
-  if (diffDays === 0) {
-    return I18n.t('home.suggest.dueToday', locale);
-  }
-  if (diffDays === 1) {
-    return I18n.t('home.suggest.dueTomorrow', locale);
-  }
-  return I18n.tp('home.suggest.dueInDays', { 'n': String(diffDays) }, locale);
 }
 
 /**
@@ -194,9 +173,19 @@ export struct HomePage {
   @State ddlTitle: string = '';
   @State ddlCourse: string = '';
   @State ddlDeadline: string = '';
+  /** 手动 DDL（store 共享数据；真实/演示模式均合并进「最近 DDL」建议） */
+  @State manualDdls: ManualDeadline[] = [];
+  private storeSubId: number = -1;
 
   aboutToAppear(): void {
     this.loadWeather();
+    // 手动 DDL 共享数据：两模式均加载并订阅（学习页/AI 变更后首页即时重算）
+    ManualDeadlineStore.listAsync().then((list: ManualDeadline[]) => {
+      this.manualDdls = list;
+    });
+    this.storeSubId = ManualDeadlineStore.subscribe(() => {
+      this.manualDdls = ManualDeadlineStore.list();
+    });
     if (!this.isRealMode()) {
       // 演示模式：指标与演示课程保持一致
       const m: BriefingMetrics = getBriefingMetrics();
@@ -206,6 +195,13 @@ export struct HomePage {
       return;
     }
     this.refreshHomeData(false);
+  }
+
+  aboutToDisappear(): void {
+    if (this.storeSubId >= 0) {
+      ManualDeadlineStore.unsubscribe(this.storeSubId);
+      this.storeSubId = -1;
+    }
   }
 
   private isRealMode(): boolean {
@@ -390,25 +386,51 @@ export struct HomePage {
       }
     }
 
-    if (this.ddlTitle.length > 0) {
-      const ms: number = parseDeadlineMs(this.ddlDeadline);
-      const urgent: boolean = !isNaN(ms) && ms - Date.now() < 2 * 24 * 60 * 60 * 1000;
-      const distance: string = formatDeadlineDistance(this.ddlDeadline, this.locale);
-      const ddl: SuggestedAction = new SuggestedAction();
-      ddl.id = 'next-deadline';
-      ddl.title = this.trp('home.suggest.nextDdl', { 'title': this.ddlTitle });
-      ddl.detail = this.ddlCourse.length > 0 ? this.ddlCourse + ' · ' + distance : distance;
-      ddl.tone = urgent ? BadgeTone.Warning : BadgeTone.Default;
-      ddl.actionLabel = this.tr('home.suggest.open');
-      ddl.targetTab = 1;
-      ddl.learningTab = '作业';
-      items.push(ddl);
-    }
+    this.appendDdlItem(items, this.ddlTitle, this.ddlCourse, this.ddlDeadline);
 
     const unread: SuggestedAction | null = this.buildUnreadItem();
     if (unread !== null) {
       items.push(unread);
     }
+  }
+
+  /**
+   * 最近 DDL 建议：远程最早未提交作业与最早手动 DDL 取更早者
+   * （真实/演示模式均生效；手动项变更经 store 订阅即时重算；快捷入口行为不变）。
+   */
+  private appendDdlItem(items: SuggestedAction[], remoteTitle: string,
+    remoteCourse: string, remoteDeadline: string): void {
+    const remoteMs: number = remoteDeadline.length > 0 ? parseDeadlineMs(remoteDeadline) : NaN;
+    const hasRemote: boolean = remoteTitle.length > 0 && !isNaN(remoteMs);
+    const md: ManualDeadline | null = this.manualDdls.length > 0 ? this.manualDdls[0] : null;
+    const mdMs: number = md !== null ? manualDeadlineMs(md.date, md.time) : NaN;
+    const hasManual: boolean = md !== null && !isNaN(mdMs) && md.title.length > 0;
+    let title: string = '';
+    let course: string = '';
+    let deadline: string = '';
+    if (hasManual && (!hasRemote || mdMs <= remoteMs) && md !== null) {
+      title = md.title;
+      course = md.course;
+      deadline = md.date + ' ' + (md.time.length > 0 ? md.time : '23:59');
+    } else if (hasRemote) {
+      title = remoteTitle;
+      course = remoteCourse;
+      deadline = remoteDeadline;
+    } else {
+      return;
+    }
+    const ms: number = parseDeadlineMs(deadline);
+    const urgent: boolean = !isNaN(ms) && ms - Date.now() < 2 * 24 * 60 * 60 * 1000;
+    const distance: string = formatDeadlineDistance(deadline, this.locale);
+    const ddl: SuggestedAction = new SuggestedAction();
+    ddl.id = 'next-deadline';
+    ddl.title = this.trp('home.suggest.nextDdl', { 'title': title });
+    ddl.detail = course.length > 0 ? course + ' · ' + distance : distance;
+    ddl.tone = urgent ? BadgeTone.Warning : BadgeTone.Default;
+    ddl.actionLabel = this.tr('home.suggest.open');
+    ddl.targetTab = 1;
+    ddl.learningTab = '作业';
+    items.push(ddl);
   }
 
   /** 演示模式条目：演示课表下一节 + 演示作业最近截止 + 演示未读数 */
@@ -430,17 +452,10 @@ export struct HomePage {
     }
 
     const hw: HomeworkItem[] = getHomeworkList();
-    if (hw.length > 0) {
-      const ddl: SuggestedAction = new SuggestedAction();
-      ddl.id = 'next-deadline';
-      ddl.title = this.trp('home.suggest.nextDdl', { 'title': hw[0].title });
-      ddl.detail = `${hw[0].course} · ${hw[0].deadline}`;
-      ddl.tone = hw[0].status === '即将截止' ? BadgeTone.Warning : BadgeTone.Default;
-      ddl.actionLabel = this.tr('home.suggest.open');
-      ddl.targetTab = 1;
-      ddl.learningTab = '作业';
-      items.push(ddl);
-    }
+    const hwTitle: string = hw.length > 0 ? hw[0].title : '';
+    const hwCourse: string = hw.length > 0 ? hw[0].course : '';
+    const hwDeadline: string = hw.length > 0 ? hw[0].deadline : '';
+    this.appendDdlItem(items, hwTitle, hwCourse, hwDeadline);
 
     const unread: SuggestedAction | null = this.buildUnreadItem();
     if (unread !== null) {

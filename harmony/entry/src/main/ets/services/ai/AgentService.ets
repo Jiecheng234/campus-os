@@ -35,16 +35,17 @@ import { SessionManager } from '../auth/SessionManager';
 import { CampusDataService, CampusCourse, CampusHomework, ScheduleEvent } from '../campus/CampusDataService';
 import { fetchHomeWeather, HomeWeather } from '../campus/WeatherService';
 import { SecureStorage, SecureCredentials } from '../../storage/SecureStorage';
+import { ActionAuditStore } from '../../storage/ActionAuditStore';
+import { AIPermissionStore } from '../../storage/AIPermissionStore';
+import { I18n } from '../../utils/I18n';
 import { generateUUID } from '../../utils/CryptoUtils';
 import { Log } from '../../utils/Logger';
 
 const LOG_TAG: string = 'AgentService';
 /** 最大工具调用轮数（每轮可含多个 tool_calls；超出给出可读兜底） */
 const MAX_AGENT_ROUNDS: number = 6;
-/** 会话内审计记录上界（超出淘汰最旧） */
-const MAX_AUDIT_RECORDS: number = 100;
-/** 审计/轨迹中结果 JSON 留档长度上界（防失控，且便于脱敏复核） */
-const AUDIT_RESULT_CLIP: number = 2000;
+/** 会话内审计记录上界（超出淘汰最旧；与持久化上限 200 对齐） */
+const MAX_AUDIT_RECORDS: number = 200;
 /** 轨迹参数兜底截断长度（无 summarize 的工具） */
 const TRACE_PARAMS_CLIP: number = 120;
 
@@ -406,9 +407,18 @@ export class AgentService {
       convo.push(turn);
     }
 
-    const tools: AgentToolDef[] = AgentTools.all();
+    // 权限开关就绪后按禁用清单过滤工具（ai-governance US2）：
+    // 关闭的能力不下发给模型（请求 tools 不含该权限的工具）。
+    // 读取失败时降级为全工具可见（fail-open）并告警，不阻断会话；
+    // executeToolCall 的门禁兜底仍按内存态生效
+    await AIPermissionStore.ensureLoaded().catch((): void => {
+      Log.w(LOG_TAG, 'permission store load failed; agent runs with all tools visible');
+    });
+    const disabledPermissions: string[] = AIPermissionStore.disabledKeys();
+    const tools: AgentToolDef[] = AgentTools.all(disabledPermissions);
     const toolsJson: string = AgentService.buildToolsJson(tools);
-    Log.i(LOG_TAG, 'AGENT start turns=%{public}d tools=%{public}d', convo.length, tools.length);
+    Log.i(LOG_TAG, 'AGENT start turns=%{public}d tools=%{public}d disabledPerms=%{public}d',
+      convo.length, tools.length, disabledPermissions.length);
 
     for (let round: number = 0; round < MAX_AGENT_ROUNDS; round++) {
       if (AgentService.isCancelled(callbacks)) {
@@ -506,6 +516,21 @@ export class AgentService {
     let verification: VerificationResult | undefined = undefined;
     let result: Record<string, Object> = {};
 
+    // 权限门禁（ai-governance US2）：命中用户禁用 → 返回可读拒绝（含权限键与
+    // 文案），派发 onToolStart/onToolEnd 并写审计；不进入 dryRun/确认/run/verify。
+    // 正常路径下该工具不会随请求下发，此门禁兜底"点名调用"与并发改开关的场景。
+    if (tool.permission.length > 0 && AIPermissionStore.isDisabled(tool.permission)) {
+      const denied: string = I18n.t('ai.permissionDisabled');
+      confirmation = ConfirmationStatus.NOT_REQUIRED;
+      status = ActionExecutionStatus.ERROR;
+      errorMessage = denied;
+      result = { 'ok': false, 'error': 'permission_disabled', 'permission': tool.permission, 'message': denied };
+      AgentService.emitToolEnd(callbacks, tool, call, ActionExecutionStatus.ERROR, denied,
+        undefined, confirmation, undefined, result);
+      AgentService.appendAuditRecord(tool, call, args, undefined, confirmation, status, result, errorMessage, undefined);
+      return result;
+    }
+
     if (tool.requiresConfirmation) {
       if (tool.dryRun !== undefined) {
         try {
@@ -566,7 +591,7 @@ export class AgentService {
       }
     }
 
-    AgentService.appendAuditRecord(tool, call, args, preview, confirmation, status, result, errorMessage);
+    AgentService.appendAuditRecord(tool, call, args, preview, confirmation, status, result, errorMessage, verification);
     return result;
   }
 
@@ -713,7 +738,8 @@ export class AgentService {
 
   private static appendAuditRecord(tool: AgentToolDef, call: LLMToolCall, args: Record<string, Object>,
     preview: ActionPreview | undefined, confirmation: string, status: string,
-    result: Record<string, Object>, errorMessage: string): void {
+    result: Record<string, Object>, errorMessage: string,
+    verification: VerificationResult | undefined): void {
     const rec: AuditRecord = new AuditRecord();
     rec.id = generateUUID();
     rec.timestamp = new Date().toISOString();
@@ -726,13 +752,28 @@ export class AgentService {
     rec.confirmed = confirmation === ConfirmationStatus.APPROVED;
     rec.parameters = AgentService.paramsSummaryFor(tool, call);
     const resultJson: string = JSON.stringify(result);
-    rec.result = resultJson.length > AUDIT_RESULT_CLIP ? resultJson.substring(0, AUDIT_RESULT_CLIP) + '…' : resultJson;
+    // 先对完整 JSON 脱敏（敏感键遮蔽 + 邮箱/手机号文本兜底）再写入内存；
+    // sanitizeResultJson 内含 2000 上限截断。store 落盘时二次脱敏（幂等，
+    // 已打码文本不会被二次误伤）——杜绝长结果截断后解析失败导致的明文漏路
+    rec.result = ActionAuditStore.sanitizeResultJson(resultJson);
     rec.resultSummary = AgentService.summarizeToolResult(result);
     rec.errorMessage = errorMessage;
+    rec.permission = tool.permission;
+    rec.paramsJson = call.arguments;
+    rec.previewAffectedResource = preview !== undefined ? preview.affectedResource : '';
+    rec.verificationOk = verification !== undefined && verification.ok;
+    rec.verificationMessage = verification !== undefined ? verification.message : '';
     AgentService.auditRecords.push(rec);
     while (AgentService.auditRecords.length > MAX_AUDIT_RECORDS) {
       AgentService.auditRecords.shift();
     }
+    // 持久化双写（ai-governance）：store 内部复制并脱敏后落盘；失败吞掉不打断循环
+    ActionAuditStore.append(rec).catch((): void => {
+      Log.w(LOG_TAG, 'audit persist append failed tool=%{public}s', tool.name);
+    });
+    // 日志治理（US3）：仅工具名/状态/记录条数，不含参数与结果正文
+    Log.i(LOG_TAG, 'AUDIT append tool=%{public}s status=%{public}s records=%{public}d',
+      tool.name, status, AgentService.auditRecords.length);
   }
 
   private static paramsSummaryFor(tool: AgentToolDef, call: LLMToolCall): string {
@@ -752,8 +793,10 @@ export class AgentService {
     return AgentService.auditRecords.slice();
   }
 
-  static clearAuditRecords(): void {
+  static clearAuditRecords(): Promise<void> {
     AgentService.auditRecords = [];
+    // 持久化清空结果上抛给面板提示；store 的 tick（成功/失败均发）驱动列表刷新
+    return ActionAuditStore.clear();
   }
 
   // ============================================================

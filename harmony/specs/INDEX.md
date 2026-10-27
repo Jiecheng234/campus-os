@@ -7,7 +7,8 @@
 > **迁移记录**：2026-10-17 由 `entry/src/main/ets/**` 下迁出
 > （17 个目录 / 68 个文件，用 `git mv` 保留历史）；2026-10-19 新增
 > `schedule-interaction`（新建，无迁移前目录）、
-> `course-registration-service`（新建，无迁移前目录）。
+> `course-registration-service`（新建，无迁移前目录）、
+> `learning-detail`（新建，无迁移前目录，2026-10-27）。
 
 ## 进度总览
 
@@ -37,7 +38,9 @@
 | 18 | trust-device | `specs/trust-device/` | 17/17 | ✅ 完成 | US5 UI 验证受限；US3 服务端 2FA 场景未构造 |
 | 19 | payment-alipay | `specs/payment-alipay/` | 23/23 | 🟡 基础设施已验证（真机 PaymentTest 25/25 + 诊断入口 openLink→回读 elapsedMs=5770）；充值 UI 待 T11–T13 | 共用支付宝链接构建/外跳/回读基础设施；PaymentTest 25/25 |
 | 20 | course-registration-service | `specs/course-registration-service/` | 29/29 | 🟡 构建+部署验证通过（build-only）；选课/退课真实增删待开放时段 | 选课系统服务：学期/已选/课余量搜索/选课/退课；写操作 POST 仅一次 + 三态判定；AI 工具注册归 course-registration-agent（T14），真实增删待开放时段受控验证 |
-| — | **合计** | 20 个 feature | **380 / 380** | **100%** | 任务闭环；功能边界见下节 |
+| 21 | ai-governance | `specs/ai-governance/` | 29/29 | ✅ 完成 | build + 模拟器 UI 验证通过（审计持久化/脱敏/清空；28 权限域启停/恢复全部/重启持久化；权限门禁可读拒绝）；审计结果中的姓名类字段未脱敏，列为已知边界 |
+| 22 | learning-detail | `specs/learning-detail/` | 35/35 | 🟡 任务闭环（build 0 error + 演示模式 UI PASS）；真实登录补拉/预览/下载待验证 | 课程三分组聚合 + 按课程补拉；通知正文（内联优先 + 空正文补拉）；资料带会话 WebView 预览 + 私有目录下载/再次打开；`ManualDeadlineStore` 学习页/首页/AI 同源，重启保留 |
+| — | **合计** | 22 个 feature | **444 / 444** | **100%** | 任务闭环；功能边界见下节 |
 
 > 旧口径（`376/385`、各 feature 的 `30/30` 等）与当前 `tasks.md` 不一致，已废弃。
 > `schedule-interaction` 已于 2026-10-19 提交（`11af855`），其任务计数已纳入本表。
@@ -52,7 +55,8 @@
 - **选课/退课**：服务层已完成（`CourseRegService`，T03：学期/已选/课余量搜索/选课/退课）；AI 工具未注册（RN 通过 AI 工具触达，鸿蒙待 T14 `course-registration-agent`）；真实增删待选课开放时段按受控步骤验证。
 - **邮件附件**：仅展示附件元信息，无下载/预览（RN Android 原生 IMAP 支持下载）。
 - **后台监控/通知**：无 WorkManager/Headless 等价链路；`WorkflowEngine` 仅预设、`NotificationService` 无调用方。
-- **AI 治理 UI**：AI 权限页、操作记录页、智能监控页、记忆管理入口未交付；AI 记忆/审计仅后端/会话级实现。
+- **AI 治理 UI**：AI 权限页、AI 操作记录（审计）页已交付（ai-governance，2026-10-22）；智能监控页、AI 记忆管理入口未交付。
+- **AI 治理存储异常**：审计/权限仓库读取失败时不覆盖历史（审计只读不写、可重试）；权限仓库按 fail-open 处理（工具仍可用，页面提示不可用），需清除应用数据恢复；权限页在失败态仍显示 28/28，属已知 UX 边界。
 - **学习详情**：课程详情无聚合、通知正文不单独抓取、资料下载按钮无动作、手动 DDL 不持久化。
 - **个人日程**：无新增/编辑 UI；`ScheduleManager` 仅内存，AI 写工具直写 Preferences。
 - **其他**：天气详情页、成绩研究生切换、健康打卡/报修入口、缓存新鲜度页、本地通知接入未迁移。

@@ -1873,4 +1873,27 @@ export class AgentTools {
     }
     return undefined;
   }
+
+  /** 全部唯一权限键（保持注册顺序，去重；权限页展示用） */
+  static permissionKeys(): string[] {
+    const registry: AgentToolDef[] = AgentTools.all();
+    const out: string[] = [];
+    for (let i: number = 0; i < registry.length; i++) {
+      const permission: string = registry[i].permission;
+      if (permission.length === 0) {
+        continue;
+      }
+      let exists: boolean = false;
+      for (let j: number = 0; j < out.length; j++) {
+        if (out[j] === permission) {
+          exists = true;
+          break;
+        }
+      }
+      if (!exists) {
+        out.push(permission);
+      }
+    }
+    return out;
+  }
 }

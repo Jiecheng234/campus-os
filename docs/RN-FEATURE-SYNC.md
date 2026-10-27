@@ -1,8 +1,8 @@
 # RN → HarmonyOS 功能同步进度
 
 - **RN 基线**：v2.1.1（`src/` + `android/`），上游 `a2dbb9f`（2026-07-11）后冻结。
-- **Harmony 代码基线**：`11af855` + 当前工作区未提交 T02/T03；20 个 feature，任务 **380 / 380**（T03 实现 + 构建/部署验证完成；选课/退课真实增删待开放时段）。
-- **最后更新**：2026-10-19（T03 选课系统服务层完成 + build-only 验证通过；AI 工具待 T14；写操作待开放时段）
+- **Harmony 代码基线**：`11af855` + 当前工作区未提交 T02/T03/T04/T05；22 个 feature，任务 **444 / 444**（T05 构建 + 模拟器演示链路 UI 验证通过；T03 选课/退课真实增删待开放时段）。
+- **最后更新**：2026-10-27（learning-detail：课程聚合、通知正文、资料预览/下载、手动 DDL 持久化；`devecocli build` 0 error + 模拟器演示模式 UI PASS；真实登录链路待验证）
 
 > 本文件记录**功能层**同步进度；SDD 任务层进度见 `harmony/specs/INDEX.md`，
 > 上游仓库同步见 `docs/UPSTREAM-SYNC.md`，实现细节与已知限制见 `harmony/DEVELOPMENT.md`。
@@ -57,7 +57,7 @@
 | Cookie 持久化 | 原生 Cookie Jar + AsyncStorage | 手动 Cookie 池，仅内存态；冷启动靠自动登录恢复 | 🟡 |
 | 中英 i18n | 自建 i18n | `I18n.ets` + batch1/batch2，高频页与校园/学习子页已迁移 | ✅ |
 | 演示模式 | 有 | 有，零真实请求 | ✅ |
-| 设置页 | Provider/语言/信任/监控/审计/缓存/退出 | Provider/语言/信任/清理/退出/版本；AI 记忆/审计/监控入口仍为禁用态 | 🟡 |
+| 设置页 | Provider/语言/信任/监控/审计/缓存/退出 | Provider/语言/信任/清理/退出/版本；AI 权限/操作记录已交付；AI 记忆/监控入口仍为禁用态 | 🟡 |
 | 发布签名 | debug keystore，不可上架 | debug 签名，不可上架 | 🟡 |
 
 ### 3.2 首页 / 学习 / 日程
@@ -67,15 +67,15 @@
 | 首页工作台 | 今日课、DDL、未读、天气、同步、AI 建议 | 同结构；`HomePage` + `CampusDataService` + `WeatherService` | ✅ |
 | 天气详情 | 独立 `WeatherDetail` 页 | 仅首页天气副标题，无详情页 | ⛔ |
 | 课程列表 | 课程/教师/课号 | `LearningPage` 真实列表 | ✅ |
-| 课程详情聚合 | 课程下作业/通知/资料 | 仅课程基本信息 | 🟡 |
-| 作业列表/详情 | 状态、截止、详情、附件 | 列表 + 详情拉取；附件下载未接 | 🟡 |
-| 通知列表/详情 | 未读、发布人、HTML 正文 | 列表 + 列表传入正文；无独立正文抓取/HTML 渲染 | 🟡 |
-| 资料列表/详情 | 下载/外部打开/WebView 预览 | 列表 + 元信息；下载按钮无动作 | 🟡 |
-| 手动 DDL | 持久化增删 | 新增只改内存，不持久化/不同步 | 🟡 |
+| 课程详情聚合 | 课程下作业/通知/资料 | `CourseDetailPage` 三分组 + 按课程补拉 + 嵌套下钻；演示 UI PASS，真实会话未验证 | 🟡 |
+| 作业列表/详情 | 状态、截止、详情、附件 | 列表 + 详情拉取；作业标签按「未提交 + 手动 DDL」合并；附件下载未接 | 🟡 |
+| 通知列表/详情 | 未读、发布人、HTML 正文 | 列表 + 详情正文（内联优先，空则按课程补拉）；纯文本展示、不回写已读 | 🟡 |
+| 资料列表/详情 | 下载/外部打开/WebView 预览 | 详情 + 带会话 WebView 预览 + 私有目录下载/再次打开；演示态提示 | 🟡 |
+| 手动 DDL | 持久化增删 | `ManualDeadlineStore` 持久化增删；学习页/首页共享，AI 同源；重启验证 PASS | ✅ |
 | 课表周视图 | 周网格、学期、周切换 | 同能力，真实教务数据 | ✅ |
 | 课表交互增强 | 块状课表、课程详情、时间线、配色 | `schedule-visual` + `schedule-interaction` | ✅ |
 | 个人日程 | 新增/删除、日程页展示 | `ScheduleManager` 仅内存且无 UI；AI 写工具直写 Preferences | ⛔ |
-| App 内 WebView | PDF/Office/图片/文本预览 | 基础 `WebViewerPage` 容器，未接文件下载 | 🟡 |
+| App 内 WebView | PDF/Office/图片/文本预览 | `WebViewerPage` 已接资料预览（Cookie + 桌面 UA + 进度/失败）；真实预览未验证 | 🟡 |
 
 ### 3.3 校园子系统
 
@@ -112,11 +112,11 @@
 | AI 对话 | 多会话、流式、失败重试 | `AIChatPage` + `AIChatManager` + `LLMService` | ✅ |
 | 多 Provider | OpenAI/DeepSeek/Qwen/Moonshot/自定义 | OpenAI 兼容协议 + 预设 | ✅ |
 | Agent 工具 | 49 已注册 | 45（35 只读 + 10 可逆写） | 🟡 |
-| 写操作治理 | dry-run→确认→执行→验证→审计 | 同链路；审计仅内存会话级 | ✅ |
+| 写操作治理 | dry-run→确认→执行→验证→审计 | 同链路；审计持久化（200 条上限 + 写入前脱敏），设置页可回看/清空 | ✅ |
 | AI 长期记忆 | 常用图书馆/默认金额/关注课程/备注 | `AIMemoryStore` 已持久化 | ✅ |
 | AI 记忆管理入口 | 设置页可查看/清除 | 设置页仍显示“暂不支持” | ⛔ |
-| AI 操作记录 | 按风险/结果展开、可清空 | 仅内存审计，无设置页入口/持久化 | 🟡 |
-| AI 权限 | 按能力类别禁用 | 后端支持 `disabledPermissions`，无 UI/调用方 | ⛔ |
+| AI 操作记录 | 按风险/结果展开、可清空 | 已对齐（ai-governance，2026-10-22）：审计持久化跨重启（`storage/ActionAuditStore.ets`，200 条上限 + 写入前脱敏 + 串行写队列）；设置页 AI 治理区回看最近 6 条 + 展开详情 + 二次确认清空（`pages/settings/AIAuditPanel.ets`）；写入点在 `services/ai/AgentService.ets` `appendAuditRecord` 双写；build + 模拟器 UI 验证 PASS（清空取消/确认、重启后仍为空） | ✅ |
+| AI 权限 | 按能力类别禁用 | 已对齐（ai-governance，2026-10-22）：28 权限域开关持久化（`storage/AIPermissionStore.ets`）；设置页权限页按域分组启停 + 工具名 + 恢复全部（`pages/settings/AIPermissionsPage.ets`）；`AgentService.runAgent` 按禁用清单过滤工具下发，`executeToolCall` 门禁兜底点名调用（可读拒绝 + 审计）；build + 模拟器 UI 验证 PASS（关闭/重开、恢复全部、重启后仍为 27/28） | ✅ |
 | 智能监控 / Workflow | 8 类预设，4 类可执行 | `WorkflowEngine` 仅 3 个预设、无调用方 | ⛔ |
 | 后台监控 | WorkManager + Headless JS | 无等价调度链路 | ⛔ |
 | Agent UI 简报 | briefing/task_plan/weather 三类块 | 首页有 task plan 风格建议；完整块未确认 | 🟡 |
@@ -155,7 +155,7 @@
 
 ### P1：用户感知最强 / 主流程缺口
 
-1. **学习详情深链**：课程详情聚合、通知正文抓取、资料下载/预览、手动 DDL 持久化。
+1. ~~**学习详情深链**~~：已完成（learning-detail，2026-10-27）：课程聚合/通知正文/资料预览下载/手动 DDL 持久化；演示链路 UI PASS，真实登录补拉、预览与下载待验证。
 2. **邮件附件下载**：详情页已有附件元信息，补下载/保存/打开。
 3. **个人日程 UI**：日程页新增/编辑/删除，展示 AI 写入的个人事件。
 4. **成绩研究生切换**：`fetchGrades` 支持本科/研究生两套报表。
@@ -165,8 +165,8 @@
 ### P2：平台与 AI 治理
 
 1. **本地通知 + 手动检查**：Phase 0 决策本轮交付通知与设置页手动检查；后台周期调度后置并标 ➖。
-2. **AI 权限 UI**：复用后端 `disabledPermissions`，补设置页。
-3. **AI 操作记录页**：审计持久化 + 可按风险/结果查看/清空。
+2. ~~**AI 权限 UI**~~：已完成（ai-governance，2026-10-22）：`AIPermissionsPage` + `AIPermissionStore` + AgentService 过滤/门禁。
+3. ~~**AI 操作记录页**~~：已完成（ai-governance，2026-10-22）：`ActionAuditStore` 持久化脱敏 + `AIAuditPanel` 回看/展开/清空。
 4. **AI 记忆管理页**：查看/清除 `AIMemoryStore`。
 5. **智能监控 UI**：Workflow 预设、启停、立即检查、免打扰。
 6. **缓存新鲜度页**：学习快照/课表缓存分级展示。
@@ -228,7 +228,7 @@
 
 ### Phase 1：低风险只读/详情补齐（约 9–14 人日）
 
-1. 学习详情深链：课程聚合、通知正文、资料下载/预览、手动 DDL 持久化。
+1. ~~学习详情深链：课程聚合、通知正文、资料下载/预览、手动 DDL 持久化。~~ 已完成（learning-detail，2026-10-27）；真实登录链路待验证。
 2. 个人日程 UI：新增/编辑/删除，展示 AI 写入 Preferences 的个人事件。
 3. 天气详情页、成绩研究生切换、健康打卡/报修入口。
 4. 邮件附件下载（复用 `MailService` 的 MIME 解析结果）。
@@ -236,8 +236,8 @@
 
 ### Phase 2：AI 治理与平台能力（约 5–8 人日）
 
-1. AI 权限 UI（复用 `disabledPermissions`）。
-2. AI 操作记录持久化 + 设置页入口。
+1. ~~AI 权限 UI（复用 `disabledPermissions`）~~：已完成（ai-governance）。
+2. ~~AI 操作记录持久化 + 设置页入口~~：已完成（ai-governance）。
 3. AI 记忆管理页。
 4. `WorkflowEngine` 执行器 + 监控 UI（预设/启停/立即检查/免打扰）。
 5. 本地通知接入；后台周期调度后置，标 ➖ 并记录系统限制。
@@ -280,3 +280,5 @@
 | 2026-10-19 | 评审后修正：自检隔离测试事件 ID、BUILD_READY 语义、RN 链接逐字符对齐；真机 openLink 待验证 |
 | 2026-10-19 | T03：新增选课系统服务 `CourseRegService`（学期 / 已选课程 / 课余量搜索 / 选课 / 退课；会话激活 + `crRequest` 三标记归一 + 写操作 POST 仅一次、成功/拒绝/未确认三态判定）；"选课/退课"由 ⛔ 更新为 🟡：AI 工具待 T14，真实增删待开放时段（受控步骤：选课 → 回查已选 → 退课 → 再回查） |
 | 2026-10-19 | T03 验证（build-only）：`devecocli build` 成功（exit 0）；Mate 80 Pro Max 模拟器安装启动 + Smoke PASS；设备日志 `CourseReg Self-Test 70/70 passed`；Phase4 仍为既有 20/21（Base64 empty 基线失败，与本特性无关） |
+| 2026-10-22 | ai-governance：新增审计持久化（`ActionAuditStore`：200 条上限 + 串行写队列 + 敏感键/文本递归脱敏 + auditTick 信号）、权限开关仓库（`AIPermissionStore`，串行写队列 + 失败回滚）、设置页 AI 治理区（`AIAuditPanel` 回看/展开/二次确认清空 + `AIPermissionsPage` 28 权限域启停/工具名/恢复全部/失败回滚）、AgentService 工具清单按禁用过滤 + executeToolCall 权限门禁（可读拒绝 + 审计）+ 审计双写/日志治理；3.4 节「AI 操作记录」「AI 权限」由 🟡/⛔ 更新为 ✅；验证：`devecocli build` 成功 + Mate 80 Pro Max 模拟器 UI 验证 PASS（审计跨重启、清空取消/确认、权限关闭/重开、恢复全部、重启后 27/28 持久化、邮件审计结果邮箱已打码） |
+| 2026-10-27 | learning-detail（T05）：课程详情聚合作业/通知/资料并按课程补拉、通知正文（内联优先 + 空正文补拉）、资料带会话 WebView 预览 + 私有目录下载/再次打开、`ManualDeadlineStore` 手动 DDL 持久化与学习页/首页/AI 同源；3.2 节「课程详情聚合/通知/资料/App 内 WebView」更新为 🟡（实现完成，真实登录链路待验证），「手动 DDL」更新为 ✅；验证：`devecocli build` 0 error + Mate 80 Pro Max 模拟器演示模式 US1–US5 UI PASS（含 DDL 重启保留），真实网络链路因无凭证未验证 |

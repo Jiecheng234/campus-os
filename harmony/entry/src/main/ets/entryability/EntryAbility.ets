@@ -5,6 +5,7 @@ import { window } from '@kit.ArkUI';
 import { getTurboModuleList } from '../turbomodules/TurboModuleRegistry';
 import { runPhase4SelfTest } from '../utils/Phase4SelfTest';
 import { PreferencesStorage } from '../storage/PreferencesStorage';
+import { AIPermissionStore } from '../storage/AIPermissionStore';
 import { SettingsManager } from '../state/SettingsManager';
 import { I18n } from '../utils/I18n';
 import { AlipayPaymentService } from '../services/payment/AlipayPaymentService';
@@ -23,6 +24,10 @@ export default class EntryAbility extends UIAbility {
     PreferencesStorage.init(this.context);
     // 尽早开始加载持久化设置（幂等；onWindowStageCreate 复用同一任务）
     SettingsManager.ensureLoaded();
+    // 预热 AI 工具权限仓库：AgentService 构建工具清单前禁用状态已就绪（fire-and-forget）
+    AIPermissionStore.ensureLoaded().catch((): void => {
+      hilog.warn(DOMAIN, 'CampusOS', 'AIPermissionStore preload failed');
+    });
 
     // TODO(Phase 4): Initialize React Native runtime
     // 1. Create RN instance: const rnInstance = await RNInstanceFactory.create(this.context);

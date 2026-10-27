@@ -10,7 +10,8 @@
  *    登录页可回填一键直达；未信任→清除，不留残留）。
  *  - 数据清理：AI 会话 / 学习缓存（AlertDialog 二次确认 + 结果提示）。
  *  - 版本号读取自身应用包信息（bundleManager，禁止硬编码）。
- *  - "AI 记忆 / 操作记录 / 智能监控"标注"暂不支持"（禁用态，无跳转）。
+ *  - "AI 记忆 / 智能监控"标注"暂不支持"（禁用态，无跳转）；操作记录已由
+ *    AI 治理区（AIAuditPanel，ai-governance 特性）承接：审计持久化跨重启回看。
  *  - AI 模型配置（ai-chat 特性）：预设/自定义 provider + 掩码 API Key；
  *    Key 入系统关键资产存储（ApiKeyStore，不落偏好明文），provider 配置
  *    经 SettingsManager 持久化；保存时校验 baseUrl 形态。
@@ -23,6 +24,9 @@ import { AuthManager } from '../state/AuthManager';
 import { SessionManager } from '../services/auth/SessionManager';
 import { SecureStorage, SecureCredentials } from '../storage/SecureStorage';
 import { LocalDataCleaner } from '../storage/LocalDataCleaner';
+import { AIAuditPanel } from './settings/AIAuditPanel';
+import { AIPermissionsPage } from './settings/AIPermissionsPage';
+import { BackDispatcher, BackOwner, BackHandler } from '../state/BackDispatcher';
 import { ApiKeyStore } from '../services/ai/ApiKeyStore';
 import { LLMService, LLMProviderPreset } from '../services/ai/LLMService';
 import { I18n } from '../utils/I18n';
@@ -156,6 +160,13 @@ export struct SettingsPage {
   /** 安全存储中已存在 Key（输入留空时保存语义为"保持不变"） */
   @State aiKeyConfigured: boolean = false;
 
+  // ── AI 治理子页（ai-governance 特性）：subScreen 驱动、无路由栈 ──
+  @State @Watch('onSubScreenChange') subScreen: string = '';
+  private backHandler: BackHandler = () => {
+    this.subScreen = '';
+    return true;
+  };
+
   aboutToAppear(): void {
     this.demoMode = SettingsManager.isDemoMode();
     this.trustDevice = SettingsManager.isTrustDevice();
@@ -168,6 +179,16 @@ export struct SettingsPage {
 
   aboutToDisappear(): void {
     this.unsubscribePaymentReturn();
+    BackDispatcher.remove(this.backHandler);
+  }
+
+  /** 治理子页开合：注册/注销系统返回处理器（BackOwner.SETTINGS） */
+  onSubScreenChange(): void {
+    if (this.subScreen !== '') {
+      BackDispatcher.push(BackOwner.SETTINGS, this.backHandler);
+    } else {
+      BackDispatcher.remove(this.backHandler);
+    }
   }
 
   /**
@@ -605,6 +626,10 @@ export struct SettingsPage {
   }
 
   build() {
+    // AI 工具权限子页（ai-governance）：整页替换，返回经 BackDispatcher
+    if (this.subScreen === 'ai-permissions') {
+      AIPermissionsPage({ onBack: () => { this.subScreen = ''; } })
+    } else {
     Scroll() {
       Column() {
         SafeTop()
@@ -895,14 +920,6 @@ export struct SettingsPage {
             .constraintSize({ maxWidth: '100%' })
             .margin({ left: Space.md })
           UnsupportedRow({
-            label: this.tr('settings.actionHistory'),
-            value: this.tr('settings.notSupported')
-          })
-          Divider().color(Theme.divider)
-            .width('100%')
-            .constraintSize({ maxWidth: '100%' })
-            .margin({ left: Space.md })
-          UnsupportedRow({
             label: this.tr('settings.smartMonitor'),
             value: this.tr('settings.notSupported')
           })
@@ -922,6 +939,24 @@ export struct SettingsPage {
         .backgroundColor(Theme.surface)
         .border({ width: 1, color: Theme.borderSubtle })
         .margin({ left: Space.lg, right: Space.lg })
+
+        // ── AI 治理：行为审计面板（ai-governance，替换原「操作记录」禁用行）──
+        AIAuditPanel()
+
+        // ── AI 治理：工具权限入口（ai-governance）──
+        Column() {
+          SettingRow({
+            label: this.tr('settings.aiPermissions'),
+            value: this.tr('settings.aiPermDesc'),
+            onItemClick: () => { this.subScreen = 'ai-permissions'; }
+          })
+        }
+        .width('100%')
+        .constraintSize({ maxWidth: '100%' })
+        .borderRadius(Radius.lg)
+        .backgroundColor(Theme.surface)
+        .border({ width: 1, color: Theme.borderSubtle })
+        .margin({ left: Space.lg, right: Space.lg, top: Space.sm })
 
         // ── 退出登录（ghost 按钮）──
         Text(this.tr('settings.logout'))
@@ -976,6 +1011,7 @@ export struct SettingsPage {
         }
       }
     })
+    }
   }
 
   /** 设置弹层内容：同一稳定节点上唯一一次 bindSheet，按模式切换 builder 内容 */

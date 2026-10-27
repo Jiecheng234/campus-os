@@ -245,6 +245,30 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
     en: 'This action runs after your approval and can be undone afterwards. Continue?'
   },
 
+  // ── AI Agent 治理（ai-governance 特性追加：权限门禁 / 风险标签 / 审计）──
+  'ai.permissionDisabled': {
+    zh: '该工具已被禁用，可在 设置 › AI 工具权限 中开启',
+    en: 'This tool is disabled. Enable it in Settings › AI tool permissions.'
+  },
+  'ai.riskNone': { zh: '只读', en: 'Read-only' },
+  'ai.riskLow': { zh: '可写', en: 'Write' },
+  'ai.riskMedium': { zh: '中风险', en: 'Medium risk' },
+  'ai.riskHigh': { zh: '高风险', en: 'High risk' },
+  'ai.confirmRequired': { zh: '需确认', en: 'Confirm first' },
+  'ai.confirmNotRequired': { zh: '无需确认', en: 'No confirmation' },
+  'ai.confirmApproved': { zh: '已确认', en: 'Approved' },
+  'ai.confirmDenied': { zh: '已拒绝', en: 'Denied' },
+  'ai.confirmUnavailable': { zh: '缺少确认通道', en: 'No channel' },
+  'ai.auditPermission': { zh: '权限', en: 'Permission' },
+  'ai.auditConfirmation': { zh: '确认', en: 'Confirmation' },
+  'ai.auditAffected': { zh: '影响资源', en: 'Affected' },
+  'ai.auditParams': { zh: '参数', en: 'Params' },
+  'ai.auditResult': { zh: '结果', en: 'Result' },
+  'ai.auditError': { zh: '错误', en: 'Error' },
+  'ai.auditVerification': { zh: '验证', en: 'Verification' },
+  'ai.verifyOk': { zh: '验证通过', en: 'Verified' },
+  'ai.verifyFailed': { zh: '验证未通过', en: 'Verification failed' },
+
   // ── 登录页（login.*）──
   'login.subtitle': { zh: '清华校园 AI 操作系统', en: 'Tsinghua campus AI OS' },
   'login.restoring': { zh: '正在恢复登录…', en: 'Restoring sign-in…' },
@@ -384,6 +408,67 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'settings.actionHistory': { zh: '操作记录', en: 'Action history' },
   'settings.smartMonitor': { zh: '智能监控', en: 'Smart monitor' },
   'settings.notSupported': { zh: '暂不支持', en: 'Not available yet' },
+
+  // ── AI 治理区（ai-governance 特性追加：行为审计面板 + 工具权限页）──
+  'settings.sectionGovernance': { zh: 'AI 治理', en: 'AI governance' },
+  'settings.aiPermissions': { zh: 'AI 工具权限', en: 'AI tool permissions' },
+  'settings.aiPermDesc': { zh: '管理 AI 可使用的工具范围', en: 'Manage which tools the AI may use' },
+  'settings.aiPermSummary': { zh: '已启用 {enabled}/{total}', en: '{enabled}/{total} enabled' },
+  'settings.aiPermReadonlyGroup': { zh: '只读工具', en: 'Read-only tools' },
+  'settings.aiPermWriteGroup': { zh: '可写工具', en: 'Write tools' },
+  'settings.aiPermToolCount': { zh: '{n} 个工具', en: '{n} tools' },
+  'settings.aiPermTools': { zh: '包含工具：{tools}', en: 'Tools: {tools}' },
+  'settings.aiPermRestoreAll': { zh: '恢复全部权限', en: 'Restore all permissions' },
+  'settings.aiPermRestored': { zh: '已恢复全部权限', en: 'All permissions restored' },
+  'settings.aiPermToggleFailed': { zh: '保存失败，已恢复原状态', en: 'Save failed; the switch was reverted' },
+  'settings.aiPermRestoreFailed': { zh: '恢复失败，请重试', en: 'Restore failed. Please retry.' },
+  'settings.aiPermLoadFailed': {
+    zh: '权限设置读取失败，开关暂不可用，请稍后重试',
+    en: 'Failed to load permission settings; toggles are unavailable. Please retry later.'
+  },
+  'settings.aiAuditTitle': { zh: 'AI 行为审计', en: 'Action audit' },
+  'settings.aiAuditDesc': { zh: 'AI 工具调用记录（本地保存 200 条）', en: 'AI tool call history (200 kept locally)' },
+  'settings.aiAuditEmpty': { zh: '暂无审计记录', en: 'No audit records yet' },
+  'settings.aiAuditLoadFailed': {
+    zh: '审计记录读取失败，请稍后重试',
+    en: 'Failed to load audit records. Please retry later.'
+  },
+  'settings.aiAuditClearWithCount': { zh: '清空审计记录（{n} 条）', en: 'Clear records ({n})' },
+  'settings.aiAuditClearTitle': { zh: '清空审计记录', en: 'Clear audit records' },
+  'settings.aiAuditClearMessage': {
+    zh: '将删除本机保存的全部 AI 工具调用记录，不可恢复。',
+    en: 'This deletes all locally stored AI tool call records. This cannot be undone.'
+  },
+  'settings.aiAuditClearOk': { zh: '清空', en: 'Clear' },
+  'settings.aiAuditClearFailed': { zh: '清空失败，请重试', en: 'Failed to clear. Please retry.' },
+  'settings.aiPermDomain.campus.weather.read': { zh: '天气查询', en: 'Weather' },
+  'settings.aiPermDomain.learning.overview.read': { zh: '学业概览', en: 'Learning overview' },
+  'settings.aiPermDomain.learning.homework.read': { zh: '作业查询', en: 'Homework' },
+  'settings.aiPermDomain.campus.grades.read': { zh: '成绩查询', en: 'Grades' },
+  'settings.aiPermDomain.campus.electricity.read': { zh: '宿舍电费', en: 'Dorm electricity' },
+  'settings.aiPermDomain.campus.laundry.read': { zh: '洗衣房', en: 'Laundry' },
+  'settings.aiPermDomain.campus.card.read': { zh: '校园卡', en: 'Campus card' },
+  'settings.aiPermDomain.campus.card.transactions.read': { zh: '校园卡流水', en: 'Card transactions' },
+  'settings.aiPermDomain.campus.network.read': { zh: '校园网', en: 'Campus network' },
+  'settings.aiPermDomain.campus.network.devices.read': { zh: '联网设备', en: 'Network devices' },
+  'settings.aiPermDomain.campus.sports.read': { zh: '体育场馆', en: 'Sports venues' },
+  'settings.aiPermDomain.campus.sports.reservation.read': { zh: '体育场馆预约', en: 'Sports reservations' },
+  'settings.aiPermDomain.campus.classroom.read': { zh: '空闲教室', en: 'Classrooms' },
+  'settings.aiPermDomain.campus.library.read': { zh: '图书馆', en: 'Library' },
+  'settings.aiPermDomain.campus.library.booking.read': { zh: '图书馆预约', en: 'Library bookings' },
+  'settings.aiPermDomain.campus.library.room.read': { zh: '研读间', en: 'Study rooms' },
+  'settings.aiPermDomain.campus.library.room.member.read': { zh: '研读间成员', en: 'Study room members' },
+  'settings.aiPermDomain.campus.library.room.booking.read': { zh: '研读间预约', en: 'Study room bookings' },
+  'settings.aiPermDomain.campus.news.read': { zh: '新闻资讯', en: 'News' },
+  'settings.aiPermDomain.campus.mail.read': { zh: '清华邮箱', en: 'Mail' },
+  'settings.aiPermDomain.schedule.personal.read': { zh: '个人日程', en: 'Personal schedule' },
+  'settings.aiPermDomain.schedule.read': { zh: '课表日程', en: 'Class schedule' },
+  'settings.aiPermDomain.learning.deadline.write': { zh: '截止日期写入', en: 'Deadline write' },
+  'settings.aiPermDomain.campus.library.booking.write': { zh: '图书馆预约写入', en: 'Library booking write' },
+  'settings.aiPermDomain.campus.network.devices.write': { zh: '联网设备写入', en: 'Network device write' },
+  'settings.aiPermDomain.campus.library.room.booking.write': { zh: '研读间预约写入', en: 'Study room booking write' },
+  'settings.aiPermDomain.schedule.personal.write': { zh: '个人日程写入', en: 'Personal schedule write' },
+  'settings.aiPermDomain.ai.memory.write': { zh: 'AI 记忆写入', en: 'AI memory write' },
 
   'settings.clearLocalData': { zh: '清理本地数据', en: 'Clear local data' },
   'settings.clearDataTitle': { zh: '清理本地数据', en: 'Clear local data' },
@@ -1157,6 +1242,72 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'courseReg.error.unsupportedPriority': { zh: '不支持的选课类型', en: 'Unsupported course selection type' },
   'courseReg.error.invalidParam': { zh: '请求参数不完整或不合法', en: 'Invalid request parameters' },
   'courseReg.error.server': { zh: '选课系统暂时不可用', en: 'The course registration service is unavailable' },
+
+  // ── 学习详情深链：课程详情聚合（learning.detail.*，CourseDetailPage）──
+  'learning.detail.groupHomework': { zh: '作业', en: 'Homework' },
+  'learning.detail.groupNotifications': { zh: '通知', en: 'Notices' },
+  'learning.detail.groupFiles': { zh: '资料', en: 'Files' },
+  'learning.detail.emptyHomework': { zh: '该课程暂无作业', en: 'No assignments in this course' },
+  'learning.detail.emptyNotifications': { zh: '该课程暂无通知', en: 'No notices in this course' },
+  'learning.detail.emptyFiles': { zh: '该课程暂无资料', en: 'No files in this course' },
+  'learning.detail.courseMissingTitle': { zh: '课程不存在或已不可用', en: 'Course not found or unavailable' },
+  'learning.detail.courseMissingMessage': {
+    zh: '该课程可能已被删除或学期已切换',
+    en: 'This course may have been removed or the semester changed'
+  },
+  'learning.detail.back': { zh: '返回列表', en: 'Back to list' },
+  'learning.detail.loading': { zh: '正在加载…', en: 'Loading…' },
+  'learning.detail.syncFailed': {
+    zh: '部分数据加载失败，可稍后重试',
+    en: 'Some data failed to load. Try again later'
+  },
+  'common.retry': { zh: '重试', en: 'Retry' },
+
+  // ── 学习详情深链：通知详情（learning.notification.*，NotificationDetailPage）──
+  'learning.notification.course': { zh: '所属课程', en: 'Course' },
+  'learning.notification.publisher': { zh: '发布人', en: 'Publisher' },
+  'learning.notification.publishTime': { zh: '发布时间', en: 'Published' },
+  'learning.notification.loadingBody': { zh: '正在获取正文…', en: 'Loading content…' },
+  'learning.notification.loadFailed': { zh: '正文获取失败', en: 'Failed to load content' },
+
+  // ── 学习详情深链：资料详情（learning.file.*，FileDetailPage / LearningFileStore）──
+  'learning.file.preview': { zh: '预览', en: 'Preview' },
+  'learning.file.downloading': { zh: '下载中…', en: 'Downloading…' },
+  'learning.file.downloaded': { zh: '已下载', en: 'Downloaded' },
+  'learning.file.open': { zh: '打开', en: 'Open' },
+  'learning.file.downloadSuccess': { zh: '已保存：{name}', en: 'Saved: {name}' },
+  'learning.file.downloadFailed': { zh: '下载失败，请重试', en: 'Download failed. Please retry' },
+  'learning.file.invalidResponse': {
+    zh: '服务端返回了页面而非文件，可能是会话已失效',
+    en: 'The server returned a page instead of the file. Your session may have expired'
+  },
+  'learning.file.previewFailed': { zh: '预览加载失败', en: 'Preview failed to load' },
+  'learning.file.demoUnavailable': {
+    zh: '演示模式下不可用，登录后可预览与下载真实资料',
+    en: 'Not available in demo mode. Sign in to preview and download real files'
+  },
+  'learning.file.openFailed': { zh: '无法打开该文件', en: 'Could not open this file' },
+  'learning.file.nameFallback': { zh: '文件', en: 'File' },
+
+  // ── 学习详情深链：内嵌浏览器（webviewer.*，WebViewerPage）──
+  'webviewer.loading': { zh: '正在加载…', en: 'Loading…' },
+  'webviewer.loadFailed': { zh: '页面加载失败', en: 'Failed to load the page' },
+
+  // ── 学习详情深链：手动 DDL（learning.ddl.*，LearningPage / HomePage）──
+  'learning.ddl.manualBadge': { zh: '手动', en: 'Manual' },
+  'learning.ddl.delete': { zh: '删除', en: 'Delete' },
+  'learning.ddl.deleteTitle': { zh: '删除这条 DDL？', en: 'Delete this deadline?' },
+  'learning.ddl.deleteMessage': {
+    zh: '将删除「{title}」，该操作不可撤销。',
+    en: '"{title}" will be deleted. This cannot be undone.'
+  },
+  'learning.ddl.deleteOk': { zh: '删除', en: 'Delete' },
+  'learning.ddl.overdue': { zh: '已过期', en: 'Overdue' },
+  'learning.ddl.savedToast': { zh: '已添加', en: 'Added' },
+  'learning.ddl.deletedToast': { zh: '已删除', en: 'Deleted' },
+  'learning.ddl.dateInvalid': { zh: '日期格式应为 YYYY-MM-DD', en: 'Date should be YYYY-MM-DD' },
+  'learning.ddl.timeInvalid': { zh: '时间格式应为 HH:mm', en: 'Time should be HH:mm' },
+  'learning.ddl.saveFailed': { zh: '保存失败，请重试', en: 'Save failed. Please retry' },
 };
 
 export class I18n {
@@ -1167,6 +1318,11 @@ export class I18n {
   static init(): void {
     const locale: string = I18n.normalizeLocale(SettingsManager.getLocale());
     AppStorage.setOrCreate<string>(LOCALE_STORAGE_KEY, locale);
+  }
+
+  /** 词典是否收录该键（权限域标题等场景：缺失时调用方回退原始键名展示） */
+  static has(key: string): boolean {
+    return SETTINGS_DICTIONARY[key] !== undefined;
   }
 
   /**

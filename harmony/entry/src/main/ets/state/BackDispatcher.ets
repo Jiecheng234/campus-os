@@ -13,6 +13,7 @@ export type BackHandler = () => boolean;
 export enum BackOwner {
   LEARNING = 'learning',
   CAMPUS = 'campus',
+  SETTINGS = 'settings',
 }
 
 interface BackEntry {
