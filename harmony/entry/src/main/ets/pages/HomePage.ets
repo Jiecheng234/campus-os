@@ -175,26 +175,57 @@ export struct HomePage {
   @State ddlDeadline: string = '';
   /** 手动 DDL（store 共享数据；真实/演示模式均合并进「最近 DDL」建议） */
   @State manualDdls: ManualDeadline[] = [];
+  /** 建议操作快照：显式状态数组，手动 DDL/远程数据变化后重算（ForEach 数据源可稳定刷新） */
+  @State suggestedItems: SuggestedAction[] = [];
+  /** 当前 Tab 是否为首页：切回时重载手动 DDL（Tabs 常驻页面无页面级 onShow） */
+  @Prop @Watch('onActiveChange') active: boolean = false;
+  /** store 变更信号：隐藏/常驻页面也能通过 AppStorage 收到手动 DDL 更新（FR-019） */
+  @StorageLink('manualDdlTick') @Watch('onManualDdlTick') manualDdlTick: number = 0;
   private storeSubId: number = -1;
 
   aboutToAppear(): void {
     this.loadWeather();
     // 手动 DDL 共享数据：两模式均加载并订阅（学习页/AI 变更后首页即时重算）
-    ManualDeadlineStore.listAsync().then((list: ManualDeadline[]) => {
-      this.manualDdls = list;
-    });
-    this.storeSubId = ManualDeadlineStore.subscribe(() => {
-      this.manualDdls = ManualDeadlineStore.list();
-    });
+    this.ensureManualDdlSubscription();
     if (!this.isRealMode()) {
       // 演示模式：指标与演示课程保持一致
       const m: BriefingMetrics = getBriefingMetrics();
       this.metricClasses = String(m.classes);
       this.metricTasks = String(m.tasks);
       this.metricUnread = String(m.unread);
+      this.refreshSuggestions();
       return;
     }
     this.refreshHomeData(false);
+  }
+
+  /**
+   * 确保手动 DDL 已加载且订阅存在：Tabs 常驻页面在切走/切回时可能出现订阅失效，
+   * 可见时重入本方法，保证「下次展示与 store 一致」（FR-019）。
+   */
+  private ensureManualDdlSubscription(): void {
+    ManualDeadlineStore.listAsync().then((list: ManualDeadline[]) => {
+      this.manualDdls = list;
+      this.refreshSuggestions();
+    });
+    if (this.storeSubId < 0) {
+      this.storeSubId = ManualDeadlineStore.subscribe(() => {
+        this.manualDdls = ManualDeadlineStore.list();
+        this.refreshSuggestions();
+      });
+    }
+  }
+
+  /** Tab 切回首页：重载手动 DDL（保证下次展示与 store 一致） */
+  private onActiveChange(): void {
+    if (this.active) {
+      this.ensureManualDdlSubscription();
+    }
+  }
+
+  /** store 变更信号：重载列表（与订阅双保险，覆盖隐藏页面） */
+  private onManualDdlTick(): void {
+    this.ensureManualDdlSubscription();
   }
 
   aboutToDisappear(): void {
@@ -246,12 +277,17 @@ export struct HomePage {
     let unread: number = 0;
     let earliestDdl: CampusHomework | null = null;
     let earliestMs: number = NaN;
+    // 全部截止时间都不可解析时的回退条目：标题仍要能展示（第一条未提交作业）
+    let fallbackDdl: CampusHomework | null = null;
     if (courses.length > 0) {
       try {
         const hw: CampusHomework[] = await service.fetchHomework(courses);
         for (let i: number = 0; i < hw.length; i++) {
           if (!hw[i].submitted && !hw[i].graded) {
             pending++;
+            if (fallbackDdl === null) {
+              fallbackDdl = hw[i];
+            }
             const ms: number = parseDeadlineMs(hw[i].deadline);
             if (!isNaN(ms) && (earliestDdl === null || ms < earliestMs)) {
               earliestDdl = hw[i];
@@ -275,6 +311,9 @@ export struct HomePage {
     }
     this.metricTasks = String(pending);
     this.metricUnread = String(unread);
+    if (earliestDdl === null) {
+      earliestDdl = fallbackDdl;
+    }
     this.ddlTitle = earliestDdl !== null ? earliestDdl.title : '';
     this.ddlCourse = earliestDdl !== null ? earliestDdl.courseName : '';
     this.ddlDeadline = earliestDdl !== null ? earliestDdl.deadline : '';
@@ -310,6 +349,7 @@ export struct HomePage {
       }
       this.syncStatus = status;
     }
+    this.refreshSuggestions();
   }
 
   /** 真实模式一律显示真实数据（空则显示"今日无课程安排"）；仅演示模式回落演示数据 */
@@ -401,14 +441,27 @@ export struct HomePage {
   private appendDdlItem(items: SuggestedAction[], remoteTitle: string,
     remoteCourse: string, remoteDeadline: string): void {
     const remoteMs: number = remoteDeadline.length > 0 ? parseDeadlineMs(remoteDeadline) : NaN;
-    const hasRemote: boolean = remoteTitle.length > 0 && !isNaN(remoteMs);
-    const md: ManualDeadline | null = this.manualDdls.length > 0 ? this.manualDdls[0] : null;
-    const mdMs: number = md !== null ? manualDeadlineMs(md.date, md.time) : NaN;
-    const hasManual: boolean = md !== null && !isNaN(mdMs) && md.title.length > 0;
+    // 远程标题存在即展示：时间不可解析时距离文案回退原文，不再整条丢弃
+    const hasRemote: boolean = remoteTitle.length > 0;
+    const remoteComparable: boolean = hasRemote && !isNaN(remoteMs);
+    // 使用 @State 列表（读取建立 UI 依赖；列表由订阅/Tick 重载保持最新）
+    const manualList: ManualDeadline[] = this.manualDdls;
+    // 手动项取第一条「时间可解析」的条目，而非盲取 [0]（历史/AI 写入的异常条目跳过）
+    let md: ManualDeadline | null = null;
+    let mdMs: number = NaN;
+    for (let i: number = 0; i < manualList.length; i++) {
+      const candMs: number = manualDeadlineMs(manualList[i].date, manualList[i].time);
+      if (!isNaN(candMs)) {
+        md = manualList[i];
+        mdMs = candMs;
+        break;
+      }
+    }
+    const hasManual: boolean = md !== null && md.title.length > 0;
     let title: string = '';
     let course: string = '';
     let deadline: string = '';
-    if (hasManual && (!hasRemote || mdMs <= remoteMs) && md !== null) {
+    if (hasManual && md !== null && (!remoteComparable || mdMs <= remoteMs)) {
       title = md.title;
       course = md.course;
       deadline = md.date + ' ' + (md.time.length > 0 ? md.time : '23:59');
@@ -423,7 +476,8 @@ export struct HomePage {
     const urgent: boolean = !isNaN(ms) && ms - Date.now() < 2 * 24 * 60 * 60 * 1000;
     const distance: string = formatDeadlineDistance(deadline, this.locale);
     const ddl: SuggestedAction = new SuggestedAction();
-    ddl.id = 'next-deadline';
+    // 唯一 key：手动/远程切换时内容变化会重建行，避免 ForEach 复用旧节点（同 id 不刷新）
+    ddl.id = 'next-deadline:' + title + ':' + deadline;
     ddl.title = this.trp('home.suggest.nextDdl', { 'title': title });
     ddl.detail = course.length > 0 ? course + ' · ' + distance : distance;
     ddl.tone = urgent ? BadgeTone.Warning : BadgeTone.Default;
@@ -464,8 +518,7 @@ export struct HomePage {
   }
 
   /** 建议操作条目（对齐原项目 buildTaskPlanItems 排序与 4 条上限；全空回退轻量日） */
-  private getSuggestedItems(): SuggestedAction[] {
-    const items: SuggestedAction[] = [];
+  private getSuggestedItems(): SuggestedAction[] {    const items: SuggestedAction[] = [];
     if (this.isRealMode()) {
       this.appendRealSuggestedItems(items);
     } else {
@@ -481,6 +534,11 @@ export struct HomePage {
       items.push(quiet);
     }
     return items.length > 4 ? items.slice(0, 4) : items;
+  }
+
+  /** 重算建议快照：数据源（远程 DDL/手动 DDL/课表/未读）变化后调用 */
+  private refreshSuggestions(): void {
+    this.suggestedItems = this.getSuggestedItems();
   }
 
   build() {
@@ -559,7 +617,7 @@ export struct HomePage {
           .alignItems(HorizontalAlign.Start)
           .margin({ bottom: Space.xs })
 
-          ForEach(this.getSuggestedItems(), (item: SuggestedAction, index: number) => {
+          ForEach(this.suggestedItems, (item: SuggestedAction, index: number) => {
             if (index > 0) {
               Divider().color(Theme.divider)
             }
@@ -567,7 +625,7 @@ export struct HomePage {
               item: item,
               onTap: () => { this.handleSuggestedAction(item); }
             })
-          }, (item: SuggestedAction) => item.id)
+          }, (item: SuggestedAction) => item.id + '|' + item.title + '|' + item.detail + '|' + item.actionLabel)
 
           Flex({ wrap: FlexWrap.Wrap }) {
             Text(this.tr('home.qa.emptyClassroom'))
@@ -667,5 +725,11 @@ export struct HomePage {
     .height('100%')
     .scrollBar(BarState.Off)
     .backgroundColor(Theme.background)
+    // Tab 切回首页时重载手动 DDL，避免隐藏期间订阅失效导致建议区陈旧
+    .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean, ratio: number) => {
+      if (isVisible) {
+        this.ensureManualDdlSubscription();
+      }
+    })
   }
 }

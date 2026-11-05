@@ -38,8 +38,10 @@ export struct WebViewerPage {
   }
 
   aboutToAppear(): void {
-    // 加载前把 learn 域会话 Cookie 同步进 ArkWeb（Cookie 管理 + Web 组件 Cookie 分池存储）
-    SessionManager.getCampusDataService().syncLearnCookiesForWebView();
+    // 空 URL 直接进入失败态，不触发 Web 加载（失败覆盖层保留重试入口）
+    if (this.url.length === 0) {
+      this.loadFailed = true;
+    }
   }
 
   build() {
@@ -62,13 +64,28 @@ export struct WebViewerPage {
       }
 
       Stack() {
-        Web({ src: this.url, controller: this.controller })
+        // src 置空：控制器就绪后再同步 Cookie 并 loadUrl，保证 Cookie 先于首请求注入
+        Web({ src: '', controller: this.controller })
           .width('100%')
           .height('100%')
           .javaScriptAccess(true)
           .domStorageAccess(true)
           .userAgent(DESKTOP_UA)
           .visibility(this.loadFailed ? Visibility.Hidden : Visibility.Visible)
+          .onControllerAttached(() => {
+            if (this.url.length === 0) {
+              return;
+            }
+            try {
+              // 加载前把 learn 域会话 Cookie 同步进 ArkWeb（Cookie 管理 + Web 组件 Cookie 分池存储）
+              SessionManager.getCampusDataService().syncLearnCookiesForWebView();
+              this.controller.loadUrl(this.url);
+            } catch (e) {
+              // 加载入口异常：直接展示可重试失败覆盖层，避免空白页无出口
+              this.loadFailed = true;
+              Log.i('WebViewer', 'PREVIEW_LOAD_URL ex url_len=%{public}d', this.url.length);
+            }
+          })
           .onProgressChange((event) => {
             if (event) {
               this.progress = event.newProgress;
@@ -82,8 +99,20 @@ export struct WebViewerPage {
                 this.url.length, event.error.getErrorCode());
             }
           })
-          .onPageEnd(() => {
+          .onHttpErrorReceive((event) => {
+            // 主框架 HTTP >= 400（登录跳转异常等）同样视为加载失败
+            if (event && event.request.isMainFrame() && event.response.getResponseCode() >= 400) {
+              this.loadFailed = true;
+              Log.i('WebViewer', 'PREVIEW_HTTP_FAILED url_len=%{public}d code=%{public}d',
+                this.url.length, event.response.getResponseCode());
+            }
+          })
+          .onPageBegin(() => {
+            // 新一轮导航开始：重置失败态与进度（onPageEnd 不再无条件清除失败态）
             this.loadFailed = false;
+            this.progress = 0;
+          })
+          .onPageEnd(() => {
             this.progress = 100;
           })
 
@@ -121,12 +150,25 @@ export struct WebViewerPage {
   }
 
   private retryLoad(): void {
+    // 空 URL 无可重试内容，保持失败态
+    if (this.url.length === 0) {
+      this.loadFailed = true;
+      return;
+    }
     this.progress = 0;
     this.loadFailed = false;
+    // 重试前重新同步 Cookie（会话可能在失败期间刷新过）
+    SessionManager.getCampusDataService().syncLearnCookiesForWebView();
     try {
       this.controller.refresh();
     } catch (e) {
-      Log.i('WebViewer', 'PREVIEW_RETRY refresh ex');
+      // refresh 无历史项时回落到 loadUrl；仍失败则保留可重试覆盖层
+      try {
+        this.controller.loadUrl(this.url);
+      } catch (e2) {
+        this.loadFailed = true;
+        Log.i('WebViewer', 'PREVIEW_RETRY loadUrl ex url_len=%{public}d', this.url.length);
+      }
     }
   }
 }

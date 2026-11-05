@@ -31,6 +31,11 @@ export struct FileDetailPage {
   @State downloadState: string = 'idle';
   /** 已下载本地路径（探测命中或本次下载成功后非空） */
   @State localPath: string = '';
+  /** 打开中标记：拉起预览期间防重复触发 */
+  @State opening: boolean = false;
+  /** 导出/删除中标记：防重复触发 */
+  @State exporting: boolean = false;
+  @State deleting: boolean = false;
 
   private tr(key: string): string {
     return I18n.t(key, this.locale);
@@ -52,10 +57,10 @@ export struct FileDetailPage {
     }
   }
 
-  private getExtension(title: string): string {
-    const dot: number = title.lastIndexOf('.');
-    if (dot < 0 || dot === title.length - 1) { return ''; }
-    return title.substring(dot + 1).toLowerCase();
+  /** 展示用扩展名：与下载落盘同一套解析（fileType/标题/URL），无扩展名返回空 */
+  private displayExtension(): string {
+    const ext: string = LearningFileStore.displayExtension(this.item);
+    return ext === 'bin' ? '' : ext;
   }
 
   private showToast(message: string): void {
@@ -90,7 +95,7 @@ export struct FileDetailPage {
     LearningFileStore.download(context, this.item).then((path: string) => {
       this.localPath = path;
       this.downloadState = 'done';
-      this.showToast(this.trp('learning.file.downloadSuccess', { 'name': this.displayName() }));
+      this.showToast(this.trp('learning.file.downloadSuccessInApp', { 'name': this.displayName() }));
     }).catch((e: BusinessError) => {
       this.downloadState = 'failed';
       Log.i('FileDetail', 'FILE_DOWNLOAD_FAILED code=%{public}d msg_len=%{public}d',
@@ -99,16 +104,84 @@ export struct FileDetailPage {
     });
   }
 
-  /** 打开已下载文件：系统预览优先、startAbility 回退 */
+  /** 打开已下载文件：系统预览优先、startAbility 回退；拉起期间防重复触发，失败保持可重试 */
   private openDownloaded(): void {
-    if (this.localPath.length === 0) {
+    if (this.localPath.length === 0 || this.opening) {
       return;
     }
+    this.opening = true;
     const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
     LearningFileStore.openDownloaded(context, this.localPath, this.item).then((ok: boolean) => {
+      this.opening = false;
       if (!ok) {
         this.showToast(this.tr('learning.file.openFailed'));
       }
+    }).catch((): void => {
+      this.opening = false;
+      this.showToast(this.tr('learning.file.openFailed'));
+    });
+  }
+
+  /** 另存为：系统文件选择器导出到用户可见位置 */
+  private exportDownloaded(): void {
+    if (this.localPath.length === 0 || this.exporting) {
+      return;
+    }
+    this.exporting = true;
+    const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    LearningFileStore.exportTo(context, this.localPath, this.item).then((status: string) => {
+      this.exporting = false;
+      if (status === 'ok') {
+        this.showToast(this.tr('learning.file.exportSuccess'));
+      } else if (status === 'failed') {
+        this.showToast(this.tr('learning.file.exportFailed'));
+      }
+      // cancelled：用户主动取消，不提示失败
+    }).catch((): void => {
+      this.exporting = false;
+      this.showToast(this.tr('learning.file.exportFailed'));
+    });
+  }
+
+  /** 删除已下载文件（二次确认） */
+  private confirmDeleteDownloaded(): void {
+    if (this.localPath.length === 0 || this.deleting) {
+      return;
+    }
+    AlertDialog.show({
+      title: this.tr('learning.file.deleteTitle'),
+      message: this.trp('learning.file.deleteMessage', { 'name': this.displayName() }),
+      primaryButton: {
+        value: this.tr('common.cancel'),
+        action: () => {}
+      },
+      secondaryButton: {
+        value: this.tr('learning.file.deleteOk'),
+        fontColor: Theme.error,
+        action: (): void => { this.deleteDownloadedFile(); }
+      },
+      cancel: () => {}
+    });
+  }
+
+  private deleteDownloadedFile(): void {
+    if (this.deleting) {
+      return;
+    }
+    this.deleting = true;
+    const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    LearningFileStore.deleteDownloaded(context, this.item).then((ok: boolean) => {
+      this.deleting = false;
+      if (ok) {
+        this.downloadState = 'idle';
+        this.localPath = '';
+        this.showToast(this.tr('learning.file.deletedToast'));
+      } else {
+        this.showToast(this.tr('learning.file.deleteFailed'));
+      }
+    }).catch((): void => {
+      this.deleting = false;
+      this.showToast(this.tr('learning.file.deleteFailed'));
     });
   }
 
@@ -137,10 +210,10 @@ export struct FileDetailPage {
         Column() {
           // 文件图标预览
           Column() {
-            Text(this.getFileIcon(this.getExtension(this.item.title)))
+            Text(this.getFileIcon(this.displayExtension()))
               .fontSize(56)
               .margin({ bottom: 12 })
-            Text(this.item.title)
+            Text(this.item.title.length > 0 ? this.item.title : this.tr('learning.file.nameFallback'))
               .fontSize(18)
               .fontWeight(FontWeight.Medium)
               .fontColor(Theme.text)
@@ -154,7 +227,7 @@ export struct FileDetailPage {
           Column() {
             InfoRow({ label: this.tr('learning.file.course'), value: this.item.courseName })
             InfoRow({ label: this.tr('learning.file.size'), value: this.item.size.length > 0 ? this.item.size : '—' })
-            InfoRow({ label: this.tr('learning.file.type'), value: this.getExtension(this.item.title).toUpperCase() })
+            InfoRow({ label: this.tr('learning.file.type'), value: this.displayExtension().toUpperCase() })
             InfoRow({ label: this.tr('learning.file.uploadTime'), value: this.item.uploadTime.length > 0 ? this.item.uploadTime : '—' })
           }
           .width('100%')
@@ -232,6 +305,33 @@ export struct FileDetailPage {
                 .borderRadius(16)
                 .margin({ left: 16, right: 16 })
                 .onClick(() => { this.openDownloaded(); })
+
+              Row({ space: 12 }) {
+                Button(this.exporting ? this.tr('learning.file.exporting') : this.tr('learning.file.export'))
+                  .type(ButtonType.Normal)
+                  .layoutWeight(1)
+                  .height(44)
+                  .fontSize(14)
+                  .fontColor(Theme.primary)
+                  .backgroundColor(Theme.surface)
+                  .border({ width: 1, color: Theme.borderSubtle })
+                  .borderRadius(12)
+                  .enabled(!this.exporting)
+                  .onClick(() => { this.exportDownloaded(); })
+                Button(this.tr('learning.file.deleteDownloaded'))
+                  .type(ButtonType.Normal)
+                  .layoutWeight(1)
+                  .height(44)
+                  .fontSize(14)
+                  .fontColor(Theme.error)
+                  .backgroundColor(Theme.surface)
+                  .border({ width: 1, color: Theme.borderSubtle })
+                  .borderRadius(12)
+                  .enabled(!this.deleting)
+                  .onClick(() => { this.confirmDeleteDownloaded(); })
+              }
+              .width('100%')
+              .padding({ left: 16, right: 16 })
             }
             .width('100%')
             .alignItems(HorizontalAlign.Center)

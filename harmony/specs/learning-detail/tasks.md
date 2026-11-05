@@ -299,3 +299,36 @@ Task T020: LearningPage 预览回调接线
 - 每完成一个故事，先在演示模式手动走通该故事的独立测试，再进入下一故事
 - 验证阶段只做一次构建流水线，避免并发构建
 - 严禁为通过 `verify_ui` 而修改业务逻辑；若为工具能力限制，记录为已知边界
+
+---
+
+## Phase 10: Review Remediation (Post-Verification)
+
+**Purpose**: 修复 `reviewer` 只读评审发现的重要问题；不扩大特性范围。
+
+**Dependencies**: T036–T056 依赖已完成的 T001–T035；T050–T056 在全部修复后执行。本阶段不重新派发 `spec-verify`（单次调用约束），以 `arkts_check` + 构建 + 部署/真实会话走查作为回归证据。
+
+- [X] T036 [P] 重构 `entry/src/main/ets/pages/learning/WebViewerPage.ets`：把 Cookie 同步移到 `onControllerAttached` 后再 `loadUrl`；增加 `onHttpErrorReceive`（主框架 ≥400 视为失败）、`onPageBegin` 重置失败/进度；`onPageEnd` 不再无条件清除失败态；重试时重新同步 Cookie；空 URL 直接显示失败态
+- [X] T037 在 `entry/src/main/ets/pages/LearningPage.ets` 修正系统返回键：`subScreen === 'webview'` 时先回到 `'file'`，保留 `detailParent`，与左上角返回一致
+- [X] T038 [P] 在 `entry/src/main/ets/services/HttpClient.ets` 增加带状态码校验的二进制 GET（`>=400` 抛 `HttpError` 并带 statusCode），不改变既有 `getBytes` 行为
+- [X] T039 在 `entry/src/main/ets/services/campus/CampusDataService.ets` 增加严格版列表方法（`fetchHomeworkStrict` / `fetchNotificationsStrict` / `fetchFilesStrict`）：无 CSRF 或全部请求失败时抛错，成功但为空仍返回空数组；`downloadFileBytes` 改用状态码校验的二进制 GET
+- [X] T040 重构 `entry/src/main/ets/pages/learning/CourseDetailPage.ets`：课程/学期/三类数组改为 `@Prop`；新增 `extrasLoaded` / `extrasFailed` 入参；未加载完成或上次失败时补拉；三类分别记录失败态并在对应分组显示“加载失败 + 重试”；成功分组不受影响
+- [X] T041 在 `entry/src/main/ets/pages/LearningPage.ets` 将四类原始数据改为 `@State`；`loadRealExtras` 使用严格方法并维护 `extrasLoaded` / `extrasFailed`；把新入参传给 `CourseDetailPage`
+- [X] T042 在 `entry/src/main/ets/pages/learning/NotificationDetailPage.ets` 改用 `fetchNotificationsStrict`；失败日志不打印 `e.message`（只记类型/长度），保持失败可重试与演示零请求
+- [X] T043 重构 `entry/src/main/ets/state/ManualDeadlineStore.ets`：append/remove 走串行写队列（避免并发丢更新）；校验日期为真实 `YYYY-MM-DD`、时间归一为 `HH:mm`；`loadTask` 用 finally 清理；广播遍历监听器快照
+- [X] T044 在 `entry/src/main/ets/pages/LearningPage.ets` 完善 DDL 表单：保存中禁用按钮；时间接受 `H:mm`/`HH:mm` 并补零；日期校验回读年月日防止 `2026-02-31` 进位；删除失败给出可读提示（新增 i18n key）
+- [X] T045 重构 `entry/src/main/ets/services/learning/LearningFileStore.ets`：下载使用 T038 的校验接口；临时文件名加唯一后缀；替换前先备份旧文件，失败恢复旧文件；按最终路径维护 in-flight 去重；校验写入字节数；目录创建忽略已存在；HTML 嗅探跳过 `.html/.htm`；`startAbility` 回退加 `FLAG_AUTH_READ_URI_PERMISSION`（无 type 时不传空串）
+- [X] T046 在 `entry/src/main/ets/pages/learning/FileDetailPage.ets` 补齐：标题为空回退 i18n「文件」；下载成功提示包含“应用内”保存语义；打开失败保持可重试状态；下载/打开期间防重复触发
+- [X] T047 [P] 修复演示回归：`entry/src/main/ets/pages/HomePage.ets` 的最近 DDL 在远程标题存在时即使时间不可解析也展示；手动项取第一条可解析项而非盲取 `[0]`；`entry/src/main/ets/pages/LearningData.ets` 的演示作业截止时间改为可解析格式
+- [X] T048 [P] 通知质量收口：`entry/src/main/ets/pages/learning/CourseDetailPage.ets` 通知分组按发布时间倒序（不可解析保持原序）；`entry/src/main/ets/services/campus/CampusDataService.ets` 通知正文剥离 `script/style` 块；三个详情页日志不打印可能含 URL/CSRF 的 `e.message`
+- [X] T049 对 T036–T048 全部改动文件运行 `arkts_check` 并修复严格模式问题（锚点：`entry/src/main/ets/services/learning/LearningFileStore.ets`）
+- [X] T050 在 `harmony/` 内执行 `devecocli build`（timeout ≥ 600000 ms）并 `devecocli run --skip-build` 部署 smoke：确认启动无白屏、学习页演示链路可进入、首页最近 DDL 恢复、DDL 新增/删除可用
+- [X] T051 修复 T050 真机走查发现的实时一致性：`HomePage` 建议区改为显式 `suggestedItems` 状态并在 store tick/可见性/Tab 切换时重算；DDL 建议使用唯一 ForEach key；`LearningPage` 同步接入 store tick。真实会话下新增/删除手动 DDL 后首页与学习页即时一致
+- [X] T052 二次评审收口：`HomePage` 建议 `ForEach` key 改为内容指纹（覆盖 next-class/unread/quiet）；`LearningPage` 三类标签增加独立失败态与重试、课程列表失败可重试；`CourseDetailPage` 父数据晚到时清理自身失败标记；DDL append/remove 补 `.catch`；`WebViewerPage` 加载/重试异常统一进失败覆盖层；`HttpBytesResponse` 自带 headers 消除并发串读；下载备份名唯一且备份失败保留旧文件
+- [X] T053 修复下载文件扩展名：`CampusFile` 增加 `fileType` 并由 `fetchFiles` 的 `wjlx` 写入；`HttpClient` 暴露带 headers 的二进制响应；`CampusDataService` 提供带元信息的下载方法
+- [X] T054 重构 `entry/src/main/ets/services/learning/LearningFileStore.ets`：按 `fileType → Content-Type → Content-Disposition → 标题/URL` 解析扩展名；`downloadedPath` 支持按文件前缀扫描（兼容旧 `.bin`）；新增删除已下载文件与系统文件选择器「另存为」导出
+- [X] T055 在 `entry/src/main/ets/pages/learning/FileDetailPage.ets` 的已下载态增加「另存为」「删除已下载」（二次确认）；新增对应 i18n key 与成功/失败提示
+- [X] T056 对 T053–T055 运行 `arkts_check`；`devecocli build` + 真机实测：下载后扩展名正确（PPTX）、WPS/PreviewKit 能渲染内容、另存为弹系统保存页并可写入选定目录、删除后回到未下载态且沙箱文件清理
+
+**Checkpoint**: 评审重要项全部闭环；构建 0 error；部署 + 真实会话走查通过（课程三类聚合、通知正文、资料预览/下载、DDL 新增/删除/重启/跨页一致）；`Smoke` 工具的 `FAIL_BLANK` 为截图时序误报，以 UI 树为准
+

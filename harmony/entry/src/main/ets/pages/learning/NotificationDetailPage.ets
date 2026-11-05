@@ -50,7 +50,7 @@ export struct NotificationDetailPage {
     const course: CampusCourse = new CampusCourse();
     course.id = this.item.courseId;
     course.name = this.item.courseName;
-    service.fetchNotifications([course]).then((list: CampusNotification[]) => {
+    service.fetchNotificationsStrict([course]).then((list: CampusNotification[]) => {
       let matched: string = '';
       for (let i: number = 0; i < list.length; i++) {
         if (list[i].id === this.item.id && list[i].content.length > 0) {
@@ -66,10 +66,10 @@ export struct NotificationDetailPage {
         this.bodySync = 'idle';
       }
       Log.i('LearnAct', 'NOTIF_BODY refetch matched=%{public}s', matched.length > 0 ? 'yes' : 'no');
-    }).catch((e: Object) => {
-      // FR-009：补拉失败保留元信息，可重试
+    }).catch(() => {
+      // FR-009：补拉失败保留元信息，可重试（日志只记固定文案，不打印可能含 URL/CSRF 的错误内容）
       this.bodySync = 'failed';
-      Log.i('LearnAct', 'NOTIF_BODY refetch ex=%{public}s', e instanceof Error ? e.message : String(e));
+      Log.i('LearnAct', 'NOTIF_BODY refetch failed');
     });
   }
 

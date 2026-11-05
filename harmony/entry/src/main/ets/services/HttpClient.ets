@@ -39,9 +39,11 @@ export class HttpError extends Error {
 }
 
 /** 原始字节响应（getBytes 用；响应体不经字符集解码，二进制安全） */
-class HttpBytesResponse {
+export class HttpBytesResponse {
   statusCode: number = 0;
   bytes: Uint8Array = new Uint8Array(0);
+  /** 本次响应头：重定向 Location 取本字段，避免并发请求共享 lastResponseHeaders 串读 */
+  headers: Record<string, string | string[] | undefined> = {};
 }
 
 /** 统一 User-Agent（既有 rcpRequest 同款） */
@@ -233,7 +235,7 @@ export class HttpClient {
       if (resp.statusCode < 300 || resp.statusCode >= 400) {
         return resp.bytes;
       }
-      const location: string = getLocationFromHeaders(this.lastResponseHeaders);
+      const location: string = getLocationFromHeaders(resp.headers);
       if (location.length === 0) {
         return resp.bytes;
       }
@@ -242,6 +244,41 @@ export class HttpClient {
     const err: HttpError = new HttpError();
     err.message = 'Too many redirects';
     throw err;
+  }
+
+  /**
+   * GET 原始字节 + 状态码校验（资料下载等需要把 HTTP >= 400 判为失败的场景）：
+   * 与 getBytes 同款请求装配（Cookie 注入 + 手动跟随 Location + 二进制安全），
+   * 但重定向落点状态码 >= 400 时抛 HttpError（携带 statusCode，message 为 "HTTP <code>"）；
+   * < 300 或 3xx 无 Location 时返回字节。不改变既有 getBytes 的行为。
+   */
+  async getBytesWithMeta(url: string): Promise<HttpBytesResponse> {
+    let currentUrl: string = url;
+    for (let hop: number = 0; hop < this.maxRedirects; hop++) {
+      const resp: HttpBytesResponse = await this.rcpRequestBytes(currentUrl);
+      if (resp.statusCode >= 400) {
+        const err: HttpError = new HttpError();
+        err.statusCode = resp.statusCode;
+        err.message = 'HTTP ' + resp.statusCode;
+        throw err;
+      }
+      if (resp.statusCode < 300) {
+        return resp;
+      }
+      const location: string = getLocationFromHeaders(resp.headers);
+      if (location.length === 0) {
+        return resp;
+      }
+      currentUrl = resolveUrl(currentUrl, location);
+    }
+    const err: HttpError = new HttpError();
+    err.message = 'Too many redirects';
+    throw err;
+  }
+
+  /** 状态码校验版二进制 GET（只需要字节的调用方保留旧签名） */
+  async getBytesChecked(url: string): Promise<Uint8Array> {
+    return (await this.getBytesWithMeta(url)).bytes;
   }
 
   /**
@@ -370,6 +407,7 @@ export class HttpClient {
 
       const result: HttpBytesResponse = new HttpBytesResponse();
       result.statusCode = resp.statusCode;
+      result.headers = resp.headers;
       // RCP 响应体本身就是原始 ArrayBuffer（本 SDK 版本无 toArrayBuffer()），
       // 直接包装为 Uint8Array 即为未解码字节
       const buf: ArrayBuffer | undefined = resp.body;

@@ -23,7 +23,7 @@ import { BackDispatcher, BackOwner, BackHandler } from '../state/BackDispatcher'
 import { subscribeNavigate, unsubscribeNavigate, NavigateSubscription, NavTarget, takePendingLearningTab } from '../state/UiEvents';
 import { ManualDeadlineStore } from '../state/ManualDeadlineStore';
 import { ManualDeadline } from '../domain/DeadlineTypes';
-import { parseDeadlineMs, manualDeadlineMs, formatDeadlineDistance, compareDeadlineTextAsc } from '../utils/DeadlineFormat';
+import { parseDeadlineMs, formatDeadlineDistance, compareDeadlineTextAsc } from '../utils/DeadlineFormat';
 
 @Component
 struct SegmentBar {
@@ -289,12 +289,23 @@ export struct LearningPage {
   @State showDialog: boolean = false;
   /** 手动 DDL（store 共享数据：页面/AI/首页同源，订阅变更即时刷新） */
   @State manualDdls: ManualDeadline[] = [];
+  /** 当前 Tab 是否为学习页：切回时重载手动 DDL（Tabs 常驻页面无页面级 onShow） */
+  @Prop @Watch('onActiveChange') active: boolean = false;
+  /** store 变更信号：隐藏/常驻页面也能通过 AppStorage 收到手动 DDL 更新（FR-019） */
+  @StorageLink('manualDdlTick') @Watch('onManualDdlTick') manualDdlTick: number = 0;
   private storeSubId: number = -1;
   @State form: DeadlineForm = new DeadlineForm();
+  /** 保存中标记：防重复提交（保存按钮在请求 settle 前禁用） */
+  @State savingDDL: boolean = false;
   @State @Watch('onSubScreenChange') subScreen: string = '';
   /** 嵌套详情来源：'' 从列表进入 / 'course' 从课程详情下钻（返回时回到课程详情） */
   @State detailParent: string = '';
   private backHandler: BackHandler = () => {
+    // 预览 WebView 的系统返回：回到文件详情（与 WebViewerPage 左上角返回一致），保留 detailParent
+    if (this.subScreen === 'webview') {
+      this.subScreen = 'file';
+      return true;
+    }
     this.exitDetail();
     return true;
   };
@@ -312,11 +323,22 @@ export struct LearningPage {
   // 应用内预览（资料详情 → WebViewer；返回留在文件详情）
   @State previewUrl: string = '';
   @State previewTitle: string = '';
-  // 原始 Campus 数据（详情页数据源）
-  private realCampusCourses: CampusCourse[] = [];
-  private realCampusHomework: CampusHomework[] = [];
-  private realCampusNotifications: CampusNotification[] = [];
-  private realCampusFiles: CampusFile[] = [];
+  // 原始 Campus 数据（详情页数据源；@State：数组整体赋值后传给详情页的 @Prop 同步重渲染）
+  @State realCampusCourses: CampusCourse[] = [];
+  @State realCampusHomework: CampusHomework[] = [];
+  @State realCampusNotifications: CampusNotification[] = [];
+  @State realCampusFiles: CampusFile[] = [];
+  /** 三类扩展数据是否已加载完成（真实模式：三个请求 settle 后置真；演示模式直接置真） */
+  @State extrasLoaded: boolean = false;
+  /** 三类扩展数据是否正在拉取（重试期间显示加载态，不显示“暂无”） */
+  @State extrasLoading: boolean = false;
+  /** 三类扩展数据上次拉取是否有失败 */
+  @State extrasFailed: boolean = false;
+  /** 各标签独立失败态：区分「拉取失败」与「真的没有数据」 */
+  @State coursesLoadFailed: boolean = false;
+  @State homeworkLoadFailed: boolean = false;
+  @State notificationsLoadFailed: boolean = false;
+  @State filesLoadFailed: boolean = false;
   private tabs: string[] = ['课程', '作业', '通知', '文件'];
   private navSub: NavigateSubscription = new NavigateSubscription();
 
@@ -328,12 +350,7 @@ export struct LearningPage {
       this.loadDemoData();
     }
     // 手动 DDL 共享数据：首拉 + 订阅（AI/首页删除或新增后本页即时刷新）
-    ManualDeadlineStore.listAsync().then((list: ManualDeadline[]) => {
-      this.manualDdls = list;
-    });
-    this.storeSubId = ManualDeadlineStore.subscribe(() => {
-      this.manualDdls = ManualDeadlineStore.list();
-    });
+    this.ensureManualDdlSubscription();
     // 跨页导航（如首页"添加 DDL"）：切到学习 Tab 后切到指定子标签
     this.navSub = subscribeNavigate((target: NavTarget) => {
       if (target.learningTab.length > 0 && this.tabs.indexOf(target.learningTab) >= 0) {
@@ -368,6 +385,30 @@ export struct LearningPage {
 
   private isRealMode(): boolean {
     return AuthManager.isLoggedIn() && !StateManager.isDemoMode();
+  }
+
+  /** 确保手动 DDL 已加载且订阅存在：Tab 切回时重入，保证与 store/首页/ai 一致（FR-019） */
+  private ensureManualDdlSubscription(): void {
+    ManualDeadlineStore.listAsync().then((list: ManualDeadline[]) => {
+      this.manualDdls = list;
+    });
+    if (this.storeSubId < 0) {
+      this.storeSubId = ManualDeadlineStore.subscribe(() => {
+        this.manualDdls = ManualDeadlineStore.list();
+      });
+    }
+  }
+
+  /** Tab 切回学习页：重载手动 DDL（保证列表与 store/首页一致） */
+  private onActiveChange(): void {
+    if (this.active) {
+      this.ensureManualDdlSubscription();
+    }
+  }
+
+  /** store 变更信号：重载列表（与订阅双保险，覆盖隐藏页面） */
+  private onManualDdlTick(): void {
+    this.ensureManualDdlSubscription();
   }
 
   /** 详情返回：从课程详情下钻的详情回到课程详情，其余回列表（FR-003 嵌套返回） */
@@ -416,9 +457,25 @@ export struct LearningPage {
     if (!this.isRealMode()) {
       return;
     }
+    this.coursesLoadFailed = false;
     const service: CampusDataService = SessionManager.getCampusDataService();
     service.fetchCourses().then((courses: CampusCourse[]) => {
       Log.i('LearnAct',  'UI_FETCH_COURSES count=%{public}d trace=%{public}s', courses.length, service.trace);
+      // fetchCourses 内部吞异常并返回 []：用 trace 区分「成功但无课(ok:0)」与「拉取失败」
+      const ok: boolean = service.trace.indexOf('ok:') === 0;
+      if (!ok) {
+        this.coursesLoadFailed = true;
+        this.homeworkLoadFailed = true;
+        this.notificationsLoadFailed = true;
+        this.filesLoadFailed = true;
+        this.extrasFailed = true;
+        return;
+      }
+      this.coursesLoadFailed = false;
+      this.homeworkLoadFailed = false;
+      this.notificationsLoadFailed = false;
+      this.filesLoadFailed = false;
+      this.extrasFailed = false;
       this.realCampusCourses = courses;
       this.currentSemester = service.currentSemester;
       const mapped: CourseItem[] = [];
@@ -434,12 +491,53 @@ export struct LearningPage {
         this.loadRealExtras(service, courses);
       }
     }).catch((e: Object) => {
+      this.coursesLoadFailed = true;
       Log.i('LearnAct',  'UI_FETCH_COURSES ex trace=%{public}s', service.trace);
     });
   }
 
+  private retryLoadCourses(): void {
+    if (!this.isRealMode()) {
+      return;
+    }
+    this.realCourses = [];
+    this.loadRealCourses();
+  }
+
+  private retryLoadExtras(): void {
+    if (!this.isRealMode()) {
+      return;
+    }
+    if (this.realCampusCourses.length === 0) {
+      // 课程都未加载成功时，重试应从课程列表开始
+      this.retryLoadCourses();
+      return;
+    }
+    this.homeworkLoadFailed = false;
+    this.notificationsLoadFailed = false;
+    this.filesLoadFailed = false;
+    this.extrasFailed = false;
+    this.extrasLoaded = false;
+    this.loadRealExtras(SessionManager.getCampusDataService(), this.realCampusCourses);
+  }
+
   private loadRealExtras(service: CampusDataService, courses: CampusCourse[]): void {
-    service.fetchHomework(courses).then((list: CampusHomework[]) => {
+    // 严格方法：无会话/全部失败抛错 → 对应标签 failed；三个都 settle（成功或失败）后 extrasLoaded=true
+    this.homeworkLoadFailed = false;
+    this.notificationsLoadFailed = false;
+    this.filesLoadFailed = false;
+    this.extrasFailed = false;
+    this.extrasLoaded = false;
+    this.extrasLoading = true;
+    let settled: number = 0;
+    const finishOne: () => void = (): void => {
+      settled++;
+      if (settled >= 3) {
+        this.extrasLoading = false;
+        this.extrasLoaded = true;
+      }
+    };
+    service.fetchHomeworkStrict(courses).then((list: CampusHomework[]) => {
       this.realCampusHomework = list;
       const mapped: HomeworkItem[] = [];
       for (let i: number = 0; i < list.length; i++) {
@@ -456,9 +554,13 @@ export struct LearningPage {
         mapped.push(item);
       }
       this.realDdls = mapped;
-    }).catch((e: Object) => { /* ignore */ });
+    }).catch(() => {
+      this.homeworkLoadFailed = true;
+      this.extrasFailed = true;
+      Log.i('LearnAct', 'UI_FETCH_HW failed');
+    }).then((): void => { finishOne(); });
 
-    service.fetchNotifications(courses).then((list: CampusNotification[]) => {
+    service.fetchNotificationsStrict(courses).then((list: CampusNotification[]) => {
       this.realCampusNotifications = list;
       const mapped: NotificationItem[] = [];
       for (let i: number = 0; i < list.length; i++) {
@@ -470,9 +572,13 @@ export struct LearningPage {
         mapped.push(item);
       }
       this.realNotifications = mapped;
-    }).catch((e: Object) => { /* ignore */ });
+    }).catch(() => {
+      this.notificationsLoadFailed = true;
+      this.extrasFailed = true;
+      Log.i('LearnAct', 'UI_FETCH_NOTIF failed');
+    }).then((): void => { finishOne(); });
 
-    service.fetchFiles(courses).then((list: CampusFile[]) => {
+    service.fetchFilesStrict(courses).then((list: CampusFile[]) => {
       this.realCampusFiles = list;
       const mapped: FileItem[] = [];
       for (let i: number = 0; i < list.length; i++) {
@@ -484,7 +590,11 @@ export struct LearningPage {
         mapped.push(item);
       }
       this.realFiles = mapped;
-    }).catch((e: Object) => { /* ignore */ });
+    }).catch(() => {
+      this.filesLoadFailed = true;
+      this.extrasFailed = true;
+      Log.i('LearnAct', 'UI_FETCH_FILES failed');
+    }).then((): void => { finishOne(); });
   }
 
   /**
@@ -500,6 +610,10 @@ export struct LearningPage {
     this.realCampusHomework = homework;
     this.realCampusNotifications = notifs;
     this.realCampusFiles = files;
+    // 演示数据一次性就绪：课程详情不再补拉（演示零请求）
+    this.extrasLoaded = true;
+    this.extrasLoading = false;
+    this.extrasFailed = false;
 
     const mappedCourses: CourseItem[] = [];
     for (let i: number = 0; i < courses.length; i++) {
@@ -561,8 +675,10 @@ export struct LearningPage {
     for (let i: number = 0; i < remote.length; i++) {
       merged.push(remote[i]);
     }
-    for (let i: number = 0; i < this.manualDdls.length; i++) {
-      const md: ManualDeadline = this.manualDdls[i];
+    // 使用 @State 列表（读取建立 UI 依赖；列表由订阅/Tick 重载保持最新）
+    const manualList: ManualDeadline[] = this.manualDdls;
+    for (let i: number = 0; i < manualList.length; i++) {
+      const md: ManualDeadline = manualList[i];
       const time: string = md.time.length > 0 ? md.time : '23:59';
       const item: HomeworkItem = new HomeworkItem();
       item.id = md.id;
@@ -616,26 +732,57 @@ export struct LearningPage {
           message: this.tr('learning.ddl.deletedToast'),
           duration: 2000
         });
+      } else {
+        // 持久化失败：条目保留在列表中并给出可读提示（避免静默丢失导致 UI 与磁盘不一致）
+        this.getUIContext().getPromptAction().showToast({
+          message: this.tr('learning.ddl.deleteFailed'),
+          duration: 2000
+        });
       }
+    }).catch(() => {
+      // 防御：store 未来若 reject，也要给可读失败提示
+      this.getUIContext().getPromptAction().showToast({
+        message: this.tr('learning.ddl.deleteFailed'),
+        duration: 2000
+      });
     });
   }
 
-  /** 日期格式校验：YYYY-MM-DD 且可解析为真实日期 */
+  /** 日期格式校验：YYYY-MM-DD 且为真实日期（解析后回读年月日一致，拒绝 2026-02-31 这类自动进位日期） */
   private isValidDate(s: string): boolean {
     const re: RegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
     if (!re.test(s)) {
       return false;
     }
-    return !isNaN(manualDeadlineMs(s, '00:00'));
-  }
-
-  /** 时间格式校验：HH:mm */
-  private isValidTime(s: string): boolean {
-    const re: RegExp = new RegExp('^\\d{2}:\\d{2}$');
-    if (!re.test(s)) {
+    const parts: string[] = s.split('-');
+    const y: number = Number(parts[0]);
+    const m: number = Number(parts[1]);
+    const d: number = Number(parts[2]);
+    if (isNaN(y) || isNaN(m) || isNaN(d)) {
       return false;
     }
-    return !isNaN(manualDeadlineMs('2000-01-01', s));
+    const parsed: Date = new Date(y, m - 1, d);
+    return parsed.getFullYear() === y && parsed.getMonth() === m - 1 && parsed.getDate() === d;
+  }
+
+  /** 时间格式校验：接受 H:mm / HH:mm，且小时 0–23、分钟 0–59 */
+  private isValidTime(s: string): boolean {
+    return this.normalizeTime(s).length > 0;
+  }
+
+  /** 时间归一：H:mm / HH:mm → HH:mm（小时 0–23、分钟 0–59）；非法返回空串 */
+  private normalizeTime(s: string): string {
+    const re: RegExp = new RegExp('^\\d{1,2}:\\d{2}$');
+    if (!re.test(s)) {
+      return '';
+    }
+    const parts: string[] = s.split(':');
+    const h: number = Number(parts[0]);
+    const m: number = Number(parts[1]);
+    if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+      return '';
+    }
+    return (h < 10 ? '0' + String(h) : String(h)) + ':' + (m < 10 ? '0' + String(m) : String(m));
   }
 
   private getDisplayNotifications(): NotificationItem[] {
@@ -687,6 +834,23 @@ export struct LearningPage {
       })
   }
 
+  @Builder
+  listFailedHint(onRetry: () => void) {
+    Row() {
+      Text(this.tr('learning.listLoadFailed'))
+        .fontSize(14)
+        .fontColor(Theme.error)
+        .layoutWeight(1)
+      Text(this.tr('common.retry'))
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Theme.primary)
+        .onClick(onRetry)
+    }
+    .width('100%')
+    .padding({ top: 16, bottom: 16 })
+  }
+
   build() {
     if (this.subScreen === 'course') {
       CourseDetailPage({
@@ -696,6 +860,8 @@ export struct LearningPage {
         homework: this.getCourseHomework(),
         notifications: this.getCourseNotifications(),
         files: this.getCourseFiles(),
+        extrasLoaded: this.extrasLoaded,
+        extrasFailed: this.extrasFailed,
         demoMode: !this.isRealMode(),
         onOpenHomework: (item: CampusHomework) => {
           this.selectedHomework = item;
@@ -773,6 +939,14 @@ export struct LearningPage {
                     .margin({ left: 15 })
                 }
               })
+              if (this.coursesLoadFailed) {
+                this.listFailedHint(() => { this.retryLoadCourses(); })
+              } else if (this.getDisplayCourses().length === 0) {
+                Text(this.tr('learning.emptyCourses'))
+                  .fontSize(14)
+                  .fontColor(Theme.textMuted)
+                  .padding({ top: 16, bottom: 16 })
+              }
             }
             .width('100%')
             .constraintSize({ maxWidth: '100%' })
@@ -810,11 +984,21 @@ export struct LearningPage {
                     .margin({ left: 15 })
                 }
               })
-              if (this.getDisplayHomework().length === 0) {
-                Text(this.tr('learning.emptyHomework'))
-                  .fontSize(14)
-                  .fontColor(Theme.textMuted)
-                  .padding({ top: 16, bottom: 16 })
+              if (this.homeworkLoadFailed) {
+                // 失败提示独立于列表长度：手动 DDL 存在时也要能重试远程作业
+                this.listFailedHint(() => { this.retryLoadExtras(); })
+              } else if (this.getDisplayHomework().length === 0) {
+                if (this.extrasLoading) {
+                  Text(this.tr('status.loading'))
+                    .fontSize(14)
+                    .fontColor(Theme.textMuted)
+                    .padding({ top: 16, bottom: 16 })
+                } else {
+                  Text(this.tr('learning.emptyHomework'))
+                    .fontSize(14)
+                    .fontColor(Theme.textMuted)
+                    .padding({ top: 16, bottom: 16 })
+                }
               }
             }
             .width('100%')
@@ -833,11 +1017,20 @@ export struct LearningPage {
                   this.subScreen = 'notification';
                 } })
               })
-              if (this.getDisplayNotifications().length === 0) {
-                Text(this.tr('learning.emptyNotifications'))
-                  .fontSize(14)
-                  .fontColor(Theme.textMuted)
-                  .padding({ top: 16, bottom: 16 })
+              if (this.notificationsLoadFailed) {
+                this.listFailedHint(() => { this.retryLoadExtras(); })
+              } else if (this.getDisplayNotifications().length === 0) {
+                if (this.extrasLoading) {
+                  Text(this.tr('status.loading'))
+                    .fontSize(14)
+                    .fontColor(Theme.textMuted)
+                    .padding({ top: 16, bottom: 16 })
+                } else {
+                  Text(this.tr('learning.emptyNotifications'))
+                    .fontSize(14)
+                    .fontColor(Theme.textMuted)
+                    .padding({ top: 16, bottom: 16 })
+                }
               }
             }
             .width('100%')
@@ -856,11 +1049,20 @@ export struct LearningPage {
                   this.subScreen = 'file';
                 } })
               })
-              if (this.getDisplayFiles().length === 0) {
-                Text(this.tr('learning.emptyFiles'))
-                  .fontSize(14)
-                  .fontColor(Theme.textMuted)
-                  .padding({ top: 16, bottom: 16 })
+              if (this.filesLoadFailed) {
+                this.listFailedHint(() => { this.retryLoadExtras(); })
+              } else if (this.getDisplayFiles().length === 0) {
+                if (this.extrasLoading) {
+                  Text(this.tr('status.loading'))
+                    .fontSize(14)
+                    .fontColor(Theme.textMuted)
+                    .padding({ top: 16, bottom: 16 })
+                } else {
+                  Text(this.tr('learning.emptyFiles'))
+                    .fontSize(14)
+                    .fontColor(Theme.textMuted)
+                    .padding({ top: 16, bottom: 16 })
+                }
               }
             }
             .width('100%')
@@ -893,6 +1095,12 @@ export struct LearningPage {
     }
     .width('100%')
     .height('100%')
+    // Tab 切回学习页时重载手动 DDL，避免隐藏期间订阅失效导致列表陈旧
+    .onVisibleAreaChange([0.0, 1.0], (isVisible: boolean, ratio: number) => {
+      if (isVisible) {
+        this.ensureManualDdlSubscription();
+      }
+    })
     .bindSheet($$this.showDialog, this.buildDDLSheet(), {
       height: 420,
       showClose: true,
@@ -990,7 +1198,12 @@ export struct LearningPage {
           .fontColor(Theme.textInvert)
           .backgroundColor(Theme.primary)
           .borderRadius(10)
+          .enabled(!this.savingDDL)
+          .opacity(this.savingDDL ? 0.6 : 1)
         .onClick(() => {
+          if (this.savingDDL) {
+            return;
+          }
           if (this.form.title.trim() === '') {
             this.getUIContext().getPromptAction().showToast({ message: this.tr('learning.titleRequired'), duration: 2000 });
             return;
@@ -1003,14 +1216,17 @@ export struct LearningPage {
             this.getUIContext().getPromptAction().showToast({ message: this.tr('learning.ddl.timeInvalid'), duration: 2000 });
             return;
           }
+          // 保存中禁用按钮，防重复提交；时间归一为 HH:mm 后落盘
+          this.savingDDL = true;
           // 保存走共享 store（FR-019/FR-020：页面/AI/首页同一份数据）
           ManualDeadlineStore.append(
             this.form.title.trim(),
             this.form.date,
-            this.form.time,
+            this.normalizeTime(this.form.time),
             this.form.course.trim(),
             this.form.note.trim()
           ).then((md: ManualDeadline | undefined) => {
+            this.savingDDL = false;
             if (md !== undefined) {
               this.manualDdls = ManualDeadlineStore.list();
               this.showDialog = false;
@@ -1020,6 +1236,10 @@ export struct LearningPage {
             } else {
               this.getUIContext().getPromptAction().showToast({ message: this.tr('learning.ddl.saveFailed'), duration: 2000 });
             }
+          }).catch(() => {
+            // 防御：store 未来若 reject，必须解除保存中状态，避免表单永久卡死
+            this.savingDDL = false;
+            this.getUIContext().getPromptAction().showToast({ message: this.tr('learning.ddl.saveFailed'), duration: 2000 });
           });
         })
       }

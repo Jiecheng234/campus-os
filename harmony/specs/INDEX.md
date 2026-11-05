@@ -39,8 +39,8 @@
 | 19 | payment-alipay | `specs/payment-alipay/` | 23/23 | 🟡 基础设施已验证（真机 PaymentTest 25/25 + 诊断入口 openLink→回读 elapsedMs=5770）；充值 UI 待 T11–T13 | 共用支付宝链接构建/外跳/回读基础设施；PaymentTest 25/25 |
 | 20 | course-registration-service | `specs/course-registration-service/` | 29/29 | 🟡 构建+部署验证通过（build-only）；选课/退课真实增删待开放时段 | 选课系统服务：学期/已选/课余量搜索/选课/退课；写操作 POST 仅一次 + 三态判定；AI 工具注册归 course-registration-agent（T14），真实增删待开放时段受控验证 |
 | 21 | ai-governance | `specs/ai-governance/` | 29/29 | ✅ 完成 | build + 模拟器 UI 验证通过（审计持久化/脱敏/清空；28 权限域启停/恢复全部/重启持久化；权限门禁可读拒绝）；审计结果中的姓名类字段未脱敏，列为已知边界 |
-| 22 | learning-detail | `specs/learning-detail/` | 35/35 | 🟡 任务闭环（build 0 error + 演示模式 UI PASS）；真实登录补拉/预览/下载待验证 | 课程三分组聚合 + 按课程补拉；通知正文（内联优先 + 空正文补拉）；资料带会话 WebView 预览 + 私有目录下载/再次打开；`ManualDeadlineStore` 学习页/首页/AI 同源，重启保留 |
-| — | **合计** | 22 个 feature | **444 / 444** | **100%** | 任务闭环；功能边界见下节 |
+| 22 | learning-detail | `specs/learning-detail/` | 56/56 | ✅ 完成（含 T036–T056 评审修复与真机下载/导出走查） | 课程三分组聚合 + 严格拉取/失败重试；通知正文；资料带会话 WebView 预览 + 私有目录下载；下载扩展名按服务端类型修正，已下载可打开/另存为/删除；`ManualDeadlineStore` 学习页/首页/AI 同源 |
+| — | **合计** | 22 个 feature | **465 / 465** | **100%** | 任务闭环；功能边界见下节 |
 
 > 旧口径（`376/385`、各 feature 的 `30/30` 等）与当前 `tasks.md` 不一致，已废弃。
 > `schedule-interaction` 已于 2026-10-19 提交（`11af855`），其任务计数已纳入本表。

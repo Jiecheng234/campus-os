@@ -20,6 +20,8 @@ import { StorageKeys } from '../storage/StorageKeys';
 import { Log } from '../utils/Logger';
 
 const LOG_TAG: string = 'ManualDDLStore';
+/** AppStorage 变更信号：页面用 @StorageLink 订阅，即使 Tab 隐藏也能收到刷新通知 */
+const MANUAL_DDL_TICK_KEY: string = 'manualDdlTick';
 
 /** 订阅条目：id 由 subscribe 递增分配，unsubscribe 按 id 定位 */
 class DeadlineListenerEntry {
@@ -33,6 +35,47 @@ let loaded: boolean = false;
 let loadTask: Promise<void> | undefined = undefined;
 let listenerSeq: number = 0;
 const listenerEntries: DeadlineListenerEntry[] = [];
+/** 串行写队列尾：append/remove 依次执行，避免并发写丢失更新；失败也推进队尾（不永久 rejected） */
+let writeTail: Promise<void> = Promise.resolve();
+
+/** 入队一个写操作：前一个写 settle 后才执行（cache.slice 必须在队列内、await 持久化之前执行） */
+function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+  const run: Promise<T> = writeTail.then(task);
+  writeTail = run.then((): void => {}, (): void => {});
+  return run;
+}
+
+/** 校验真实日期 YYYY-MM-DD：解析后回读年/月/日一致（拒绝 2026-02-31 这类自动进位日期） */
+function isValidDateText(s: string): boolean {
+  const re: RegExp = /^\d{4}-\d{2}-\d{2}$/;
+  if (!re.test(s)) {
+    return false;
+  }
+  const parts: string[] = s.split('-');
+  const y: number = Number(parts[0]);
+  const m: number = Number(parts[1]);
+  const d: number = Number(parts[2]);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) {
+    return false;
+  }
+  const parsed: Date = new Date(y, m - 1, d);
+  return parsed.getFullYear() === y && parsed.getMonth() === m - 1 && parsed.getDate() === d;
+}
+
+/** 校验并归一时间：接受 H:mm / HH:mm，归一为 HH:mm（小时 0–23、分钟 0–59）；非法返回空串 */
+function normalizeTimeText(s: string): string {
+  const re: RegExp = /^\d{1,2}:\d{2}$/;
+  if (!re.test(s)) {
+    return '';
+  }
+  const parts: string[] = s.split(':');
+  const h: number = Number(parts[0]);
+  const m: number = Number(parts[1]);
+  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+    return '';
+  }
+  return (h < 10 ? '0' + String(h) : String(h)) + ':' + (m < 10 ? '0' + String(m) : String(m));
+}
 
 /** 解析单条持久化记录（字段缺失/类型不符返回 undefined，跳过脏数据） */
 function parseStoredDeadline(entry: Object): ManualDeadline | undefined {
@@ -69,21 +112,28 @@ function sortedCopy(): ManualDeadline[] {
   return sorted;
 }
 
-/** 数据变更广播：任一监听器异常不影响其余监听器 */
+/** 数据变更广播：遍历监听器快照（回调内订阅/退订不影响本轮遍历，避免跳项）；任一监听器异常不影响其余 */
 function broadcastChange(): void {
-  for (let i: number = 0; i < listenerEntries.length; i++) {
+  const snapshot: DeadlineListenerEntry[] = listenerEntries.slice();
+  for (let i: number = 0; i < snapshot.length; i++) {
     try {
-      listenerEntries[i].callback();
+      snapshot[i].callback();
     } catch (e) {
       Log.w(LOG_TAG, 'listener notify failed idx=%{public}d', i);
     }
+  }
+  // AppStorage 信号：Tabs 常驻/隐藏页面收不到可见性回调时，仍能通过 @StorageLink @Watch 刷新
+  try {
+    AppStorage.setOrCreate<number>(MANUAL_DDL_TICK_KEY, Date.now());
+  } catch (e) {
+    Log.w(LOG_TAG, 'tick publish failed');
   }
 }
 
 export class ManualDeadlineStore {
   /**
    * 懒加载持久化数据（幂等；并发调用共享同一任务）。
-   * 解析失败回退空数组，不抛出。
+   * 解析失败回退空数组，不抛出。try/finally 清理 loadTask，避免 rejected Promise 被永久缓存。
    */
   static async load(): Promise<void> {
     if (loaded) {
@@ -93,9 +143,15 @@ export class ManualDeadlineStore {
       await loadTask;
       return;
     }
-    loadTask = ManualDeadlineStore.doLoad();
-    await loadTask;
-    loadTask = undefined;
+    const task: Promise<void> = ManualDeadlineStore.doLoad();
+    loadTask = task;
+    try {
+      await task;
+    } finally {
+      if (loadTask === task) {
+        loadTask = undefined;
+      }
+    }
   }
 
   private static async doLoad(): Promise<void> {
@@ -134,39 +190,51 @@ export class ManualDeadlineStore {
 
   /**
    * 新增手动 DDL：生成 md- 前缀 id 与 createdAt，持久化成功后广播。
-   * 标题为空或持久化失败返回 undefined（调用方给可读失败提示）。
+   * 校验：标题非空；日期为真实 YYYY-MM-DD（回读年月日，拒绝进位日期）；
+   * 时间接受 H:mm/HH:mm 并归一为 HH:mm（非法返回 undefined，不落盘）。
+   * 持久化失败返回 undefined（调用方给可读失败提示）。
    */
   static async append(title: string, date: string, time: string,
     course: string, note: string): Promise<ManualDeadline | undefined> {
     await ManualDeadlineStore.load();
     const trimmedTitle: string = title.trim();
-    if (trimmedTitle.length === 0 || date.trim().length === 0) {
+    const trimmedDate: string = date.trim();
+    const trimmedTime: string = time.trim();
+    const normalizedTime: string = trimmedTime.length > 0 ? normalizeTimeText(trimmedTime) : '';
+    if (trimmedTitle.length === 0 || !isValidDateText(trimmedDate)) {
       return undefined;
     }
-    const item: ManualDeadline = new ManualDeadline();
-    item.id = 'md-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
-    item.title = trimmedTitle;
-    item.date = date.trim();
-    item.time = time.trim();
-    item.course = course.trim();
-    item.note = note.trim();
-    item.createdAt = new Date().toISOString();
-    const next: ManualDeadline[] = cache.slice();
-    next.push(item);
-    try {
-      await PreferencesStorage.setJson<ManualDeadline[]>(StorageKeys.MANUAL_DEADLINES, next);
-    } catch (e) {
-      Log.w(LOG_TAG, 'append persist failed len=%{public}d', next.length);
+    if (trimmedTime.length > 0 && normalizedTime.length === 0) {
       return undefined;
     }
-    cache = next;
-    broadcastChange();
-    return item;
+    // 串行写队列：cache 快照必须在队列内、await 持久化之前执行（并发调用不丢更新）
+    return enqueueWrite<ManualDeadline | undefined>(async (): Promise<ManualDeadline | undefined> => {
+      const item: ManualDeadline = new ManualDeadline();
+      item.id = 'md-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+      item.title = trimmedTitle;
+      item.date = trimmedDate;
+      item.time = normalizedTime;
+      item.course = course.trim();
+      item.note = note.trim();
+      item.createdAt = new Date().toISOString();
+      const next: ManualDeadline[] = cache.slice();
+      next.push(item);
+      try {
+        await PreferencesStorage.setJson<ManualDeadline[]>(StorageKeys.MANUAL_DEADLINES, next);
+      } catch (e) {
+        Log.w(LOG_TAG, 'append persist failed len=%{public}d', next.length);
+        return undefined;
+      }
+      cache = next;
+      broadcastChange();
+      return item;
+    });
   }
 
   /**
-   * 按 id 删除：不存在返回 false；持久化成功后广播并返回 true。
+   * 按 id 删除：不存在或持久化失败返回 false；持久化成功后广播并返回 true。
    * 同一条被 AI 与页面先后删除时，第二次按「已不存在」返回 false，不报错。
+   * 写走串行队列，与 append 互斥，避免并发丢更新。
    */
   static async remove(id: string): Promise<boolean> {
     await ManualDeadlineStore.load();
@@ -174,27 +242,29 @@ export class ManualDeadlineStore {
     if (trimmed.length === 0) {
       return false;
     }
-    let removed: boolean = false;
-    const next: ManualDeadline[] = [];
-    for (let i: number = 0; i < cache.length; i++) {
-      if (cache[i].id === trimmed) {
-        removed = true;
-      } else {
-        next.push(cache[i]);
+    return enqueueWrite<boolean>(async (): Promise<boolean> => {
+      let removed: boolean = false;
+      const next: ManualDeadline[] = [];
+      for (let i: number = 0; i < cache.length; i++) {
+        if (cache[i].id === trimmed) {
+          removed = true;
+        } else {
+          next.push(cache[i]);
+        }
       }
-    }
-    if (!removed) {
-      return false;
-    }
-    try {
-      await PreferencesStorage.setJson<ManualDeadline[]>(StorageKeys.MANUAL_DEADLINES, next);
-    } catch (e) {
-      Log.w(LOG_TAG, 'remove persist failed len=%{public}d', next.length);
-      return false;
-    }
-    cache = next;
-    broadcastChange();
-    return true;
+      if (!removed) {
+        return false;
+      }
+      try {
+        await PreferencesStorage.setJson<ManualDeadline[]>(StorageKeys.MANUAL_DEADLINES, next);
+      } catch (e) {
+        Log.w(LOG_TAG, 'remove persist failed len=%{public}d', next.length);
+        return false;
+      }
+      cache = next;
+      broadcastChange();
+      return true;
+    });
   }
 
   /** 已加载缓存中定位：id 精确 → 标题全等 → 标题包含（对齐 RN findManualDeadline） */

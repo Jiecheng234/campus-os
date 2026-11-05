@@ -1,8 +1,8 @@
 # RN → HarmonyOS 功能同步进度
 
 - **RN 基线**：v2.1.1（`src/` + `android/`），上游 `a2dbb9f`（2026-07-11）后冻结。
-- **Harmony 代码基线**：`11af855` + 当前工作区未提交 T02/T03/T04/T05；22 个 feature，任务 **444 / 444**（T05 构建 + 模拟器演示链路 UI 验证通过；T03 选课/退课真实增删待开放时段）。
-- **最后更新**：2026-10-27（learning-detail：课程聚合、通知正文、资料预览/下载、手动 DDL 持久化；`devecocli build` 0 error + 模拟器演示模式 UI PASS；真实登录链路待验证）
+- **Harmony 代码基线**：`11af855` + 当前工作区未提交 T02/T03/T04/T05；22 个 feature，任务 **465 / 465**（T05 二次评审 + 下载扩展名/另存为/删除修复 + 真机走查通过；T03 选课/退课真实增删待开放时段）。
+- **最后更新**：2026-11-05（learning-detail：修复下载文件扩展名（`.bin`→服务端真实类型）、PreviewKit 正常渲染、新增「另存为」系统保存与「删除已下载」；真机 PPTX 13.9MB 走查通过）
 
 > 本文件记录**功能层**同步进度；SDD 任务层进度见 `harmony/specs/INDEX.md`，
 > 上游仓库同步见 `docs/UPSTREAM-SYNC.md`，实现细节与已知限制见 `harmony/DEVELOPMENT.md`。
@@ -67,15 +67,15 @@
 | 首页工作台 | 今日课、DDL、未读、天气、同步、AI 建议 | 同结构；`HomePage` + `CampusDataService` + `WeatherService` | ✅ |
 | 天气详情 | 独立 `WeatherDetail` 页 | 仅首页天气副标题，无详情页 | ⛔ |
 | 课程列表 | 课程/教师/课号 | `LearningPage` 真实列表 | ✅ |
-| 课程详情聚合 | 课程下作业/通知/资料 | `CourseDetailPage` 三分组 + 按课程补拉 + 嵌套下钻；演示 UI PASS，真实会话未验证 | 🟡 |
+| 课程详情聚合 | 课程下作业/通知/资料 | `CourseDetailPage` 三分组 + 按课程补拉 + 嵌套下钻；真实会话走查 6 作业/2 通知/15 资料 | ✅ |
 | 作业列表/详情 | 状态、截止、详情、附件 | 列表 + 详情拉取；作业标签按「未提交 + 手动 DDL」合并；附件下载未接 | 🟡 |
-| 通知列表/详情 | 未读、发布人、HTML 正文 | 列表 + 详情正文（内联优先，空则按课程补拉）；纯文本展示、不回写已读 | 🟡 |
-| 资料列表/详情 | 下载/外部打开/WebView 预览 | 详情 + 带会话 WebView 预览 + 私有目录下载/再次打开；演示态提示 | 🟡 |
-| 手动 DDL | 持久化增删 | `ManualDeadlineStore` 持久化增删；学习页/首页共享，AI 同源；重启验证 PASS | ✅ |
+| 通知列表/详情 | 未读、发布人、HTML 正文 | 列表 + 详情正文（内联优先，空则按课程补拉）；纯文本展示、不回写已读；真实正文已走查 | 🟡 |
+| 资料列表/详情 | 下载/外部打开/WebView 预览 | 详情 + 带会话 WebView 预览 + 私有目录下载；扩展名按 fileType/Content-Type/Disposition 修正；已下载可打开/另存为/删除；真机 PPTX 预览与导出 PASS | ✅ |
+| 手动 DDL | 持久化增删 | `ManualDeadlineStore` 持久化增删；学习页/首页/AI 同源；重启保留与跨页即时一致走查 PASS | ✅ |
 | 课表周视图 | 周网格、学期、周切换 | 同能力，真实教务数据 | ✅ |
 | 课表交互增强 | 块状课表、课程详情、时间线、配色 | `schedule-visual` + `schedule-interaction` | ✅ |
 | 个人日程 | 新增/删除、日程页展示 | `ScheduleManager` 仅内存且无 UI；AI 写工具直写 Preferences | ⛔ |
-| App 内 WebView | PDF/Office/图片/文本预览 | `WebViewerPage` 已接资料预览（Cookie + 桌面 UA + 进度/失败）；真实预览未验证 | 🟡 |
+| App 内 WebView | PDF/Office/图片/文本预览 | `WebViewerPage` 已接资料预览（Cookie + 桌面 UA + 进度/失败）；真实会话 PDF 预览 PASS（非登录页） | ✅ |
 
 ### 3.3 校园子系统
 
@@ -155,7 +155,7 @@
 
 ### P1：用户感知最强 / 主流程缺口
 
-1. ~~**学习详情深链**~~：已完成（learning-detail，2026-10-27）：课程聚合/通知正文/资料预览下载/手动 DDL 持久化；演示链路 UI PASS，真实登录补拉、预览与下载待验证。
+1. ~~**学习详情深链**~~：已完成（learning-detail，2026-10-28）：课程聚合/通知正文/资料预览下载/手动 DDL 持久化；演示链路与真实会话走查（课程/通知/PDF 预览/下载/DDL）通过。
 2. **邮件附件下载**：详情页已有附件元信息，补下载/保存/打开。
 3. **个人日程 UI**：日程页新增/编辑/删除，展示 AI 写入的个人事件。
 4. **成绩研究生切换**：`fetchGrades` 支持本科/研究生两套报表。
@@ -228,7 +228,7 @@
 
 ### Phase 1：低风险只读/详情补齐（约 9–14 人日）
 
-1. ~~学习详情深链：课程聚合、通知正文、资料下载/预览、手动 DDL 持久化。~~ 已完成（learning-detail，2026-10-27）；真实登录链路待验证。
+1. ~~学习详情深链：课程聚合、通知正文、资料下载/预览、手动 DDL 持久化。~~ 已完成（learning-detail，2026-10-28）；真实会话链路已走查。
 2. 个人日程 UI：新增/编辑/删除，展示 AI 写入 Preferences 的个人事件。
 3. 天气详情页、成绩研究生切换、健康打卡/报修入口。
 4. 邮件附件下载（复用 `MailService` 的 MIME 解析结果）。
@@ -282,3 +282,5 @@
 | 2026-10-19 | T03 验证（build-only）：`devecocli build` 成功（exit 0）；Mate 80 Pro Max 模拟器安装启动 + Smoke PASS；设备日志 `CourseReg Self-Test 70/70 passed`；Phase4 仍为既有 20/21（Base64 empty 基线失败，与本特性无关） |
 | 2026-10-22 | ai-governance：新增审计持久化（`ActionAuditStore`：200 条上限 + 串行写队列 + 敏感键/文本递归脱敏 + auditTick 信号）、权限开关仓库（`AIPermissionStore`，串行写队列 + 失败回滚）、设置页 AI 治理区（`AIAuditPanel` 回看/展开/二次确认清空 + `AIPermissionsPage` 28 权限域启停/工具名/恢复全部/失败回滚）、AgentService 工具清单按禁用过滤 + executeToolCall 权限门禁（可读拒绝 + 审计）+ 审计双写/日志治理；3.4 节「AI 操作记录」「AI 权限」由 🟡/⛔ 更新为 ✅；验证：`devecocli build` 成功 + Mate 80 Pro Max 模拟器 UI 验证 PASS（审计跨重启、清空取消/确认、权限关闭/重开、恢复全部、重启后 27/28 持久化、邮件审计结果邮箱已打码） |
 | 2026-10-27 | learning-detail（T05）：课程详情聚合作业/通知/资料并按课程补拉、通知正文（内联优先 + 空正文补拉）、资料带会话 WebView 预览 + 私有目录下载/再次打开、`ManualDeadlineStore` 手动 DDL 持久化与学习页/首页/AI 同源；3.2 节「课程详情聚合/通知/资料/App 内 WebView」更新为 🟡（实现完成，真实登录链路待验证），「手动 DDL」更新为 ✅；验证：`devecocli build` 0 error + Mate 80 Pro Max 模拟器演示模式 US1–US5 UI PASS（含 DDL 重启保留），真实网络链路因无凭证未验证 |
+| 2026-10-28 | learning-detail 二次评审修复（T036–T052）：WebViewer Cookie 改为 `onControllerAttached` 后注入并 `loadUrl`、主框架 HTTP 错误进失败态；学习列表严格拉取区分失败/空数据，标签增加独立失败提示与重试；课程详情 `@Prop` + 父数据晚到清失败标记；下载增加状态码校验、in-flight 去重、唯一临时文件与备份替换、Want 读权限；DDL store 串行写队列 + 日期/时间校验 + 跨页实时一致（AppStorage tick + 建议内容指纹 key）；3.2 节「课程详情聚合」「App 内 WebView」更新为 ✅，「资料」「通知」保持 🟡（系统打开未验证/纯文本）；验证：`arkts_check` 0 error、`devecocli build` 成功、真实会话走查课程 6 作业/2 通知/15 资料、通知正文、PDF 预览（非登录页）、下载 1,059,123B、DDL 新增/删除/重启/首页即时一致 |
+| 2026-11-05 | learning-detail 下载文件修复（T053–T056）：`CampusFile` 增 `fileType`（wjlx）；下载响应携带 headers，扩展名按 fileType→Content-Disposition→标题→Content-Type→URL 解析；旧 `.bin` 兼容扫描与清理；已下载态新增「另存为」（DocumentViewPicker + copyFile）与「删除已下载」（二次确认，含沙箱清理）；HTML 登录页嗅探改为仅服务端声明 html 才豁免；3.2 节「资料列表/详情」更新为 ✅；验证：`arkts_check` 0 error、`devecocli build` 成功、Mate 80 真机下载 13,946,942B PPTX 文件名为 `.pptx`、WPS/PreviewKit 正常渲染 3 张幻灯片、系统保存页文件名带 `.pptx` 并可写入选定目录、删除后沙箱为空 |

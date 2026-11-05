@@ -13,17 +13,23 @@ import { CampusCourse, CampusHomework, CampusNotification, CampusFile, CampusDat
 import { SessionManager } from '../../services/auth/SessionManager';
 import { I18n } from '../../utils/I18n';
 import { Log } from '../../utils/Logger';
+import { parseDeadlineMs } from '../../utils/DeadlineFormat';
 
 @Component
 export struct CourseDetailPage {
   onBack: () => void = () => {};
   /** 语言订阅：新增可见文案走 i18n（语言切换即时重渲染） */
   @StorageLink('locale') locale: string = 'zh';
-  course: CampusCourse = new CampusCourse();
-  semester: string = '';
-  homework: CampusHomework[] = [];
-  notifications: CampusNotification[] = [];
-  files: CampusFile[] = [];
+  /** 数据入参（@Prop：父页数据就绪/刷新后自动同步重渲染） */
+  @Prop course: CampusCourse = new CampusCourse();
+  @Prop semester: string = '';
+  @Prop homework: CampusHomework[] = [];
+  @Prop notifications: CampusNotification[] = [];
+  @Prop files: CampusFile[] = [];
+  /** 父页三类数据是否已加载完成（真实模式：严格拉取 settle 后置真） */
+  @Prop @Watch('onParentExtrasChange') extrasLoaded: boolean = false;
+  /** 父页三类数据上次拉取是否失败 */
+  @Prop @Watch('onParentExtrasChange') extrasFailed: boolean = false;
   /** 演示模式：不补拉、不发请求，直接使用传入数据（FR-023） */
   demoMode: boolean = false;
   onOpenHomework: (item: CampusHomework) => void = (item: CampusHomework) => {};
@@ -35,6 +41,10 @@ export struct CourseDetailPage {
   @State fetchedHomework: CampusHomework[] = [];
   @State fetchedNotifications: CampusNotification[] = [];
   @State fetchedFiles: CampusFile[] = [];
+  /** 三类各自失败态（对应分组空时展示"加载失败 + 重试"，成功分组不受影响） */
+  @State failedHomework: boolean = false;
+  @State failedNotifications: boolean = false;
+  @State failedFiles: boolean = false;
   private fetchAttempted: boolean = false;
 
   private tr(key: string): string {
@@ -46,9 +56,22 @@ export struct CourseDetailPage {
   }
 
   aboutToAppear(): void {
-    // FR-004：本地三类全空且真实模式时自动补拉一次（演示模式零请求）
-    if (!this.demoMode && this.homework.length === 0 && this.notifications.length === 0 && this.files.length === 0) {
+    // FR-004：父页数据未加载完成或上次失败且真实模式时自动补拉一次（演示模式零请求）；
+    // 仍只自动尝试一次（fetchAttempted），手动重试可再次
+    if (!this.demoMode && (!this.extrasLoaded || this.extrasFailed)) {
       this.fetchCourseData();
+    }
+  }
+
+  /** 父页数据晚到且全部成功：清除子页自身的失败标记，避免“数据已齐仍报失败” */
+  private onParentExtrasChange(): void {
+    if (this.extrasLoaded && !this.extrasFailed) {
+      this.failedHomework = false;
+      this.failedNotifications = false;
+      this.failedFiles = false;
+      if (this.syncStatus !== 'loading') {
+        this.syncStatus = 'idle';
+      }
     }
   }
 
@@ -59,7 +82,7 @@ export struct CourseDetailPage {
 
   /**
    * 补拉该课程三类数据（并发；任一失败不阻塞其余）。
-   * 已尝试过自动拉取后不再自动重试，仅保留手动重试入口。
+   * 使用严格版方法：无会话/全部请求失败会抛错，落到对应分组的失败态。
    */
   private fetchCourseData(): void {
     if (this.fetchAttempted || this.demoMode) {
@@ -69,37 +92,39 @@ export struct CourseDetailPage {
     this.syncStatus = 'loading';
     const service: CampusDataService = SessionManager.getCampusDataService();
     const courseList: CampusCourse[] = [this.course];
-    let failed: boolean = false;
     let pending: number = 3;
     const finishOne: () => void = (): void => {
       pending--;
       if (pending === 0) {
-        this.syncStatus = failed ? 'failed' : 'idle';
+        this.syncStatus = (this.failedHomework || this.failedNotifications || this.failedFiles) ? 'failed' : 'idle';
       }
     };
-    service.fetchHomework(courseList).then((list: CampusHomework[]) => {
+    service.fetchHomeworkStrict(courseList).then((list: CampusHomework[]) => {
       this.fetchedHomework = list;
-    }).catch((e: Object) => {
-      failed = true;
-      Log.i('LearnAct', 'COURSE_DETAIL fetch hw ex=%{public}s', e instanceof Error ? e.message : String(e));
+    }).catch(() => {
+      this.failedHomework = true;
+      Log.i('LearnAct', 'COURSE_DETAIL fetch hw failed');
     }).then((): void => { finishOne(); });
-    service.fetchNotifications(courseList).then((list: CampusNotification[]) => {
+    service.fetchNotificationsStrict(courseList).then((list: CampusNotification[]) => {
       this.fetchedNotifications = list;
-    }).catch((e: Object) => {
-      failed = true;
-      Log.i('LearnAct', 'COURSE_DETAIL fetch notif ex=%{public}s', e instanceof Error ? e.message : String(e));
+    }).catch(() => {
+      this.failedNotifications = true;
+      Log.i('LearnAct', 'COURSE_DETAIL fetch notif failed');
     }).then((): void => { finishOne(); });
-    service.fetchFiles(courseList).then((list: CampusFile[]) => {
+    service.fetchFilesStrict(courseList).then((list: CampusFile[]) => {
       this.fetchedFiles = list;
-    }).catch((e: Object) => {
-      failed = true;
-      Log.i('LearnAct', 'COURSE_DETAIL fetch files ex=%{public}s', e instanceof Error ? e.message : String(e));
+    }).catch(() => {
+      this.failedFiles = true;
+      Log.i('LearnAct', 'COURSE_DETAIL fetch files failed');
     }).then((): void => { finishOne(); });
   }
 
-  /** 手动重试：清空已尝试标记后重新补拉 */
+  /** 手动重试：清空失败标记与补拉结果后重新补拉 */
   private retryFetch(): void {
     this.fetchAttempted = false;
+    this.failedHomework = false;
+    this.failedNotifications = false;
+    this.failedFiles = false;
     this.fetchedHomework = [];
     this.fetchedNotifications = [];
     this.fetchedFiles = [];
@@ -115,10 +140,27 @@ export struct CourseDetailPage {
   }
 
   private getDisplayNotifications(): CampusNotification[] {
-    if (this.notifications.length > 0 || this.fetchedNotifications.length === 0) {
-      return this.notifications;
-    }
-    return this.fetchedNotifications;
+    const source: CampusNotification[] = this.notifications.length > 0 || this.fetchedNotifications.length === 0
+      ? this.notifications : this.fetchedNotifications;
+    // 发布时间倒序（稳定排序：可解析的按时间降序在前，不可解析的保持原序在后）
+    const sorted: CampusNotification[] = source.slice();
+    sorted.sort((a: CampusNotification, b: CampusNotification): number => {
+      const msA: number = a.publishTime.length > 0 ? parseDeadlineMs(a.publishTime) : NaN;
+      const msB: number = b.publishTime.length > 0 ? parseDeadlineMs(b.publishTime) : NaN;
+      const validA: boolean = !isNaN(msA);
+      const validB: boolean = !isNaN(msB);
+      if (validA && validB) {
+        return msB - msA;
+      }
+      if (validA) {
+        return -1;
+      }
+      if (validB) {
+        return 1;
+      }
+      return 0;
+    });
+    return sorted;
   }
 
   private getDisplayFiles(): CampusFile[] {
@@ -149,6 +191,24 @@ export struct CourseDetailPage {
       .fontSize(13)
       .fontColor(Theme.textMuted)
       .padding({ top: Space.sm, bottom: Space.sm })
+  }
+
+  /** 分组加载失败态（FR-004/FR-005：独立分组失败提示 + 重试，不影响其余分组） */
+  @Builder
+  groupFailedHint() {
+    Row({ space: Space.md }) {
+      Text(this.tr('learning.detail.groupFailed'))
+        .fontSize(13)
+        .fontColor(Theme.error)
+        .layoutWeight(1)
+      Text(this.tr('common.retry'))
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Theme.primary)
+        .onClick(() => { this.retryFetch(); })
+    }
+    .width('100%')
+    .padding({ top: Space.sm, bottom: Space.sm })
   }
 
   build() {
@@ -260,7 +320,11 @@ export struct CourseDetailPage {
             Column() {
               this.groupTitle(this.tr('learning.detail.groupHomework'), this.getDisplayHomework().length)
               if (this.getDisplayHomework().length === 0) {
-                this.groupEmptyHint(this.tr('learning.detail.emptyHomework'))
+                if (this.failedHomework) {
+                  this.groupFailedHint()
+                } else {
+                  this.groupEmptyHint(this.tr('learning.detail.emptyHomework'))
+                }
               } else {
                 ForEach(this.getDisplayHomework(), (item: CampusHomework) => {
                   Row() {
@@ -299,7 +363,11 @@ export struct CourseDetailPage {
             Column() {
               this.groupTitle(this.tr('learning.detail.groupNotifications'), this.getDisplayNotifications().length)
               if (this.getDisplayNotifications().length === 0) {
-                this.groupEmptyHint(this.tr('learning.detail.emptyNotifications'))
+                if (this.failedNotifications) {
+                  this.groupFailedHint()
+                } else {
+                  this.groupEmptyHint(this.tr('learning.detail.emptyNotifications'))
+                }
               } else {
                 ForEach(this.getDisplayNotifications(), (item: CampusNotification) => {
                   Row({ space: Space.sm }) {
@@ -347,7 +415,11 @@ export struct CourseDetailPage {
             Column() {
               this.groupTitle(this.tr('learning.detail.groupFiles'), this.getDisplayFiles().length)
               if (this.getDisplayFiles().length === 0) {
-                this.groupEmptyHint(this.tr('learning.detail.emptyFiles'))
+                if (this.failedFiles) {
+                  this.groupFailedHint()
+                } else {
+                  this.groupEmptyHint(this.tr('learning.detail.emptyFiles'))
+                }
               } else {
                 ForEach(this.getDisplayFiles(), (item: CampusFile) => {
                   Row() {

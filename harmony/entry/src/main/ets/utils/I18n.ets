@@ -1261,6 +1261,9 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
     zh: '部分数据加载失败，可稍后重试',
     en: 'Some data failed to load. Try again later'
   },
+  'learning.detail.groupFailed': { zh: '加载失败', en: 'Failed to load' },
+  'learning.listLoadFailed': { zh: '加载失败，请重试', en: 'Failed to load. Please retry' },
+  'learning.emptyCourses': { zh: '暂无课程', en: 'No courses' },
   'common.retry': { zh: '重试', en: 'Retry' },
 
   // ── 学习详情深链：通知详情（learning.notification.*，NotificationDetailPage）──
@@ -1276,6 +1279,20 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'learning.file.downloaded': { zh: '已下载', en: 'Downloaded' },
   'learning.file.open': { zh: '打开', en: 'Open' },
   'learning.file.downloadSuccess': { zh: '已保存：{name}', en: 'Saved: {name}' },
+  'learning.file.downloadSuccessInApp': { zh: '已保存到应用内：{name}', en: 'Saved in app: {name}' },
+  'learning.file.export': { zh: '另存为', en: 'Save as' },
+  'learning.file.exporting': { zh: '正在导出…', en: 'Exporting…' },
+  'learning.file.exportSuccess': { zh: '已保存到你选择的位置', en: 'Saved to the selected location' },
+  'learning.file.exportFailed': { zh: '导出失败，请重试', en: 'Export failed. Please retry' },
+  'learning.file.deleteDownloaded': { zh: '删除已下载', en: 'Delete download' },
+  'learning.file.deleteTitle': { zh: '删除已下载文件？', en: 'Delete downloaded file?' },
+  'learning.file.deleteMessage': {
+    zh: '将删除应用内的「{name}」，不影响课程原件。',
+    en: 'This removes "{name}" from the app. The course file is not affected.'
+  },
+  'learning.file.deleteOk': { zh: '删除', en: 'Delete' },
+  'learning.file.deletedToast': { zh: '已删除', en: 'Deleted' },
+  'learning.file.deleteFailed': { zh: '删除失败，请重试', en: 'Delete failed. Please retry' },
   'learning.file.downloadFailed': { zh: '下载失败，请重试', en: 'Download failed. Please retry' },
   'learning.file.invalidResponse': {
     zh: '服务端返回了页面而非文件，可能是会话已失效',
@@ -1308,6 +1325,7 @@ const SETTINGS_DICTIONARY: Record<string, I18nEntry> = {
   'learning.ddl.dateInvalid': { zh: '日期格式应为 YYYY-MM-DD', en: 'Date should be YYYY-MM-DD' },
   'learning.ddl.timeInvalid': { zh: '时间格式应为 HH:mm', en: 'Time should be HH:mm' },
   'learning.ddl.saveFailed': { zh: '保存失败，请重试', en: 'Save failed. Please retry' },
+  'learning.ddl.deleteFailed': { zh: '删除失败，请重试', en: 'Delete failed. Please retry' },
 };
 
 export class I18n {

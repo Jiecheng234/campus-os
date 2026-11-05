@@ -25,12 +25,13 @@
  * 参考：原项目 src/services/campus/learningAdapter.ts、scheduleService.ts
  * ============================================================================
  */
-import { HttpClient, HttpResponse } from '../HttpClient';
+import { HttpClient, HttpResponse, HttpBytesResponse } from '../HttpClient';
 import { SessionManager } from '../auth/SessionManager';
 import { TsinghuaAuthService } from '../auth/TsinghuaAuthService';
 import { Log } from '../../utils/Logger';
 import { decodeBase64 } from '../../utils/CryptoUtils';
 import { gb2312PercentEncode } from '../../utils/EncodingUtils';
+import { parseDeadlineMs } from '../../utils/DeadlineFormat';
 import { webview } from '@kit.ArkWeb';
 
 const LEARN_BASE: string = 'https://learn.tsinghua.edu.cn';
@@ -120,6 +121,9 @@ function decodeHtmlEntities(value: string): string {
 /** 去除 HTML 标签，保留文本与换行（用于通知/作业内容纯文本展示） */
 function stripHtml(html: string): string {
   let s: string = html;
+  // 先剥离 script/style 整块（大小写不敏感、跨行），避免块内文本与标签混入正文
+  s = s.replace(/<script[\s\S]*?<\/script>/gi, '');
+  s = s.replace(/<style[\s\S]*?<\/style>/gi, '');
   s = s.replace(/<br\s*\/?>/gi, '\n');
   s = s.replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n');
   s = s.replace(/<li>/gi, '· ');
@@ -133,6 +137,47 @@ function stripHtml(html: string): string {
 function withCsrf(url: string, csrf: string): string {
   const sep: string = url.indexOf('?') >= 0 ? '&' : '?';
   return url + sep + '_csrf=' + encodeURIComponent(csrf);
+}
+
+/** 倒序排序的索引包装（稳定排序：时间相等/不可解析时按原始下标保持相对顺序） */
+class IndexedNotification {
+  item: CampusNotification = new CampusNotification();
+  index: number = 0;
+}
+
+/** 通知按发布时间倒序（不可解析的保持相对顺序，排在可解析项之后） */
+function sortNotificationsByPublishTimeDesc(list: CampusNotification[]): CampusNotification[] {
+  const indexed: IndexedNotification[] = [];
+  for (let i: number = 0; i < list.length; i++) {
+    const entry: IndexedNotification = new IndexedNotification();
+    entry.item = list[i];
+    entry.index = i;
+    indexed.push(entry);
+  }
+  indexed.sort((a: IndexedNotification, b: IndexedNotification): number => {
+    const msA: number = parseDeadlineMs(a.item.publishTime);
+    const msB: number = parseDeadlineMs(b.item.publishTime);
+    const validA: boolean = !isNaN(msA);
+    const validB: boolean = !isNaN(msB);
+    if (validA && validB) {
+      if (msA !== msB) {
+        return msB - msA;
+      }
+      return a.index - b.index;
+    }
+    if (validA) {
+      return -1;
+    }
+    if (validB) {
+      return 1;
+    }
+    return a.index - b.index;
+  });
+  const sorted: CampusNotification[] = [];
+  for (let i: number = 0; i < indexed.length; i++) {
+    sorted.push(indexed[i].item);
+  }
+  return sorted;
 }
 
 /** 数值 HTML 实体（&#xHH; / &#DD;）解码（对齐原项目 news.ts decodeText） */
@@ -321,6 +366,8 @@ export class CampusFile {
   courseId: string = '';
   title: string = '';
   courseName: string = '';
+  /** 服务端文件类型（wjlx，如 pdf/docx/pptx；用于下载扩展名与预览 MIME） */
+  fileType: string = '';
   size: string = '';
   isNew: boolean = false;
   description: string = '';
@@ -1495,33 +1542,60 @@ export class CampusDataService {
   }
 
   /**
-   * 下载资料文件字节（FR-013）：复用 HttpClient.getBytes（自动带 Cookie、
-   * 手动跟随重定向、二进制安全）。空 URL 抛可读错误；网络异常由底层抛出，
-   * 调用方（FileDetailPage）负责转成可读失败提示。
+   * 下载资料文件（带响应元信息）：复用 HttpClient.getBytesWithMeta（自动带 Cookie、
+   * 手动跟随重定向、二进制安全、HTTP >= 400 抛 HttpError 带 statusCode）。
+   * 返回 bytes + headers，供调用方按 Content-Type/Content-Disposition 修正扩展名。
    */
-  async downloadFileBytes(url: string): Promise<Uint8Array> {
+  async downloadFile(url: string): Promise<HttpBytesResponse> {
     if (url.length === 0) {
       throw new Error('Empty download url');
     }
-    return this.http.getBytes(url);
+    return this.http.getBytesWithMeta(url);
+  }
+
+  /** 下载资料文件字节（保留旧签名，仅需 bytes 的调用方使用） */
+  async downloadFileBytes(url: string): Promise<Uint8Array> {
+    return (await this.downloadFile(url)).bytes;
+  }
+
+  /** 作业（宽松版）：无 CSRF 返回 []，单课单状态失败跳过（保持既有吞错行为） */
+  async fetchHomework(courses: CampusCourse[]): Promise<CampusHomework[]> {
+    return this.fetchHomeworkInternal(courses, false);
+  }
+
+  /** 作业（严格版）：无 CSRF 或全部请求失败时抛错；成功但为空仍返回 [] */
+  async fetchHomeworkStrict(courses: CampusCourse[]): Promise<CampusHomework[]> {
+    return this.fetchHomeworkInternal(courses, true);
   }
 
   /** 作业：对每门课遍历 未交(Wj)/已交未批改(Yjwg)/已批改(Ypg)，POST aoData */
-  async fetchHomework(courses: CampusCourse[]): Promise<CampusHomework[]> {
+  private async fetchHomeworkInternal(courses: CampusCourse[], strict: boolean): Promise<CampusHomework[]> {
+    if (courses.length === 0) {
+      return [];
+    }
     const csrf: string = await this.getCsrfToken();
-    if (csrf.length === 0) { return []; }
+    if (csrf.length === 0) {
+      if (strict) {
+        throw new Error('No learning session');
+      }
+      return [];
+    }
     const result: CampusHomework[] = [];
     const suffixes: string[] = ['Wj', 'Yjwg', 'Ypg'];
     const submittedFlags: boolean[] = [false, true, true];
     const gradedFlags: boolean[] = [false, false, true];
+    let requestCount: number = 0;
+    let parsedCount: number = 0;
     for (let ci: number = 0; ci < courses.length; ci++) {
       const course: CampusCourse = courses[ci];
       for (let si: number = 0; si < suffixes.length; si++) {
         try {
+          requestCount++;
           const path: string = '/b/wlxt/kczy/zy/student/zyList' + suffixes[si];
           const aoData: string = '[{"name":"wlkcid","value":"' + course.id + '"}]';
           const resp: HttpResponse = await this.http.postForm(withCsrf(LEARN_BASE + path, csrf), { 'aoData': aoData });
           const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
+          parsedCount++;
           const objField = json['object'] as Record<string, Object>;
           if (objField === undefined || objField === null) { continue; }
           const rows = objField['aaData'] as Object[];
@@ -1546,30 +1620,55 @@ export class CampusDataService {
             result.push(item);
           }
         } catch (e) {
-          // 单门课某状态失败跳过
+          // 单门课某状态失败跳过（严格模式下全部失败在循环后统一抛错）
         }
       }
     }
-    Log.i('LearnAct',  'FETCH_HW courses=%{public}d count=%{public}d', courses.length, result.length);
+    if (strict && requestCount > 0 && parsedCount === 0) {
+      throw new Error('Learning fetch failed');
+    }
+    Log.i('LearnAct',  'FETCH_HW courses=%{public}d count=%{public}d strict=%{public}d', courses.length, result.length, strict ? 1 : 0);
     return result;
   }
 
-  /** 通知：对每门课遍历 未过期(Wgq)/已过期(Ygq)，POST aoData */
+  /** 通知（宽松版）：无 CSRF 返回 []，单课失败跳过（保持既有吞错行为） */
   async fetchNotifications(courses: CampusCourse[]): Promise<CampusNotification[]> {
+    return this.fetchNotificationsInternal(courses, false);
+  }
+
+  /** 通知（严格版）：无 CSRF 或全部请求失败时抛错；成功但为空仍返回 [] */
+  async fetchNotificationsStrict(courses: CampusCourse[]): Promise<CampusNotification[]> {
+    return this.fetchNotificationsInternal(courses, true);
+  }
+
+  /** 通知：对每门课遍历 未过期(Wgq)/已过期(Ygq)，POST aoData；结果按发布时间倒序 */
+  private async fetchNotificationsInternal(courses: CampusCourse[], strict: boolean): Promise<CampusNotification[]> {
+    if (courses.length === 0) {
+      return [];
+    }
     const csrf: string = await this.getCsrfToken();
-    if (csrf.length === 0) { return []; }
+    if (csrf.length === 0) {
+      if (strict) {
+        throw new Error('No learning session');
+      }
+      return [];
+    }
     const result: CampusNotification[] = [];
     const suffixes: string[] = ['Wgq', 'Ygq'];
+    let requestCount: number = 0;
+    let parsedCount: number = 0;
     for (let ci: number = 0; ci < courses.length; ci++) {
       const course: CampusCourse = courses[ci];
       for (let si: number = 0; si < suffixes.length; si++) {
         try {
+          requestCount++;
           const path: string = '/b/wlxt/kcgg/wlkc_ggb/student/pageListXsby' + suffixes[si];
           const aoData: string = '[{"name":"wlkcid","value":"' + course.id + '"}]';
           const resp: HttpResponse = await this.http.postForm(withCsrf(LEARN_BASE + path, csrf), { 'aoData': aoData });
           Log.i('LearnAct',  'NOTIF_RESP sfx=%{public}s code=%{public}d body=%{public}s',
             suffixes[si], resp.statusCode, resp.body.substring(0, 250));
           const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
+          parsedCount++;
           const objField = json['object'] as Record<string, Object>;
           if (objField === undefined || objField === null) { continue; }
           let rows = objField['aaData'] as Object[];
@@ -1600,28 +1699,53 @@ export class CampusDataService {
             result.push(item);
           }
         } catch (e) {
-          // skip
+          // skip（严格模式下全部失败在循环后统一抛错）
         }
       }
     }
-    Log.i('LearnAct',  'FETCH_NOTIF courses=%{public}d count=%{public}d', courses.length, result.length);
-    return result;
+    if (strict && requestCount > 0 && parsedCount === 0) {
+      throw new Error('Learning fetch failed');
+    }
+    Log.i('LearnAct',  'FETCH_NOTIF courses=%{public}d count=%{public}d strict=%{public}d', courses.length, result.length, strict ? 1 : 0);
+    return sortNotificationsByPublishTimeDesc(result);
+  }
+
+  /** 课件文件（宽松版）：无 CSRF 返回 []，单课失败跳过（保持既有吞错行为） */
+  async fetchFiles(courses: CampusCourse[]): Promise<CampusFile[]> {
+    return this.fetchFilesInternal(courses, false);
+  }
+
+  /** 课件文件（严格版）：无 CSRF 或全部请求失败时抛错；成功但为空仍返回 [] */
+  async fetchFilesStrict(courses: CampusCourse[]): Promise<CampusFile[]> {
+    return this.fetchFilesInternal(courses, true);
   }
 
   /** 课件文件：对每门课 GET 列表 */
-  async fetchFiles(courses: CampusCourse[]): Promise<CampusFile[]> {
+  private async fetchFilesInternal(courses: CampusCourse[], strict: boolean): Promise<CampusFile[]> {
+    if (courses.length === 0) {
+      return [];
+    }
     const csrf: string = await this.getCsrfToken();
-    if (csrf.length === 0) { return []; }
+    if (csrf.length === 0) {
+      if (strict) {
+        throw new Error('No learning session');
+      }
+      return [];
+    }
     const result: CampusFile[] = [];
+    let requestCount: number = 0;
+    let parsedCount: number = 0;
     for (let ci: number = 0; ci < courses.length; ci++) {
       const course: CampusCourse = courses[ci];
       try {
+        requestCount++;
         const url: string = withCsrf(
           LEARN_BASE + '/b/wlxt/kj/wlkc_kjxxb/student/kjxxbByWlkcidAndSizeForStudent?wlkcid=' + course.id + '&size=200', csrf);
         const resp: HttpResponse = await this.http.get(url);
         Log.i('LearnAct',  'FILE_RESP code=%{public}d body=%{public}s',
           resp.statusCode, resp.body.substring(0, 250));
         const json: Record<string, Object> = JSON.parse(resp.body) as Record<string, Object>;
+        parsedCount++;
         // object 可能是数组（直接是文件列表）或 {resultsList: [...]}
         const objectField: Object = json['object'] as Object;
         let rows: Object[] = [];
@@ -1640,6 +1764,7 @@ export class CampusDataService {
           item.courseId = course.id;
           item.title = decodeHtmlEntities(String(row['bt'] ?? ''));
           item.courseName = course.name;
+          item.fileType = String(row['wjlx'] ?? '').trim();
           item.size = String(row['fileSize'] ?? row['wjdx'] ?? '');
           item.isNew = String(row['sfqd'] ?? '') === '是';
           item.description = stripHtml(String(row['ms'] ?? ''));
@@ -1649,10 +1774,13 @@ export class CampusDataService {
           result.push(item);
         }
       } catch (e) {
-        // skip
+        // skip（严格模式下全部失败在循环后统一抛错）
       }
     }
-    Log.i('LearnAct',  'FETCH_FILES courses=%{public}d count=%{public}d', courses.length, result.length);
+    if (strict && requestCount > 0 && parsedCount === 0) {
+      throw new Error('Learning fetch failed');
+    }
+    Log.i('LearnAct',  'FETCH_FILES courses=%{public}d count=%{public}d strict=%{public}d', courses.length, result.length, strict ? 1 : 0);
     return result;
   }
 

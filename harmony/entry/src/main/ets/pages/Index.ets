@@ -140,12 +140,12 @@ struct Index {
       index: this.currentIndex
     }) {
       TabContent() {
-        HomePage()
+        HomePage({ active: this.currentIndex === 0 })
       }
       .tabBar(this.TabBarBuilder(this.tr(this.tabKeys[0]), this.tabIcons[0], 0))
 
       TabContent() {
-        LearningPage()
+        LearningPage({ active: this.currentIndex === 1 })
       }
       .tabBar(this.TabBarBuilder(this.tr(this.tabKeys[1]), this.tabIcons[1], 1))
 

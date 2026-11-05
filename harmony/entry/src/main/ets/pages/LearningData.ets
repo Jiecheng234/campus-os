@@ -66,11 +66,11 @@ export function getHomeworkList(): HomeworkItem[] {
   const list: HomeworkItem[] = [];
   const h1: HomeworkItem = new HomeworkItem();
   h1.title = '习题集 第5章'; h1.course = '高等数学(1)';
-  h1.deadline = '7月25日 23:59'; h1.status = '即将截止';
+  h1.deadline = `${demoDateStr(2)} 23:59`; h1.status = '即将截止';
   list.push(h1);
   const h2: HomeworkItem = new HomeworkItem();
   h2.title = '实验报告 2'; h2.course = '大学物理B(2)';
-  h2.deadline = '7月28日 17:00'; h2.status = '进行中';
+  h2.deadline = `${demoDateStr(5)} 17:00`; h2.status = '进行中';
   list.push(h2);
   return list;
 }
@@ -152,12 +152,12 @@ export function getDemoCampusFiles(): CampusFile[] {
   const list: CampusFile[] = [];
   const f1: CampusFile = new CampusFile();
   f1.id = 'demo-file-1'; f1.fileId = 'demo-wj-1'; f1.courseId = 'demo-course-1'; f1.courseName = '高等数学(1)';
-  f1.title = '第5章习题参考答案.pdf'; f1.size = '1.2 MB'; f1.isNew = true;
+  f1.title = '第5章习题参考答案.pdf'; f1.fileType = 'pdf'; f1.size = '1.2 MB'; f1.isNew = true;
   f1.description = '第 5 章习题的参考答案，供订正使用。'; f1.uploadTime = '7月20日';
   list.push(f1);
   const f2: CampusFile = new CampusFile();
   f2.id = 'demo-file-2'; f2.fileId = 'demo-wj-2'; f2.courseId = 'demo-course-2'; f2.courseName = '大学物理B(2)';
-  f2.title = '实验报告模板.docx'; f2.size = '45 KB'; f2.isNew = false;
+  f2.title = '实验报告模板.docx'; f2.fileType = 'docx'; f2.size = '45 KB'; f2.isNew = false;
   f2.description = ''; f2.uploadTime = '7月18日';
   list.push(f2);
   return list;
