@@ -4,7 +4,7 @@
     "vendor": "campusos",
     "versionCode": 20101,
     "versionName": "2.1.1",
-    "icon": "$media:layered_image",
+    "icon": "$media:app_icon",
     "label": "$string:app_name"
   }
 }
